@@ -12,4 +12,4 @@ Self-hosted end-to-end encrypted webmail client.
 - Backend writes user PGP keyrings to `/data` → named volume `webmail-data`. Don't bind-mount unless you have a reason; the named volume survives `docker compose down`.
 - `frontend/default.conf.template` is rendered by the official `nginx` image's entrypoint using `BACKEND_HOST`/`BACKEND_PORT` env vars from compose — don't hardcode the upstream.
 - SSE on `/api/events` needs `proxy_buffering off` (already set in the nginx template); don't reintroduce a caching proxy in front of the backend without preserving that.
-- Backend tests: none committed yet. If added under `backend/`, run `go test ./...` locally before committing.
+- Tests: backend `go test ./...` (add `-race` for CI), frontend `npm run test` (Vitest + Testing Library). GitHub Actions runs both on push/PR to `main` (see `.github/workflows/test.yml`); run them locally before committing.
