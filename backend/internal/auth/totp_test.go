@@ -22,6 +22,12 @@ func TestGenerateAndValidateTOTP(t *testing.T) {
 		t.Fatal("otpauth URL is empty")
 	}
 
+	// otpauth URI 入面嘅 secret 必須等於原始 base32 secret，
+	// 否則 Google Authenticator / oathtool 用 URI secret 計出嘅 code 會唔 match
+	if key.Secret() != secret {
+		t.Fatalf("otpauth URI secret %q != original %q (double-encoded?)", key.Secret(), secret)
+	}
+
 	// 產生一個有效 code 並驗證
 	code, err := totp.GenerateCode(secret, time.Now())
 	if err != nil {

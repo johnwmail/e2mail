@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/hex"
+	"fmt"
 	"strings"
 
 	"github.com/pquerna/otp"
@@ -28,12 +29,19 @@ func GenerateSecret() string {
 	return strings.TrimRight(base32.StdEncoding.EncodeToString(raw), "=")
 }
 
-// GenerateKey 產生 TOTP Key，包含 otpauth:// URI
+// GenerateKey 產生 TOTP Key，包含 otpauth:// URI。
+// secret 為 GenerateSecret 產出嘅 base32 字串。pquerna 預期 raw bytes 並自行
+// base32 encode 入 URI；直接傳入 base32 字串會令 URI secret double-encoded，
+// 與 Google Authenticator（及 oathtool）計出嘅 code 不一致，故需先 decode。
 func GenerateKey(accountName, secret string) (*otp.Key, error) {
+	raw, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(secret)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base32 secret: %w", err)
+	}
 	return totp.Generate(totp.GenerateOpts{
 		Issuer:      Issuer,
 		AccountName: accountName,
-		Secret:      []byte(secret),
+		Secret:      raw,
 		Period:      30,
 		Digits:      otp.DigitsSix,
 		Algorithm:   otp.AlgorithmSHA1,
