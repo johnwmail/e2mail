@@ -55,7 +55,7 @@ func (h *EventsHandler) SSE(w http.ResponseWriter, r *http.Request) {
 		"email":     sess.Email,
 		"timestamp": time.Now(),
 	})
-	fmt.Fprintf(w, "event: init\ndata: %s\n\n", string(initData))
+	_, _ = fmt.Fprintf(w, "event: init\ndata: %s\n\n", string(initData))
 	flusher.Flush()
 
 	heartbeatTicker := time.NewTicker(15 * time.Second)
@@ -67,7 +67,7 @@ func (h *EventsHandler) SSE(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-heartbeatTicker.C:
 			// 發送 SSE Heartbeat 保活
-			fmt.Fprintf(w, ": heartbeat\n\n")
+			_, _ = fmt.Fprintf(w, ": heartbeat\n\n")
 			flusher.Flush()
 		case evt, ok := <-eventCh:
 			if !ok {
@@ -75,7 +75,7 @@ func (h *EventsHandler) SSE(w http.ResponseWriter, r *http.Request) {
 			}
 			data, err := json.Marshal(evt)
 			if err == nil {
-				fmt.Fprintf(w, "event: mailbox_event\ndata: %s\n\n", string(data))
+				_, _ = fmt.Fprintf(w, "event: mailbox_event\ndata: %s\n\n", string(data))
 				flusher.Flush()
 			}
 		}

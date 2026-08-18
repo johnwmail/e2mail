@@ -51,7 +51,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize storage: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if migrated, err := store.MigrateLegacyKeyrings(dataDir); err != nil {
 		log.Printf("⚠️  Legacy keyring migration error: %v", err)

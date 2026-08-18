@@ -1,0 +1,16 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: false # Skip test files to avoid errcheck issues
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - unconvert
+    - gocyclo

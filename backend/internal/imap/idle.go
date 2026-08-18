@@ -108,7 +108,7 @@ func (l *IdleListener) runIdleLoop() error {
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// 選取信箱
 	selectData, err := client.rawClient.Select(l.mailbox, nil).Wait()

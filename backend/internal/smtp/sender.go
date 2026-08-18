@@ -270,7 +270,7 @@ func (s *Sender) Send(ctx context.Context, config SMTPConfig, msg OutgoingMessag
 		if err != nil {
 			return fmt.Errorf("SMTP SSL dial failed to %s: %w", addr, err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		client, err = netsmtp.NewClient(conn, config.Host)
 		if err != nil {
@@ -292,7 +292,7 @@ func (s *Sender) Send(ctx context.Context, config SMTPConfig, msg OutgoingMessag
 			}
 		}
 	}
-	defer client.Quit()
+	defer func() { _ = client.Quit() }()
 
 	// 2. 身分驗證 (支援 PLAIN 與 LOGIN 自動適配)
 	if config.Username != "" && config.Password != "" {

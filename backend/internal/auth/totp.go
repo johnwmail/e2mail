@@ -117,9 +117,5 @@ func FormatCode(raw string) string {
 
 // ValidateCodeInput 檢查使用者輸入是否為有效的 6 位數 TOTP 或備份碼格式
 func IsBackupCodeShape(code string) bool {
-	c := FormatCode(code)
-	if len(c) != BackupCodeGroups*BackupCodeLen {
-		return false
-	}
-	return true
+	return len(FormatCode(code)) == BackupCodeGroups*BackupCodeLen
 }

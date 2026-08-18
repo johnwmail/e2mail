@@ -141,7 +141,7 @@ func (s *SQLiteStore) ListContacts(ownerEmail string) ([]ContactKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query contacts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := make([]ContactKey, 0)
 	for rows.Next() {

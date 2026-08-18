@@ -309,9 +309,7 @@ func (c *Client) FetchMessageSummaries(ctx context.Context, folder string, page,
 		if err != nil {
 			return nil, fmt.Errorf("search failed: %w", err)
 		}
-		for _, num := range searchData.AllSeqNums() {
-			matchedSeqNums = append(matchedSeqNums, num)
-		}
+		matchedSeqNums = append(matchedSeqNums, searchData.AllSeqNums()...)
 		total = len(matchedSeqNums)
 	} else {
 		for i := uint32(1); i <= selectData.NumMessages; i++ {
