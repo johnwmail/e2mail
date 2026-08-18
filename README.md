@@ -1,8 +1,8 @@
 # e2mail
 
 Self-hosted, end-to-end encrypted webmail client. Speaks IMAP/SMTP to any mail
-provider, stores PGP key material in a single SQLite file, and runs as a pair
-of Docker containers behind nginx.
+provider, stores PGP key material in a single SQLite file, and serves the SPA
+and the API from a single Go binary in one container.
 
 ## Features
 
@@ -25,29 +25,27 @@ of Docker containers behind nginx.
 ## Architecture
 
 ```
-┌──────────────┐      HTTP      ┌─────────────────────────────┐
-│  Browser UI  │ ◀────────────▶ │  nginx (frontend container)  │
-│  React + Vite│   /api/*       │  reverse-proxies to backend  │
-└──────────────┘                └──────────────┬──────────────┘
-                                              │
-                                              ▼
-                                ┌─────────────────────────────┐
-                                │  Go backend (chi)            │
-                                │  HTTP API :8080              │
-                                │  IMAP client pool + IDLE     │
-                                │  SMTP sender                 │
-                                │  Sessions (in-memory, AES)   │
-                                │  + SQLite storage            │
-                                └─────────────────────────────┘
-                                              │
-                                              ▼
+┌──────────────┐      HTTP      ┌──────────────────────────────────┐
+│  Browser UI  │ ◀────────────▶ │  Single Go binary (chi) :8080     │
+│  React + Vite│   /api/*       │  - serves embedded SPA (go:embed) │
+└──────────────┘                │  - HTTP API                      │
+                                │  - IMAP client pool + IDLE        │
+                                │  - SMTP sender                   │
+                                │  - Sessions (in-memory, AES)     │
+                                │  - SQLite storage                │
+                                └──────────────┬───────────────────┘
+                                               │
+                                               ▼
                                 /data/webmail.db  (named volume)
 ```
 
-| Service   | Tech                              | Port (host) |
-|-----------|-----------------------------------|-------------|
-| backend   | Go 1.25 + chi + modernc.org/sqlite| `8080`      |
-| frontend  | React 18 + Vite + Tailwind, nginx | `8000`      |
+The frontend `dist/` (React 18 + Vite + Tailwind) is built during the Docker
+image build and `go:embed`-ed into the backend binary (`backend/web`), so the
+container runs a single process serving both the SPA and the API.
+
+| Service  | Tech                                            | Port (host) |
+|----------|-------------------------------------------------|-------------|
+| webmail  | Go 1.25 + chi + modernc.org/sqlite, embeds the Vite build | `8080`      |
 
 ## Quick start
 
@@ -60,8 +58,8 @@ cd e2mail
 docker compose up -d --build
 
 # Open
-open http://localhost:8000      # webmail UI
-curl http://localhost:8080/health   # backend probe
+open http://localhost:8080      # webmail UI (SPA + API on one port)
+curl http://localhost:8080/health   # health probe
 ```
 
 On first launch, `/data/webmail.db` is created and any legacy
@@ -70,7 +68,7 @@ table.
 
 ## Configuration
 
-Both defaults are loaded by the backend container from environment variables.
+Both defaults are loaded by the container from environment variables.
 Uncomment in `docker-compose.yml` (or set via your orchestrator) to activate.
 
 | Env var                   | Default | Purpose                                                 |
@@ -87,6 +85,21 @@ Uncomment in `docker-compose.yml` (or set via your orchestrator) to activate.
 
 The public endpoint `GET /api/server-config` exposes the defaults so the login
 page can pre-populate the advanced settings panel.
+
+## Version metadata
+
+`Version`, `BuildTime` and `CommitHash` are baked in at image build time and
+shown in the startup log and the sidebar footer of the UI. Defaults are
+`vdev` / `timeless` / `sha-unknown`; tag builds (`.github/workflows/container.yml`)
+inject the real values via Docker `--build-arg`:
+
+```bash
+docker build \
+  --build-arg VERSION=v1.2.3 \
+  --build-arg BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+  --build-arg COMMIT_HASH=$(git rev-parse HEAD) \
+  .
+```
 
 ## Storage
 
@@ -126,8 +139,8 @@ npm run build
   recommended for multi-instance deployments.
 - TLS is mandatory by default (`allowInsecureTls = false`). Only enable
   self-signed certs via env when targeting a test environment.
-- The nginx entrypoint sets `client_max_body_size 50M` so bulk PGP key
-  imports of dozens of keys aren't rejected.
+- Requests hit the Go server directly (no nginx/proxy in front), so large PGP
+  key imports of dozens of keys aren't rejected by a proxy size limit.
 
 ## License
 
