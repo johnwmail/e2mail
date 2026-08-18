@@ -118,18 +118,6 @@ npm run dev         # http://localhost:5173, proxies /api to :8080
 npm run build
 ```
 
-## Deployment
-
-The full deploy workflow (rsync → remote → `docker compose build / up`) lives
-in [AGENTS.md](./AGENTS.md). A short version:
-
-```bash
-rsync -avz --delete \
-  --exclude='.git' --exclude='node_modules' --exclude='dist' \
-  -e ssh ./ exedev@debian.exe.xyz:~/e2mail/
-ssh exedev@debian.exe.xyz 'cd ~/e2mail && docker compose build --no-cache && docker compose up -d'
-```
-
 ## Security notes
 
 - Private keys are encrypted at rest with the user's passphrase; the server
