@@ -30,3 +30,38 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+# Backend
+backend/server
+backend/server-test
+*.test
+*.out
+
+# Frontend
+node_modules/
+dist/
+.vite/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets / local overrides
+.env
+.env.local
+*.local
+
+# Runtime data (kept on the named volume `webmail-data`, not in source)
+data/
+*.db
+*.db-shm
+*.db-wal

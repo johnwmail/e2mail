@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: modern-webmail-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DATA_DIR=/data
+      - SESSION_TTL_HOURS=24
+      # === 伺服器預設值（自訂網域登入時預填；ADMIN 若部署給多人使用可設定） ===
+      # - DEFAULT_IMAP_HOST=mail.example.com
+      # - DEFAULT_IMAP_PORT=993
+      # - DEFAULT_SMTP_HOST=mail.example.com
+      # - DEFAULT_SMTP_PORT=587
+      # - DEFAULT_ALLOW_INSECURE_TLS=false    # 預設為 false；僅在自簽憑證環境顯式設為 true
+    volumes:
+      - webmail-data:/data
+    networks:
+      - webmail-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: modern-webmail-frontend
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    environment:
+      - BACKEND_HOST=backend
+      - BACKEND_PORT=8080
+    depends_on:
+      - backend
+    networks:
+      - webmail-net
+
+volumes:
+  webmail-data:
+    driver: local
+
+networks:
+  webmail-net:
+    driver: bridge
