@@ -54,6 +54,7 @@ export interface FolderInfo {
   totalCount: number;
   unreadCount: number;
   specialUse?: 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | string;
+  subscribed: boolean;
 }
 
 export interface MessageListResult {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Inbox,
   Send,
@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   LogOut,
   User,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { pgpService } from '../../api/pgp';
@@ -57,6 +59,7 @@ const getFolderDisplayName = (folder: FolderInfo) => {
 export const Sidebar: React.FC = () => {
   const { currentFolder, setCurrentFolder, openComposer, isSidebarOpen, setSidebarOpen } = useMailStore();
   const { session, logout } = useAuthStore();
+  const queryClient = useQueryClient();
   const [isPgpModalOpen, setIsPgpModalOpen] = useState(false);
 
   const hasPgpKey = !!pgpService.getKeyPair();
@@ -66,6 +69,18 @@ export const Sidebar: React.FC = () => {
     queryFn: mailApi.getFolders,
     staleTime: 30000,
   });
+
+  const toggleSubscribe = async (folder: FolderInfo) => {
+    const next = !folder.subscribed;
+    try {
+      await mailApi.setFolderSubscription(folder.name, next);
+      queryClient.setQueryData(['folders'], (old: FolderInfo[] | undefined) =>
+        old?.map((f) => (f.name === folder.name ? { ...f, subscribed: next } : f))
+      );
+    } catch {
+      // 忽略失敗，下次 refetch 會反映真實狀態
+    }
+  };
 
   const sidebarContent = (
     <div className="flex flex-col h-full justify-between p-3.5 select-none overflow-y-auto">
@@ -123,31 +138,46 @@ export const Sidebar: React.FC = () => {
               folders?.map((folder) => {
                 const isActive = currentFolder === folder.name;
                 return (
-                  <button
+                  <div
                     key={folder.name}
-                    onClick={() => {
-                      setCurrentFolder(folder.name);
-                      setSidebarOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium transition ${
+                    className={`flex items-center rounded-xl transition ${
                       isActive
-                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400 font-semibold'
-                        : 'text-slate-700 hover:bg-slate-200/60 dark:text-slate-300 dark:hover:bg-slate-800'
+                        ? 'bg-blue-50 dark:bg-blue-950/60'
+                        : 'hover:bg-slate-200/60 dark:hover:bg-slate-800'
                     }`}
                   >
-                    <div className="flex items-center gap-3 truncate">
-                      <span className={isActive ? 'text-blue-600' : 'text-slate-400'}>
-                        {getFolderIcon(folder.specialUse, folder.name)}
-                      </span>
-                      <span className="truncate text-[13px]">{getFolderDisplayName(folder)}</span>
-                    </div>
+                    <button
+                      onClick={() => {
+                        setCurrentFolder(folder.name);
+                        setSidebarOpen(false);
+                      }}
+                      className={`flex-1 min-w-0 flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium transition ${
+                        isActive ? 'text-blue-700 dark:text-blue-400 font-semibold' : 'text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 truncate">
+                        <span className={isActive ? 'text-blue-600' : 'text-slate-400'}>
+                          {getFolderIcon(folder.specialUse, folder.name)}
+                        </span>
+                        <span className="truncate text-[13px]">{getFolderDisplayName(folder)}</span>
+                      </div>
 
-                    {folder.unreadCount > 0 && (
-                      <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded-full">
-                        {folder.unreadCount}
-                      </span>
-                    )}
-                  </button>
+                      {folder.unreadCount > 0 && (
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded-full shrink-0">
+                          {folder.unreadCount}
+                        </span>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => toggleSubscribe(folder)}
+                      className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0 rounded-lg"
+                      title={folder.subscribed ? '取消訂閱此資料夾' : '訂閱此資料夾'}
+                      aria-label={folder.subscribed ? `取消訂閱 ${getFolderDisplayName(folder)}` : `訂閱 ${getFolderDisplayName(folder)}`}
+                    >
+                      {folder.subscribed ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600" />}
+                    </button>
+                  </div>
                 );
               })
             )}

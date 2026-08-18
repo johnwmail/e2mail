@@ -34,6 +34,51 @@ func NewMailHandler(poolMgr *imapinternal.PoolManager, sender *smtp.Sender) *Mai
 	}
 }
 
+// SetFolderSubscription 訂閱／取消訂閱 IMAP 資料夾
+func (h *MailHandler) SetFolderSubscription(w http.ResponseWriter, r *http.Request) {
+	sess, _ := middleware.GetSessionFromContext(r.Context())
+	password, _ := middleware.GetPasswordFromContext(r.Context())
+
+	var req struct {
+		Name       string `json:"name"`
+		Subscribed bool   `json:"subscribed"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.BadRequest(w, "invalid json payload: "+err.Error())
+		return
+	}
+	if req.Name == "" {
+		response.BadRequest(w, "folder name is required")
+		return
+	}
+	if strings.EqualFold(req.Name, "INBOX") {
+		response.BadRequest(w, "INBOX cannot be unsubscribed")
+		return
+	}
+
+	client, release, err := h.poolMgr.GetClient(r.Context(), sess, password)
+	if err != nil {
+		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
+		return
+	}
+	defer release()
+
+	if req.Subscribed {
+		if err := client.SubscribeFolder(r.Context(), req.Name); err != nil {
+			response.InternalServerError(w, err.Error())
+			return
+		}
+	} else {
+		if err := client.UnsubscribeFolder(r.Context(), req.Name); err != nil {
+			response.InternalServerError(w, err.Error())
+			return
+		}
+	}
+
+	log.Printf("[FOLDER] %s %s", map[bool]string{true: "subscribed", false: "unsubscribed"}[req.Subscribed], req.Name)
+	response.Success(w, map[string]bool{"subscribed": req.Subscribed})
+}
+
 // ListFolders 取得使用者所有資料夾與未讀數
 func (h *MailHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
 	sess, _ := middleware.GetSessionFromContext(r.Context())

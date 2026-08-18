@@ -11,6 +11,16 @@ export const mailApi = {
     return request<FolderInfo[]>('/mail/folders');
   },
 
+  setFolderSubscription: async (
+    name: string,
+    subscribed: boolean
+  ): Promise<{ subscribed: boolean }> => {
+    return request<{ subscribed: boolean }>('/mail/folders/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ name, subscribed }),
+    });
+  },
+
   getMessages: async (
     folder = 'INBOX',
     page = 1,

@@ -32,6 +32,7 @@ type FolderInfo struct {
 	TotalCount  uint32   `json:"totalCount"`
 	UnreadCount uint32   `json:"unreadCount"`
 	SpecialUse  string   `json:"specialUse,omitempty"`
+	Subscribed  bool     `json:"subscribed"`
 }
 
 // SelectResult 選取資料夾狀態
@@ -141,6 +142,12 @@ func (c *Client) ListFolders(ctx context.Context) ([]FolderInfo, error) {
 		return nil, fmt.Errorf("failed to list mailboxes: %w", err)
 	}
 
+	// 嘗試攞訂閱狀態（LIST-EXTENDED；唔支援嘅 server 就全部視作未訂閱）
+	subscribed := map[string]bool{}
+	if sub, err := c.ListSubscribed(ctx); err == nil {
+		subscribed = sub
+	}
+
 	var results []FolderInfo
 	for _, mb := range mailboxes {
 		var attrs []string
@@ -191,10 +198,44 @@ func (c *Client) ListFolders(ctx context.Context) ([]FolderInfo, error) {
 			TotalCount:  total,
 			UnreadCount: unread,
 			SpecialUse:  specialUse,
+			Subscribed:  subscribed[mb.Mailbox] || strings.EqualFold(mb.Mailbox, "INBOX"),
 		})
 	}
 
 	return results, nil
+}
+
+// ListSubscribed 回傳已訂閱資料夾集合（LIST (SUBSCRIBED) "" "*"；需 LIST-EXTENDED）
+func (c *Client) ListSubscribed(ctx context.Context) (map[string]bool, error) {
+	c.lastUsed = time.Now()
+
+	mailboxes, err := c.rawClient.List("", "*", &imap.ListOptions{SelectSubscribed: true}).Collect()
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[string]bool, len(mailboxes))
+	for _, mb := range mailboxes {
+		set[mb.Mailbox] = true
+	}
+	return set, nil
+}
+
+// SubscribeFolder 訂閱 IMAP 資料夾
+func (c *Client) SubscribeFolder(ctx context.Context, folder string) error {
+	c.lastUsed = time.Now()
+	if err := c.rawClient.Subscribe(folder).Wait(); err != nil {
+		return fmt.Errorf("failed to subscribe %s: %w", folder, err)
+	}
+	return nil
+}
+
+// UnsubscribeFolder 取消訂閱 IMAP 資料夾
+func (c *Client) UnsubscribeFolder(ctx context.Context, folder string) error {
+	c.lastUsed = time.Now()
+	if err := c.rawClient.Unsubscribe(folder).Wait(); err != nil {
+		return fmt.Errorf("failed to unsubscribe %s: %w", folder, err)
+	}
+	return nil
 }
 
 // FindSentFolder 自動尋找伺服器上的「已發送 (Sent)」資料夾
