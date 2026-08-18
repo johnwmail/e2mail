@@ -22,6 +22,7 @@ import { useMailStore } from '../../stores/useMailStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { FolderInfo } from '../../types/api';
 import { PgpKeyModal } from '../mail/PgpKeyModal';
+import { buildInfo } from '../../buildInfo';
 
 const getFolderIcon = (specialUse?: string, name?: string) => {
   const key = (specialUse || name || '').toLowerCase();
@@ -182,6 +183,12 @@ export const Sidebar: React.FC = () => {
           <LogOut className="w-4 h-4" />
           <span>登出帳號</span>
         </button>
+      </div>
+
+      {/* Build 資訊 */}
+      <div className="pt-2 text-[10px] font-mono text-slate-400 dark:text-slate-500 leading-relaxed select-none">
+        <p>{buildInfo.version} · {buildInfo.commitHash}</p>
+        <p>built {buildInfo.buildTime}</p>
       </div>
 
       <PgpKeyModal isOpen={isPgpModalOpen} onClose={() => setIsPgpModalOpen(false)} />

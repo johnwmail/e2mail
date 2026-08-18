@@ -19,6 +19,14 @@ import (
 	"modern-webmail/backend/internal/storage"
 )
 
+var (
+	// Version/BuildTime/CommitHash 由 build 時透過 -ldflags "-X main.Version=..." 注入，
+	// 預設值用於本地/開發 build。
+	Version    = "vdev"
+	BuildTime  = "timeless"
+	CommitHash = "sha-unknown"
+)
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -77,6 +85,7 @@ func main() {
 	}
 
 	go func() {
+		log.Printf("📦 Modern Webmail Backend %s (commit %s, built %s)", Version, CommitHash, BuildTime)
 		log.Printf("🚀 Modern Webmail Backend running on http://localhost:%s", port)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("HTTP server error: %v", err)
