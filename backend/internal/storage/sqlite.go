@@ -36,6 +36,14 @@ type Keyring struct {
 	UpdatedAt                  time.Time `json:"updatedAt"`
 }
 
+// TwoFA 儲存於 SQLite 之兩步驟驗證設定（備份碼以 SHA-256 hash 儲存）
+type TwoFA struct {
+	OwnerEmail   string
+	Secret       string
+	BackupHashes []string
+	EnabledAt    time.Time
+}
+
 // Store SQLite 儲存介面
 type Store interface {
 	// Contacts
@@ -49,6 +57,11 @@ type Store interface {
 	GetKeyring(ownerEmail string) (*Keyring, error)
 	SaveKeyring(keyring *Keyring) error
 	DeleteKeyring(ownerEmail string) error
+
+	// Two-factor authentication
+	GetTwoFA(ownerEmail string) (*TwoFA, error)
+	SaveTwoFA(t *TwoFA) error
+	DeleteTwoFA(ownerEmail string) error
 
 	// Lifecycle
 	MigrateLegacyKeyrings(dataDir string) (migrated int, err error)
@@ -75,6 +88,13 @@ CREATE TABLE IF NOT EXISTS personal_keyrings (
 	fingerprint              TEXT NOT NULL,
 	key_id                   TEXT NOT NULL DEFAULT '',
 	updated_at               INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS two_fa (
+	owner_email        TEXT NOT NULL PRIMARY KEY,
+	secret             TEXT NOT NULL,
+	backup_code_hashes TEXT NOT NULL DEFAULT '[]',
+	enabled_at         INTEGER NOT NULL
 );
 `
 
@@ -356,4 +376,70 @@ func (s *SQLiteStore) MigrateLegacyKeyrings(dataDir string) (int, error) {
 		_ = os.Remove(keyringDir)
 	}
 	return migrated, nil
+}
+
+// GetTwoFA 取得使用者之兩步驟驗證設定（無則回傳 nil）
+func (s *SQLiteStore) GetTwoFA(ownerEmail string) (*TwoFA, error) {
+	var t TwoFA
+	var backupJSON string
+	var enabledAt int64
+	err := s.db.QueryRow(
+		`SELECT secret, backup_code_hashes, enabled_at FROM two_fa WHERE owner_email = ?`,
+		ownerEmail,
+	).Scan(&t.Secret, &backupJSON, &enabledAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get two_fa: %w", err)
+	}
+	t.OwnerEmail = ownerEmail
+	t.EnabledAt = time.Unix(enabledAt, 0).UTC()
+	if err := json.Unmarshal([]byte(backupJSON), &t.BackupHashes); err != nil {
+		t.BackupHashes = nil
+	}
+	return &t, nil
+}
+
+// SaveTwoFA 儲存或更新使用者之兩步驟驗證設定
+func (s *SQLiteStore) SaveTwoFA(t *TwoFA) error {
+	if t.OwnerEmail == "" || t.Secret == "" {
+		return errors.New("owner_email and secret are required")
+	}
+	if t.BackupHashes == nil {
+		t.BackupHashes = []string{}
+	}
+	backupJSON, err := json.Marshal(t.BackupHashes)
+	if err != nil {
+		return fmt.Errorf("failed to marshal backup codes: %w", err)
+	}
+	if t.EnabledAt.IsZero() {
+		t.EnabledAt = time.Now().UTC()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err = s.db.Exec(
+		`INSERT INTO two_fa (owner_email, secret, backup_code_hashes, enabled_at)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(owner_email) DO UPDATE SET
+			secret = excluded.secret,
+			backup_code_hashes = excluded.backup_code_hashes,
+			enabled_at = excluded.enabled_at`,
+		t.OwnerEmail, t.Secret, string(backupJSON), t.EnabledAt.Unix(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save two_fa: %w", err)
+	}
+	return nil
+}
+
+// DeleteTwoFA 刪除使用者之兩步驟驗證設定
+func (s *SQLiteStore) DeleteTwoFA(ownerEmail string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(`DELETE FROM two_fa WHERE owner_email = ?`, ownerEmail)
+	if err != nil {
+		return fmt.Errorf("failed to delete two_fa: %w", err)
+	}
+	return nil
 }

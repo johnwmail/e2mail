@@ -59,7 +59,7 @@ func main() {
 		log.Printf("📦 Migrated %d legacy keyring file(s) into SQLite", migrated)
 	}
 
-	authHandler := handler.NewAuthHandler(sessionStore, poolManager, idleManager)
+	authHandler := handler.NewAuthHandler(sessionStore, store, poolManager, idleManager)
 	mailHandler := handler.NewMailHandler(poolManager, smtpSender)
 	eventsHandler := handler.NewEventsHandler(idleManager)
 	pgpHandler := handler.NewPGPHandler(store)

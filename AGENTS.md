@@ -77,6 +77,7 @@ ssh exedev@debian.exe.xyz 'cd ~/e2mail && \
 After editing frontend code, swap `backend` → `frontend` in the same one-liner.
 
 ## Notes
+- **Responsive UI**: every feature (login, 2FA setup/verify, PGP key management, mail list/view, composer, modals) must work on both mobile and desktop browsers — use responsive Tailwind classes (`lg:`, `md:`, `sm:` breakpoints), ensure touch-friendly tap targets, and never rely on hover-only interactions. Verify on a mobile viewport before deploying.
 - Backend listens on host port **8080**, frontend on **8000** (see `docker-compose.yml`).
 - Backend writes user PGP keyrings to `/data` → named volume `webmail-data`. Don't bind-mount unless you have a reason; the named volume survives `docker compose down`.
 - `frontend/default.conf.template` is rendered by the official `nginx` image's entrypoint using `BACKEND_HOST`/`BACKEND_PORT` env vars from compose — don't hardcode the upstream.

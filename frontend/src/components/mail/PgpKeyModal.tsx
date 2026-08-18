@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { pgpService, PgpKeyPair, PgpContactKey, ParsedKeyInfo, fileToPublicKeyArmor, fileToPrivateKeyArmor } from '../../api/pgp';
 import { useAuthStore } from '../../stores/useAuthStore';
+import { SecurityTab } from './SecurityTab';
+import { ShieldAlert } from 'lucide-react';
 
 interface PgpKeyModalProps {
   isOpen: boolean;
@@ -27,7 +29,7 @@ interface PgpKeyModalProps {
 
 export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => {
   const { session } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'mykey' | 'contacts'>('mykey');
+  const [activeTab, setActiveTab] = useState<'mykey' | 'contacts' | 'security'>('mykey');
   const [keyPair, setKeyPair] = useState<PgpKeyPair | null>(null);
   const [contacts, setContacts] = useState<PgpContactKey[]>([]);
 
@@ -108,11 +110,11 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
   // 為避免前端 openpgp.js 在大檔案（≥4MB 多公鑰）情境下解析失敗，
   // 直接將檔案 armored 內容送到後端，由 ProtonMail/go-crypto 解析。
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
     e.target.value = '';
 
-    const totalBytes = Array.from(files).reduce((s, f) => s + f.size, 0);
+    const totalBytes = files.reduce((s, f) => s + f.size, 0);
     setMsg({ type: 'success', text: `正在上傳 ${files.length} 個檔案（共 ${totalBytes.toLocaleString()} bytes）至伺服器…` });
 
     let totalSaved = 0;
@@ -359,6 +361,20 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
           >
             聯絡人公鑰庫 ({contacts.length})
           </button>
+          <button
+            onClick={() => {
+              setActiveTab('security');
+              setMsg(null);
+            }}
+            className={`py-3 border-b-2 transition flex items-center gap-1.5 ${
+              activeTab === 'security'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5" />
+            帳號安全
+          </button>
         </div>
 
         {/* 提示訊息 */}
@@ -381,7 +397,9 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
 
         {/* 內容區塊 */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          {activeTab === 'mykey' ? (
+          {activeTab === 'security' ? (
+            <SecurityTab sessionEmail={session?.email} />
+          ) : activeTab === 'mykey' ? (
             <>
               {keyPair ? (
                 <div className="space-y-4">

@@ -37,9 +37,14 @@ export async function request<T>(
   }
 
   if (response.status === 401) {
-    localStorage.removeItem('webmail_token');
-    localStorage.removeItem('webmail_session');
-    if (!window.location.pathname.includes('/login')) {
+    // 2FA endpoints 的 401 係業務錯誤（驗證碼錯誤），非 session 失效
+    if (
+      !endpoint.startsWith('/2fa/') &&
+      !endpoint.startsWith('/auth/logout') &&
+      !window.location.pathname.includes('/login')
+    ) {
+      localStorage.removeItem('webmail_token');
+      localStorage.removeItem('webmail_session');
       window.dispatchEvent(new Event('auth:unauthorized'));
     }
   }

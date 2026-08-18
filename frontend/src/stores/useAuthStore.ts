@@ -2,12 +2,18 @@ import { create } from 'zustand';
 import { authApi } from '../api/auth';
 import { LoginRequest, Session } from '../types/api';
 
+export interface LoginResult {
+  requires2fa: true;
+  challenge: string;
+}
+
 interface AuthState {
   token: string | null;
   session: Session | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (req: LoginRequest) => Promise<void>;
+  login: (req: LoginRequest) => Promise<LoginResult | null>;
+  verify2fa: (challenge: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
   initAuth: () => Promise<void>;
 }
@@ -22,7 +28,23 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   login: async (req: LoginRequest) => {
     const res = await authApi.login(req);
-    localStorage.setItem('webmail_token', res.token);
+    if (res.requires2fa) {
+      return { requires2fa: true, challenge: res.challenge! };
+    }
+    localStorage.setItem('webmail_token', res.token!);
+    localStorage.setItem('webmail_session', JSON.stringify(res.session));
+    set({
+      token: res.token,
+      session: res.session,
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    return null;
+  },
+
+  verify2fa: async (challenge: string, code: string) => {
+    const res = await authApi.verify2fa({ challenge, code });
+    localStorage.setItem('webmail_token', res.token!);
     localStorage.setItem('webmail_session', JSON.stringify(res.session));
     set({
       token: res.token,

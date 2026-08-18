@@ -96,8 +96,35 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  token: string;
-  session: Session;
+  token?: string;
+  session?: Session;
+  requires2fa?: boolean;
+  challenge?: string;
+}
+
+export interface Verify2FARequest {
+  challenge: string;
+  code: string;
+}
+
+export interface TwoFAStatusResponse {
+  enabled: boolean;
+}
+
+export interface TwoFASetupResponse {
+  secret: string;
+  otpauthUrl: string;
+  issuer: string;
+  account: string;
+}
+
+export interface TwoFAEnableResponse {
+  enabled: boolean;
+  backupCodes: string[];
+}
+
+export interface TwoFARegenerateResponse {
+  backupCodes: string[];
 }
 
 export interface OutgoingMessage {

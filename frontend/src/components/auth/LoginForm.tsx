@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Lock, Eye, EyeOff, ChevronDown, ChevronUp, Loader2, AlertCircle, ShieldAlert, Sparkles, Server } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ChevronDown, ChevronUp, Loader2, AlertCircle, ShieldAlert, Sparkles, Server, KeyRound, ArrowLeft } from 'lucide-react';
 import { useAuthStore } from '../../stores/useAuthStore';
 
 interface ServerDefaults {
@@ -27,11 +27,16 @@ const KNOWN_DOMAINS: Record<string, { imapHost: string; imapPort: number; smtpHo
 };
 
 export const LoginForm: React.FC = () => {
-  const { login } = useAuthStore();
+  const { login, verify2fa } = useAuthStore();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // 2FA 狀態
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [twoFACode, setTwoFACode] = useState('');
+  const [twoFALoading, setTwoFALoading] = useState(false);
 
   // 背景自動維護的伺服器參數（預設隱藏）
   const [imapHost, setImapHost] = useState('');
@@ -120,7 +125,7 @@ export const LoginForm: React.FC = () => {
     setError(null);
 
     try {
-      await login({
+      const result = await login({
         email: email.trim(),
         password,
         imapHost: finalImapHost,
@@ -132,11 +137,43 @@ export const LoginForm: React.FC = () => {
         smtpUseTls: true,
         smtpAllowInsecureTls: allowInsecureTls,
       });
+
+      // 需要第二階段驗證
+      if (result?.requires2fa) {
+        setChallenge(result.challenge);
+        setPassword('');
+      }
     } catch (err: any) {
       setError(err.message || '登入失敗，請檢查密碼或展開進階設定確認伺服器主機');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleTwoFASubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!challenge || !twoFACode.trim()) {
+      setError('請輸入驗證碼');
+      return;
+    }
+
+    setTwoFALoading(true);
+    setError(null);
+
+    try {
+      await verify2fa(challenge, twoFACode.trim());
+    } catch (err: any) {
+      setError(err.message || '驗證碼錯誤，請重試');
+      setTwoFACode('');
+    } finally {
+      setTwoFALoading(false);
+    }
+  };
+
+  const handleBackToCredentials = () => {
+    setChallenge(null);
+    setTwoFACode('');
+    setError(null);
   };
 
   return (
@@ -163,6 +200,59 @@ export const LoginForm: React.FC = () => {
           </div>
         )}
 
+        {challenge ? (
+          /* 2FA 驗證步驟 */
+          <form onSubmit={handleTwoFASubmit} className="space-y-4">
+            <div className="flex items-start gap-3 p-3.5 rounded-xl bg-blue-50 border border-blue-200/60">
+              <KeyRound className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+              <div className="text-xs text-blue-800 leading-relaxed">
+                <div className="font-bold mb-0.5">兩步驟驗證 (2FA)</div>
+                此帳號已啟用兩步驟驗證。請輸入 Authenticator App 顯示嘅 6 位數驗證碼，或其中一個備份碼。
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                驗證碼
+              </label>
+              <input
+                type="text"
+                required
+                autoFocus
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                value={twoFACode}
+                onChange={(e) => setTwoFACode(e.target.value)}
+                placeholder="••••••"
+                className="w-full px-3.5 py-3 text-sm text-center tracking-[0.5em] font-mono bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 focus:bg-white text-slate-900 placeholder:text-slate-400 transition"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={twoFALoading}
+              className="w-full py-3 px-4 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600 active:scale-[0.99] text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-sky-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {twoFALoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  正在驗證...
+                </>
+              ) : (
+                '驗證並登入'
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleBackToCredentials}
+              className="w-full flex items-center justify-center gap-1.5 text-xs text-slate-500 hover:text-sky-600 transition font-medium"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              返回重新輸入帳號密碼
+            </button>
+          </form>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Email 輸入框 */}
           <div>
@@ -309,6 +399,7 @@ export const LoginForm: React.FC = () => {
             )}
           </button>
         </form>
+        )}
       </div>
     </div>
   );

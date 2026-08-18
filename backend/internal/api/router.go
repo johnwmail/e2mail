@@ -40,6 +40,7 @@ func NewRouter(
 	r.Route("/api", func(api chi.Router) {
 		// 公開認證端點
 		api.Post("/auth/login", authH.Login)
+		api.Post("/auth/verify-2fa", authH.Verify2FA)
 
 		// 公開伺服器預設值（無需登入，登入頁面預填用）
 		api.Get("/server-config", configH.Get)
@@ -51,6 +52,13 @@ func NewRouter(
 			// 會話與使用者狀態
 			protected.Post("/auth/logout", authH.Logout)
 			protected.Get("/auth/me", authH.Me)
+
+			// 兩步驟驗證 (2FA) 管理
+			protected.Get("/2fa/status", authH.TwoFAStatus)
+			protected.Post("/2fa/setup", authH.TwoFASetup)
+			protected.Post("/2fa/enable", authH.TwoFAEnable)
+			protected.Post("/2fa/disable", authH.TwoFADisable)
+			protected.Post("/2fa/regenerate-backup-codes", authH.TwoFARegenerateBackupCodes)
 
 			// 即時事件推播 (SSE)
 			protected.Get("/events", eventsH.SSE)

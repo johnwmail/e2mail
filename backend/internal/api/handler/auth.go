@@ -4,27 +4,34 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"modern-webmail/backend/internal/api/middleware"
+	"modern-webmail/backend/internal/auth"
 	"modern-webmail/backend/internal/imap"
 	"modern-webmail/backend/internal/session"
+	"modern-webmail/backend/internal/storage"
 	"modern-webmail/backend/pkg/response"
 )
 
 // AuthHandler 處理登入、登出與身分校驗
 type AuthHandler struct {
-	store   session.Store
-	poolMgr *imap.PoolManager
-	idleMgr *imap.IdleManager
+	store         session.Store
+	storage       storage.Store
+	poolMgr       *imap.PoolManager
+	idleMgr       *imap.IdleManager
+	pendingLogin  *auth.PendingLoginStore
 }
 
 // NewAuthHandler 初始化 AuthHandler
-func NewAuthHandler(store session.Store, poolMgr *imap.PoolManager, idleMgr *imap.IdleManager) *AuthHandler {
+func NewAuthHandler(store session.Store, storageStore storage.Store, poolMgr *imap.PoolManager, idleMgr *imap.IdleManager) *AuthHandler {
 	return &AuthHandler{
-		store:   store,
-		poolMgr: poolMgr,
-		idleMgr: idleMgr,
+		store:        store,
+		storage:      storageStore,
+		poolMgr:      poolMgr,
+		idleMgr:      idleMgr,
+		pendingLogin: auth.NewPendingLoginStore(3 * time.Minute),
 	}
 }
 
@@ -45,8 +52,16 @@ type LoginRequest struct {
 
 // LoginResponse 登入成功回應結構
 type LoginResponse struct {
-	Token   string           `json:"token"`
-	Session *session.Session `json:"session"`
+	Token       string           `json:"token,omitempty"`
+	Session     *session.Session `json:"session,omitempty"`
+	Requires2FA bool             `json:"requires2fa,omitempty"`
+	Challenge   string           `json:"challenge,omitempty"`
+}
+
+// Verify2FARequest 2FA 驗證參數結構
+type Verify2FARequest struct {
+	Challenge string `json:"challenge"`
+	Code      string `json:"code"`
 }
 
 // Login 處理使用者登入並驗證 IMAP 連線
@@ -106,6 +121,29 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = testClient.Close()
 
+	// 1.5 若使用者已啟用 2FA，先建立 pending challenge，等待驗證碼
+	if twoFA, _ := h.storage.GetTwoFA(normalizeEmail(req.Email)); twoFA != nil {
+		challenge := h.pendingLogin.Create(&auth.PendingLogin{
+			Email:                req.Email,
+			Username:             username,
+			Password:             req.Password,
+			IMAPHost:             req.IMAPHost,
+			IMAPPort:             imapPort,
+			IMAPUseTLS:           imapUseTLS,
+			IMAPAllowInsecureTLS: req.IMAPAllowInsecureTLS,
+			SMTPHost:             req.SMTPHost,
+			SMTPPort:             smtpPort,
+			SMTPUseTLS:           smtpUseTLS,
+			SMTPAllowInsecureTLS: req.SMTPAllowInsecureTLS,
+		})
+		log.Printf("[AUTH] 2FA required for %s (challenge created)", req.Email)
+		response.Success(w, LoginResponse{
+			Requires2FA: true,
+			Challenge:   challenge,
+		})
+		return
+	}
+
 	// 2. 建立並加密儲存 Session
 	newSess := &session.Session{
 		Email:                req.Email,
@@ -147,6 +185,107 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Token:   savedSess.ID,
 		Session: savedSess,
 	})
+}
+
+// Verify2FA 驗證 TOTP 或備份碼，完成第二階段登入
+func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
+	var req Verify2FARequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.BadRequest(w, "invalid request body format")
+		return
+	}
+	if req.Challenge == "" || req.Code == "" {
+		response.BadRequest(w, "challenge and code are required")
+		return
+	}
+
+	pl := h.pendingLogin.Get(req.Challenge)
+	if pl == nil {
+		response.Unauthorized(w, "驗證已逾時或無效，請重新登入")
+		return
+	}
+
+	twoFA, err := h.storage.GetTwoFA(normalizeEmail(pl.Email))
+	if err != nil {
+		response.InternalServerError(w, "failed to load 2FA settings")
+		return
+	}
+	if twoFA == nil {
+		h.pendingLogin.Delete(req.Challenge)
+		response.Unauthorized(w, "此帳號未啟用兩步驟驗證")
+		return
+	}
+
+	code := strings.TrimSpace(req.Code)
+
+	// 驗證 TOTP code
+	if auth.ValidateCode(twoFA.Secret, code) {
+		h.completeLogin(w, r, pl, req.Challenge)
+		return
+	}
+
+	// 驗證備份碼（一次性使用）
+	if idx := auth.ValidateBackupCode(code, twoFA.BackupHashes); idx >= 0 {
+		twoFA.BackupHashes = append(twoFA.BackupHashes[:idx], twoFA.BackupHashes[idx+1:]...)
+		if len(twoFA.BackupHashes) == 0 {
+			twoFA.BackupHashes = []string{}
+		}
+		if err := h.storage.SaveTwoFA(twoFA); err != nil {
+			log.Printf("[AUTH ERROR] failed to consume backup code for %s: %v", pl.Email, err)
+		}
+		h.completeLogin(w, r, pl, req.Challenge)
+		return
+	}
+
+	h.pendingLogin.MarkFailed(req.Challenge)
+	log.Printf("[AUTH] 2FA code verification failed for %s", pl.Email)
+	response.Unauthorized(w, "驗證碼錯誤，請重試")
+}
+
+// completeLogin 建立正式 Session 並返回登入成功
+func (h *AuthHandler) completeLogin(w http.ResponseWriter, r *http.Request, pl *auth.PendingLogin, challenge string) {
+	newSess := &session.Session{
+		Email:                pl.Email,
+		Username:             pl.Username,
+		IMAPHost:             pl.IMAPHost,
+		IMAPPort:             pl.IMAPPort,
+		IMAPUseTLS:           pl.IMAPUseTLS,
+		IMAPAllowInsecureTLS: pl.IMAPAllowInsecureTLS,
+		SMTPHost:             pl.SMTPHost,
+		SMTPPort:             pl.SMTPPort,
+		SMTPUseTLS:           pl.SMTPUseTLS,
+		SMTPAllowInsecureTLS: pl.SMTPAllowInsecureTLS,
+	}
+
+	savedSess, err := h.store.Create(newSess, pl.Password)
+	if err != nil {
+		log.Printf("[AUTH ERROR] Session create failed after 2FA: %v", err)
+		response.InternalServerError(w, "failed to create session")
+		return
+	}
+
+	_ = h.idleMgr.GetOrStartListener(savedSess, pl.Password)
+	h.pendingLogin.Delete(challenge)
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "webmail_session",
+		Value:    savedSess.ID,
+		Path:     "/",
+		Expires:  time.Now().Add(24 * time.Hour),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+	})
+
+	log.Printf("[AUTH SUCCESS] Login successful for %s (Session ID: %s, via 2FA)", pl.Email, savedSess.ID)
+	response.Success(w, LoginResponse{
+		Token:   savedSess.ID,
+		Session: savedSess,
+	})
+}
+
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
 
 // Logout 登出並清理連線池與 IDLE
