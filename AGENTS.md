@@ -2,14 +2,13 @@
 
 ## Project
 Self-hosted end-to-end encrypted webmail client.
-- `backend/` — Go 1.22 + chi, IMAP/SMTP proxy + HTTP API on `:8080`.
-- `frontend/` — React 18 + Vite + Tailwind, nginx-served on `:8000`.
-- `docker-compose.yml` — orchestrates both services; named volume `webmail-data` persists PGP keyrings.
+- `backend/` — Go 1.25 + chi, IMAP/SMTP proxy + HTTP API, serves the embedded frontend.
+- `frontend/` — React 18 + Vite + Tailwind; built by the Docker image and `go:embed` into the backend binary (see `backend/web`).
+- `Dockerfile` — single multi-stage image (node build → go build → alpine runtime); `docker-compose.yml` runs one service.
 
 ## Notes
 - **Responsive UI**: every feature (login, 2FA setup/verify, PGP key management, mail list/view, composer, modals) must work on both mobile and desktop browsers — use responsive Tailwind classes (`lg:`, `md:`, `sm:` breakpoints), ensure touch-friendly tap targets, and never rely on hover-only interactions. Verify on a mobile viewport before deploying.
-- Backend listens on host port **8080**, frontend on **8000** (see `docker-compose.yml`).
+- Service listens on host port **8080** (see `docker-compose.yml`). Frontend is served by the backend itself on the same port; `/api/*` routes take precedence, everything else falls back to the SPA (`internal/api/static.go`).
 - Backend writes user PGP keyrings to `/data` → named volume `webmail-data`. Don't bind-mount unless you have a reason; the named volume survives `docker compose down`.
-- `frontend/default.conf.template` is rendered by the official `nginx` image's entrypoint using `BACKEND_HOST`/`BACKEND_PORT` env vars from compose — don't hardcode the upstream.
-- SSE on `/api/events` needs `proxy_buffering off` (already set in the nginx template); don't reintroduce a caching proxy in front of the backend without preserving that.
+- `Version`/`BuildTime`/`CommitHash` defaults are `vdev`/`timeless`/`sha-unknown`, overridden via `-ldflags -X` (backend) and `VITE_APP_*` build env (frontend) — see the Dockerfile ARGs and `.github/workflows/container.yml`.
 - Tests: backend `go test ./...` (add `-race` for CI), frontend `npm run test` (Vitest + Testing Library). GitHub Actions runs both on push/PR to `main` (see `.github/workflows/test.yml`); run them locally before committing.

@@ -91,5 +91,8 @@ func NewRouter(
 		})
 	})
 
+	// SPA static（embedded frontend）— 未匹配的請求一律由前端接手
+	r.NotFound(staticHandler())
+
 	return r
 }

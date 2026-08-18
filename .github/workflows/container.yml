@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build & push container images
+    name: Build & push container image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,23 +29,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & push backend
+      - name: Build & push
         uses: docker/build-push-action@v7
         with:
-          context: ./backend
+          context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}-backend:${{ github.ref_name }}
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            BUILD_TIME=${{ steps.meta.outputs.build_time }}
-            COMMIT_HASH=${{ github.sha }}
-
-      - name: Build & push frontend
-        uses: docker/build-push-action@v7
-        with:
-          context: ./frontend
-          push: true
-          tags: ghcr.io/${{ github.repository }}-frontend:${{ github.ref_name }}
+          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
           build-args: |
             VERSION=${{ github.ref_name }}
             BUILD_TIME=${{ steps.meta.outputs.build_time }}

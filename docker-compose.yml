@@ -1,11 +1,11 @@
 version: '3.8'
 
 services:
-  backend:
+  webmail:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
-    container_name: modern-webmail-backend
+    container_name: modern-webmail
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -21,22 +21,6 @@ services:
       # - DEFAULT_ALLOW_INSECURE_TLS=false    # 預設為 false；僅在自簽憑證環境顯式設為 true
     volumes:
       - webmail-data:/data
-    networks:
-      - webmail-net
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: modern-webmail-frontend
-    restart: unless-stopped
-    ports:
-      - "8000:80"
-    environment:
-      - BACKEND_HOST=backend
-      - BACKEND_PORT=8080
-    depends_on:
-      - backend
     networks:
       - webmail-net
 
