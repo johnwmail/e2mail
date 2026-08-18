@@ -34,7 +34,9 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:latest
           build-args: |
             VERSION=${{ github.ref_name }}
             BUILD_TIME=${{ steps.meta.outputs.build_time }}
