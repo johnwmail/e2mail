@@ -38,6 +38,10 @@ node_modules/
 dist/
 .vite/
 
+# `backend/web/dist` is go:embed-ed at build time; keep the placeholder tracked
+!backend/web/dist/
+!backend/web/dist/.gitkeep
+
 # Browser test artefacts (Playwright MCP snapshots / console logs / key exports)
 .playwright-mcp/
 
