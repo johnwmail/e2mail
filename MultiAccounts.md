@@ -55,9 +55,28 @@ CREATE INDEX idx_accounts_user ON accounts(user_email);
 
 ### Session 模型擴充
 
-- `session.Session` 保持「登入使用者」概念（user_email + 密碼用於解鎖 credentials）。
+- `session.Session` 保持「登入使用者」概念（user_email + 登入密碼用於解鎖 credentials）。
 - 新增 `Accounts []AccountSummary`（帳號設定，**不含密碼**）。
-- 密碼儲存：現有單一 `Password` → 改為 `map[accountID][]byte`（AES-GCM 加密，key = 現有 `SESSION_SECRET`）。密碼喺「新增/編輯帳號」時由前端傳入並加密保存於 session 記憶體。
+
+### 密碼儲存 — LUKS 式 envelope encryption（「記住密碼」選項）
+
+採用同 **LUKS 一樣**嘅兩層 key wrapping：用一個 random **DEK**（data encryption key）加密所有 IMAP/SMTP 密碼，登入密碼只 wrap 個 DEK。改登入密碼只需 re-wrap DEK，**唔使重加密任何 IMAP/SMTP 密碼**（即 LUKS「改 passphrase 唔使重加密成個硬碟」）。
+
+```
+MasterKey = KDF(app 登入密碼)              ← 由登入密碼派生（Argon2id，每 user 獨立 salt）
+DEK       = 隨機生成嘅 one-account-key      ← 用嚟 encrypt 所有帳號密碼
+
+DB 儲存：
+  wrapped_dek = AES-GCM_Encrypt(MasterKey, DEK)
+  每帳號       = AES-GCM_Encrypt(DEK, imap_password)
+                AES-GCM_Encrypt(DEK, smtp_password)
+```
+
+- **首次登入**：用第一個帳號登入密碼派生 MasterKey → 隨機生成 DEK → 加密存 `wrapped_dek` + 該帳號密碼。登入驗證照樣連 IMAP 確認（現有邏輯）。
+- **之後登入**：MasterKey 試 unwrap `wrapped_dek` → 成功 = 登入成功，並解鎖晒所有帳號密碼。
+- **改登入密碼**：只需 `wrapped_dek = Encrypt(KDF(新密碼), 同一 DEK)`，所有 IMAP/SMTP 密碼原封不動。
+- **唔記住密碼（冇 tick）**：維持現狀——密碼只存 session 記憶體（`map[accountID][]byte`，AES-GCM），重啟後全部要重新輸入。
+- **安全**：攻擊者攞到 DB 冇登入密碼就 decrypt 唔到 DEK → 讀唔到任何密碼；DEK 隨機生成，可獨立 rotate。每帳號密碼用 DEK 加密時可再分開 nonce/salt。
 
 ### IMAP/SMTP pool 鍵
 
@@ -150,6 +169,7 @@ CREATE INDEX idx_accounts_user ON accounts(user_email);
 │                                                    │
 │ 使用者名稱   [ john@work.com         ]              │
 │ 密碼         [ •••••••••••••          ]（編輯時可留空=不變）│
+│ ☐ 記住密碼（加密存於伺服器；遺失登入密碼將無法解鎖）         │
 │                                                    │
 │ [ 測試連線 ]  ✅ IMAP 連線成功 / SMTP 連線成功         │
 │                                        [儲存] [取消] │
@@ -160,6 +180,7 @@ CREATE INDEX idx_accounts_user ON accounts(user_email);
 - **「測試連線」按鈕**：儲存前即時呼叫 `/api/accounts/{id}/test`（新增時用暫存 id），分別顯示 IMAP / SMTP 結果。
 - **加密欄位**：TLS / STARTTLS / 無 三選一（對應現有 login 表單邏輯，465=implicit TLS、587=STARTTLS、25=無/STARTTLS）。
 - **密碼**：新增必填；編輯可留空（表示沿用舊密碼）。
+- **「記住密碼」**：tick 後以 LUKS 式 envelope encryption 加密存 DB（§2），重啟/重登入都唔使重新輸入；首次 tick 時**醒目警告**「遺失登入密碼將永久無法解鎖所有帳號」。
 - **「設為預設」**：登入後第一個載入嘅帳號。預設帳號唔可以刪除（或刪除前要先改預設）。
 - **驗證**：Email 格式、Host 必填、Port 範圍。刪除前 confirm（避免誤刪）。
 
@@ -200,7 +221,8 @@ CREATE INDEX idx_accounts_user ON accounts(user_email);
 
 ## 8. 風險與注意事項
 
-- **密碼只在記憶體**：重啟後需重新輸入（除非日後加「記住密碼」加密落盤——目前**唔建議**，保持安全）。
+- **「記住密碼」＝加密存 DB**：採用 LUKS 式 envelope encryption（§2），登入密碼做 MasterKey wrap 個 random DEK。**不另設 recovery code**——若用戶遺失登入密碼，DB 內所有帳號密碼將永久無法解鎖。UI 必須醒目警告呢一點（尤其首次啟用「記住密碼」時）。
+- **未 tick「記住密碼」**：密碼只存 session 記憶體，重啟後需重新輸入（現狀，安全但唔方便）。
 - **SSE / IDLE 多帳號**：folder tree 要求**同時監聽所有帳號**先可以即時顯示每個帳號嘅 unread count，每個帳號要開一條 IMAP IDLE 連線 → 要評估 server 連線數上限（帳號多 + 使用者多時連線數會線性增長，可能要設上限或改用 polling fallback）。
 - **刪除帳號**：唔刪 keyring（per-user keyring 屬 user，與帳號無關）。確認 UI 要清楚提示。
 - **效能**：點 folder 先 SELECT + fetch（延遲載入）；unread count 靠背景監聽更新；可用現有 cache（staleTime）減少重複 fetch。
