@@ -56,7 +56,8 @@ func TestDeleteContactURLEncodedEmail(t *testing.T) {
 	}
 
 	// 2. Delete，模擬前端 removeContactKey：encodeURIComponent(email.toLowerCase())
-	delURL := "/pgp/contacts/" + url.PathEscape("alice@example.com")
+	//    （encodeURIComponent 會將 '@' encode 成 %40，同 url.QueryEscape 一致）
+	delURL := "/pgp/contacts/" + url.QueryEscape("alice@example.com")
 	req2 := httptest.NewRequest(http.MethodDelete, delURL, nil).WithContext(ctx)
 	w2 := httptest.NewRecorder()
 	r.ServeHTTP(w2, req2)

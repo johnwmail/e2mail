@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -180,7 +181,13 @@ func (h *ContactsHandler) DeleteContact(w http.ResponseWriter, r *http.Request) 
 		response.Unauthorized(w, "unauthorized session")
 		return
 	}
-	email := strings.ToLower(strings.TrimSpace(chi.URLParam(r, "email")))
+	emailParam := chi.URLParam(r, "email")
+	decoded, err := url.PathUnescape(emailParam)
+	if err != nil {
+		response.BadRequest(w, "invalid email encoding")
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(decoded))
 	if email == "" {
 		response.BadRequest(w, "email is required")
 		return
