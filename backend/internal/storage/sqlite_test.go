@@ -124,8 +124,10 @@ func TestContactsCRUD(t *testing.T) {
 		t.Fatalf("list len = %d, want 1", len(list))
 	}
 
-	if err := s.DeleteContact(owner, "them@a.b"); err != nil {
+	if affected, err := s.DeleteContact(owner, "them@a.b"); err != nil {
 		t.Fatalf("DeleteContact: %v", err)
+	} else if affected != 1 {
+		t.Fatalf("DeleteContact affected = %d, want 1", affected)
 	}
 	if missing, _ := s.GetContact(owner, "them@a.b"); missing != nil {
 		t.Fatal("contact should be gone after delete")

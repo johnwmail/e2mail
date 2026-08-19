@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -184,9 +185,12 @@ func (h *ContactsHandler) DeleteContact(w http.ResponseWriter, r *http.Request) 
 		response.BadRequest(w, "email is required")
 		return
 	}
-	if err := h.store.DeleteContact(owner, email); err != nil {
+	log.Printf("[DELETE CONTACT] owner=%q email=%q", owner, email)
+	affected, err := h.store.DeleteContact(owner, email)
+	if err != nil {
 		response.InternalServerError(w, "failed to delete contact: "+err.Error())
 		return
 	}
+	log.Printf("[DELETE CONTACT] owner=%q email=%q affected=%d", owner, email, affected)
 	response.Success(w, map[string]string{"message": "contact deleted"})
 }

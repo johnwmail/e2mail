@@ -51,7 +51,7 @@ type Store interface {
 	GetContact(ownerEmail, contactEmail string) (*ContactKey, error)
 	UpsertContact(contact ContactKey) error
 	BulkUpsertContacts(ownerEmail string, contacts []ContactKey) (saved int, skipped []string, err error)
-	DeleteContact(ownerEmail, contactEmail string) error
+	DeleteContact(ownerEmail, contactEmail string) (int64, error)
 
 	// Personal keyring
 	GetKeyring(ownerEmail string) (*Keyring, error)
@@ -260,17 +260,17 @@ func (s *SQLiteStore) BulkUpsertContacts(ownerEmail string, contacts []ContactKe
 }
 
 // DeleteContact 刪除某使用者的單一聯絡人
-func (s *SQLiteStore) DeleteContact(ownerEmail, contactEmail string) error {
+func (s *SQLiteStore) DeleteContact(ownerEmail, contactEmail string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.Exec(
+	res, err := s.db.Exec(
 		`DELETE FROM contact_keys WHERE owner_email = ? AND contact_email = ?`,
 		ownerEmail, contactEmail,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to delete contact: %w", err)
+		return 0, fmt.Errorf("failed to delete contact: %w", err)
 	}
-	return nil
+	return res.RowsAffected()
 }
 
 // GetKeyring 取得使用者之個人金鑰包（無則回傳 nil）
