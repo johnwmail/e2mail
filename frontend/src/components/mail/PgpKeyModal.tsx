@@ -32,6 +32,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
   const [activeTab, setActiveTab] = useState<'mykey' | 'contacts' | 'security'>('mykey');
   const [keyPair, setKeyPair] = useState<PgpKeyPair | null>(null);
   const [contacts, setContacts] = useState<PgpContactKey[]>([]);
+  const [removingEmail, setRemovingEmail] = useState<string | null>(null);
 
   // 產生金鑰表單狀態
   const [name, setName] = useState('');
@@ -315,8 +316,17 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
   };
 
   const handleRemoveContact = async (email: string) => {
-    await pgpService.removeContactKey(email);
-    loadKeys();
+    if (!window.confirm(`確定要刪除 ${email} 的聯絡人公鑰嗎？`)) return;
+    setRemovingEmail(email);
+    try {
+      await pgpService.removeContactKey(email);
+      await loadKeys();
+      setMsg({ type: 'success', text: `已刪除 ${email} 的公鑰。` });
+    } catch (err: any) {
+      setMsg({ type: 'error', text: '刪除失敗: ' + (err?.message || String(err)) });
+    } finally {
+      setRemovingEmail(null);
+    }
   };
 
   return (
@@ -774,10 +784,15 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                         </div>
                         <button
                           onClick={() => handleRemoveContact(c.email)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg transition"
-                          title="刪除此公鑰"
+                          disabled={removingEmail !== null}
+                          className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={removingEmail === c.email ? '刪除中...' : '刪除此公鑰'}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          {removingEmail === c.email ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
                         </button>
                       </div>
                     ))}
