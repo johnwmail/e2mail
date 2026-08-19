@@ -86,26 +86,33 @@ CREATE INDEX idx_accounts_user ON accounts(user_email);
 
 ## 4. 前端 UI 設計
 
-### 4.1 整體佈局（新增「帳號切換」）
+### 4.1 整體佈局（Thunderbird / iPhone Mail 式：folders 平鋪）
 
-沿用現有 Header + Sidebar 結構，做最小侵入：
+沿用現有 Header + Sidebar 結構，但 sidebar 改為**一棵 folder tree，所有帳號一次過平鋪**（同 Thunderbird / iOS Mail 一致），每個 folder 顯示自己的 unread count，所以可以一眼睇晒每個帳號有咩 folders 同有幾多未讀：
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ Header: [Logo]  [🔍搜尋]      [帳號切換 ▼] [PGP] [寫信] [登出]│
+│ Header: [Logo]  [🔍搜尋]        [管理帳號] [PGP] [寫信] [登出]│
 ├──────────┬─────────────────────────────────────────────────┤
 │ Sidebar  │                                                  │
-│ ┌──────┐ │  Message List / Viewer（顯示所選帳號內容）          │
-│ │ 👤 公司│ │                                                  │
-│ │ 👤 私人│ │  （含 Header 中間嘅帳號切換器同步）                │
-│ └──────┘ │                                                  │
-│ 資料夾…   │                                                  │
-└──────────┴─────────────────────────────────────────────────┘
+│ ▾ 公司信箱         3   ← 帳號節點（顯示該帳號總未讀）        │
+│    ▸ 收件匣       3                                          │
+│    ▸ 已發送       0                                          │
+│    ▸ 草稿箱       0                                          │
+│ ▾ 私人信箱        12  ← 另一帳號，一齊顯示                   │
+│    ▸ 收件匣       12                                         │
+│    ▸ 封存         0                                          │
+│ 資料夾…                                                      │
+└──────────┬─────────────────────────────────────────────────┘
+           ▼
+   Message List / Viewer（顯示目前點擊嗰個 folder 嘅郵件）
 ```
 
-- **Header 帳號切換器**（desktop 顯示 dropdown，mobile 用 drawer/底部 sheet）：列出所有帳號 + 「管理帳號…」入口。
-- **Sidebar 頂部帳號條**：顯示目前帳號（label + email），點擊切換（同時關閉/保持 folder 狀態視乎設計——建議切換帳號後自動跳去該帳號嘅 INBOX）。
-- 切換帳號 = 重新 fetch 該帳號 folders + INBOX，SSE 訂閱亦切換到該帳號。
+- **Sidebar 係一棵 folder tree**：頂層係每個帳號（可摺疊），下面係該帳號嘅 folders。每個節點顯示 unread badge。
+- **帳號節點顯示該帳號嘅總未讀數**（將所有 folder unread 加總），所以就算未展開該帳號都知道佢有冇新 email。
+- **點擊任何 folder** → Message List 載入嗰個 (account, folder) 嘅郵件；Viewer 顯示揀中郵件。
+- **Header**：由「帳號切換器」改為「管理帳號」入口（因為切換已經喺 sidebar 嘅 folder tree 完成）。Search/Composer 操作於**目前 active 帳號**（最後點擊嗰個）。
+- 需要**同時監聽所有帳號**（每個帳號開一條 IMAP IDLE / SSE），先可以即時更新所有帳號嘅 unread count（見 §8）。
 
 ### 4.2 帳號管理頁面（`/accounts` 或 Modal）
 
@@ -158,9 +165,10 @@ CREATE INDEX idx_accounts_user ON accounts(user_email);
 
 ### 4.3 Mobile 體驗
 
-- 帳號切換器：mobile 用 **bottom sheet**（列出帳號，touch target ≥ 44px）。
+- Sidebar（抽屜）內維持 folder tree：帳號節點 + 底下 folders，帳號節點可摺疊（touch target ≥ 44px）。
+- 帳號多時，預設摺疊非 active 帳號，只展開目前帳號，避免 sidebar 過長。
 - 帳號管理：用 **全螢幕 page**（scroll 長表單較好用），保留返回鍵。
-- 唔用 hover-only；所有切換/管理入口 tap 直達。
+- 唔用 hover-only；所有摺疊/選取/管理入口 tap 直達。
 
 ---
 
@@ -184,7 +192,7 @@ CREATE INDEX idx_accounts_user ON accounts(user_email);
 |--------|------|
 | **M1 後端帳號 CRUD** | `accounts` 表 + migration + `/api/accounts` CRUD + session 密碼 map + pool 按帳號分 key |
 | **M2 後端 account 參數化** | `/api/mail/*`、`/api/events` 支援 account 參數 + default fallback + `test` 連線 |
-| **M3 前端帳號切換** | Header/Sidebar 切換器、切換後重新載入 folders/INBOX/SSE |
+| **M3 前端 folder tree** | Sidebar 改為多帳號 folder tree（帳號節點 + folders + unread badge、可摺疊）、點 folder 載入該 (account, folder) |
 | **M4 前端帳號管理 UI** | 帳號清單 + 新增/編輯表單 + 測試連線 + 設為預設 + 刪除（mobile + desktop） |
 | **M5 測試與部署** | 後端 Go tests + 前端 Vitest、響 debian.exe.xyz 驗證 |
 
@@ -193,6 +201,6 @@ CREATE INDEX idx_accounts_user ON accounts(user_email);
 ## 8. 風險與注意事項
 
 - **密碼只在記憶體**：重啟後需重新輸入（除非日後加「記住密碼」加密落盤——目前**唔建議**，保持安全）。
-- **SSE / IDLE 多帳號**：同時監聽多帳號會開多條 IDLE 連線，要評估 server 連線數上限。初版可只監聽**目前選取帳號**（切換先收，避免太多並行連線）。
+- **SSE / IDLE 多帳號**：folder tree 要求**同時監聽所有帳號**先可以即時顯示每個帳號嘅 unread count，每個帳號要開一條 IMAP IDLE 連線 → 要評估 server 連線數上限（帳號多 + 使用者多時連線數會線性增長，可能要設上限或改用 polling fallback）。
 - **刪除帳號**：唔刪 keyring（per-user keyring 屬 user，與帳號無關）。確認 UI 要清楚提示。
-- **效能**：切換帳號要重新 SELECT folder + 更新 unread badge；可用現有 cache（staleTime）減少重複 fetch。
+- **效能**：點 folder 先 SELECT + fetch（延遲載入）；unread count 靠背景監聽更新；可用現有 cache（staleTime）減少重複 fetch。
