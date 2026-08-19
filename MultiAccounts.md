@@ -166,12 +166,7 @@ CREATE INDEX idx_accounts_user ON accounts(user_email);
 
 ## 5. PGP Keyring 決策
 
-現時 keyring 係 per-user。多帳號後有兩個選擇：
-
-- **選項 A（推薦初版）：per-user keyring 不變**。所有帳號共用同一 keyring。簡單、唔郁現有儲存；如果使用者多帳號但係同一人用同一把 key，啱用。
-- **選項 B：per-account keyring**。每帳號獨立加密 keyring。較複雜（要 per-account passphrase / 加密 blob）。
-
-> 建議初版做 **A**，日後需要再升級做 B。前端 PGP 金鑰管理不受影響。
+現時 keyring 係 per-user。多帳號後採用：**per-user keyring 不變（選項 A）**——所有帳號共用同一 keyring。簡單、唔郁現有儲存；如果使用者多帳號但係同一人用同一把 key，啱用。
 
 ---
 
@@ -199,5 +194,5 @@ CREATE INDEX idx_accounts_user ON accounts(user_email);
 
 - **密碼只在記憶體**：重啟後需重新輸入（除非日後加「記住密碼」加密落盤——目前**唔建議**，保持安全）。
 - **SSE / IDLE 多帳號**：同時監聽多帳號會開多條 IDLE 連線，要評估 server 連線數上限。初版可只監聽**目前選取帳號**（切換先收，避免太多並行連線）。
-- **刪除帳號**：唔刪 keyring（A 方案下 keyring 屬 user）。確認 UI 要清楚提示。
+- **刪除帳號**：唔刪 keyring（per-user keyring 屬 user，與帳號無關）。確認 UI 要清楚提示。
 - **效能**：切換帳號要重新 SELECT folder + 更新 unread badge；可用現有 cache（staleTime）減少重複 fetch。
