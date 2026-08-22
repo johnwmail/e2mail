@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"modern-webmail/backend/internal/api/middleware"
 	"modern-webmail/backend/internal/auth"
+	"modern-webmail/backend/internal/crypto"
 	"modern-webmail/backend/internal/imap"
 	"modern-webmail/backend/internal/session"
 	"modern-webmail/backend/internal/storage"
@@ -102,6 +104,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		smtpUseTLS = *req.SMTPUseTLS
 	}
 
+	ownerEmail := normalizeEmail(req.Email)
+
 	log.Printf("[AUTH] Login attempt for email: %s, IMAP: %s:%d (TLS: %v, AllowInsecure: %v), SMTP: %s:%d",
 		req.Email, req.IMAPHost, imapPort, imapUseTLS, req.IMAPAllowInsecureTLS, req.SMTPHost, smtpPort)
 
@@ -122,7 +126,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	_ = testClient.Close()
 
 	// 1.5 若使用者已啟用 2FA，先建立 pending challenge，等待驗證碼
-	if twoFA, _ := h.storage.GetTwoFA(normalizeEmail(req.Email)); twoFA != nil {
+	if twoFA, _ := h.storage.GetTwoFA(ownerEmail); twoFA != nil {
 		challenge := h.pendingLogin.Create(&auth.PendingLogin{
 			Email:                req.Email,
 			Username:             username,
@@ -144,31 +148,71 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. 建立並加密儲存 Session
-	newSess := &session.Session{
-		Email:                req.Email,
-		Username:             username,
-		IMAPHost:             req.IMAPHost,
-		IMAPPort:             imapPort,
-		IMAPUseTLS:           imapUseTLS,
-		IMAPAllowInsecureTLS: req.IMAPAllowInsecureTLS,
-		SMTPHost:             req.SMTPHost,
-		SMTPPort:             smtpPort,
-		SMTPUseTLS:           smtpUseTLS,
-		SMTPAllowInsecureTLS: req.SMTPAllowInsecureTLS,
+	// 2. 建立或解鎖憑證（MasterKey = 首帳號 IMAP 密碼，wrap DEK）
+	cred, dek, err := h.resolveCredential(ownerEmail, req.Password)
+	if err != nil {
+		log.Printf("[AUTH ERROR] credential resolve failed for %s: %v", req.Email, err)
+		response.Unauthorized(w, err.Error())
+		return
 	}
 
-	savedSess, err := h.store.Create(newSess, req.Password)
+	// 3. 建立首帳號（若呢個 user 仲未有 account）
+	accounts, err := h.accountsWithPassword(ownerEmail, cred, dek)
+	if err != nil {
+		log.Printf("[AUTH ERROR] accounts load failed for %s: %v", req.Email, err)
+		response.InternalServerError(w, "failed to load accounts")
+		return
+	}
+	if len(accounts) == 0 {
+		// 首登入：用登入表單資料建立首帳號
+		acc := &storage.Account{
+			UserEmail:            ownerEmail,
+			Label:                req.Email,
+			Email:                req.Email,
+			IMAPHost:             req.IMAPHost,
+			IMAPPort:             imapPort,
+			IMAPUseTLS:           imapUseTLS,
+			IMAPAllowInsecureTLS: req.IMAPAllowInsecureTLS,
+			SMTPHost:             req.SMTPHost,
+			SMTPPort:             smtpPort,
+			SMTPUseTLS:           smtpUseTLS,
+			SMTPAllowInsecureTLS: req.SMTPAllowInsecureTLS,
+			Username:             username,
+			EncIMAPPassword:      req.Password,
+			EncSMTPPassword:      req.Password,
+			IsDefault:            true,
+			SortOrder:            0,
+		}
+		if err := h.encryptAccountPasswords(acc, dek); err != nil {
+			log.Printf("[AUTH ERROR] encrypt account passwords failed: %v", err)
+			response.InternalServerError(w, "failed to encrypt account credentials")
+			return
+		}
+		if err := h.storage.CreateAccount(acc); err != nil {
+			log.Printf("[AUTH ERROR] create account failed for %s: %v", req.Email, err)
+			response.InternalServerError(w, "failed to create account")
+			return
+		}
+		accounts = append(accounts, *acc)
+	}
+
+	// 4. 建立 Session（自帶 accounts + 加密 DEK）
+	newSess := &session.Session{
+		Email:    ownerEmail,
+		Username: username,
+		Accounts: accounts,
+	}
+	savedSess, err := h.store.Create(newSess, dek)
 	if err != nil {
 		log.Printf("[AUTH ERROR] Session create failed: %v", err)
 		response.InternalServerError(w, "failed to create session")
 		return
 	}
 
-	// 3. 啟動背景 IDLE 監聽
-	_ = h.idleMgr.GetOrStartListener(savedSess, req.Password)
+	// 5. 啟動背景 IDLE 監聽（所有帳號）
+	h.startIdleForAccounts(savedSess, dek, accounts)
 
-	// 4. 設定 HttpOnly Cookie
+	// 6. 設定 HttpOnly Cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "webmail_session",
 		Value:    savedSess.ID,
@@ -185,6 +229,92 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Token:   savedSess.ID,
 		Session: savedSess,
 	})
+}
+
+// resolveCredential 取得使用者憑證包同 DEK。首次（無 credential）則生成。
+func (h *AuthHandler) resolveCredential(ownerEmail, masterPassword string) (*storage.UserCredential, []byte, error) {
+	cred, err := h.storage.GetUserCredential(ownerEmail)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if cred == nil {
+		// 首次登入：生成 salt + DEK + wrapped_dek
+		salt, err := crypto.GenerateSalt()
+		if err != nil {
+			return nil, nil, err
+		}
+		dek, err := crypto.GenerateDEK()
+		if err != nil {
+			return nil, nil, err
+		}
+		masterKey := crypto.DeriveMasterKey(masterPassword, salt)
+		wrappedDEK, err := crypto.Encrypt(masterKey, dek)
+		if err != nil {
+			return nil, nil, err
+		}
+		cred = &storage.UserCredential{
+			UserEmail:  ownerEmail,
+			Salt:       salt,
+			WrappedDEK: wrappedDEK,
+		}
+		if err := h.storage.CreateUserCredential(cred); err != nil {
+			return nil, nil, err
+		}
+		return cred, dek, nil
+	}
+
+	// 已存在：解 wrap DEK
+	dek, err := crypto.Decrypt(crypto.DeriveMasterKey(masterPassword, cred.Salt), cred.WrappedDEK)
+	if err != nil {
+		return nil, nil, errors.New("credentials unlock failed — 登入密碼不正確")
+	}
+	return cred, dek, nil
+}
+
+// accountsWithPassword 載入 user 嘅所有帳號（保留加密密碼欄位，由 middleware 解密）
+func (h *AuthHandler) accountsWithPassword(ownerEmail string, cred *storage.UserCredential, dek []byte) ([]storage.Account, error) {
+	accounts, err := h.storage.ListAccounts(ownerEmail)
+	if err != nil {
+		return nil, err
+	}
+	return accounts, nil
+}
+
+// encryptAccountPasswords 用 DEK 加密帳號密碼（寫入 Enc 欄位）
+func (h *AuthHandler) encryptAccountPasswords(acc *storage.Account, dek []byte) error {
+	imapEnc, err := crypto.Encrypt(dek, []byte(acc.EncIMAPPassword))
+	if err != nil {
+		return err
+	}
+	smtpEnc, err := crypto.Encrypt(dek, []byte(acc.EncSMTPPassword))
+	if err != nil {
+		return err
+	}
+	acc.EncIMAPPassword = imapEnc
+	acc.EncSMTPPassword = smtpEnc
+	return nil
+}
+
+// startIdleForAccounts 為每個帳號啟動 IDLE 監聽
+func (h *AuthHandler) startIdleForAccounts(sess *session.Session, dek []byte, accounts []storage.Account) {
+	for i := range accounts {
+		acc := &accounts[i]
+		imapPass, err := crypto.Decrypt(dek, acc.EncIMAPPassword)
+		if err != nil {
+			log.Printf("[IDLE] failed to decrypt password for account %s: %v", acc.ID, err)
+			continue
+		}
+		config := imap.ConnectionConfig{
+			Host:             acc.IMAPHost,
+			Port:             acc.IMAPPort,
+			UseTLS:           acc.IMAPUseTLS,
+			AllowInsecureTLS: acc.IMAPAllowInsecureTLS,
+			Username:         acc.Username,
+			Password:         string(imapPass),
+		}
+		_ = h.idleMgr.GetOrStartListener(sess.ID, acc.ID, config, string(imapPass))
+	}
 }
 
 // Verify2FA 驗證 TOTP 或備份碼，完成第二階段登入
@@ -244,27 +374,66 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 
 // completeLogin 建立正式 Session 並返回登入成功
 func (h *AuthHandler) completeLogin(w http.ResponseWriter, r *http.Request, pl *auth.PendingLogin, challenge string) {
-	newSess := &session.Session{
-		Email:                pl.Email,
-		Username:             pl.Username,
-		IMAPHost:             pl.IMAPHost,
-		IMAPPort:             pl.IMAPPort,
-		IMAPUseTLS:           pl.IMAPUseTLS,
-		IMAPAllowInsecureTLS: pl.IMAPAllowInsecureTLS,
-		SMTPHost:             pl.SMTPHost,
-		SMTPPort:             pl.SMTPPort,
-		SMTPUseTLS:           pl.SMTPUseTLS,
-		SMTPAllowInsecureTLS: pl.SMTPAllowInsecureTLS,
+	ownerEmail := normalizeEmail(pl.Email)
+
+	cred, dek, err := h.resolveCredential(ownerEmail, pl.Password)
+	if err != nil {
+		log.Printf("[AUTH ERROR] credential resolve failed after 2FA for %s: %v", pl.Email, err)
+		response.Unauthorized(w, err.Error())
+		return
 	}
 
-	savedSess, err := h.store.Create(newSess, pl.Password)
+	accounts, err := h.accountsWithPassword(ownerEmail, cred, dek)
+	if err != nil {
+		log.Printf("[AUTH ERROR] accounts load failed after 2FA for %s: %v", pl.Email, err)
+		response.InternalServerError(w, "failed to load accounts")
+		return
+	}
+	if len(accounts) == 0 {
+		acc := &storage.Account{
+			UserEmail:            ownerEmail,
+			Label:                pl.Email,
+			Email:                pl.Email,
+			IMAPHost:             pl.IMAPHost,
+			IMAPPort:             pl.IMAPPort,
+			IMAPUseTLS:           pl.IMAPUseTLS,
+			IMAPAllowInsecureTLS: pl.IMAPAllowInsecureTLS,
+			SMTPHost:             pl.SMTPHost,
+			SMTPPort:             pl.SMTPPort,
+			SMTPUseTLS:           pl.SMTPUseTLS,
+			SMTPAllowInsecureTLS: pl.SMTPAllowInsecureTLS,
+			Username:             pl.Username,
+			EncIMAPPassword:      pl.Password,
+			EncSMTPPassword:      pl.Password,
+			IsDefault:            true,
+			SortOrder:            0,
+		}
+		if err := h.encryptAccountPasswords(acc, dek); err != nil {
+			response.InternalServerError(w, "failed to encrypt account credentials")
+			return
+		}
+		if err := h.storage.CreateAccount(acc); err != nil {
+			log.Printf("[AUTH ERROR] create account failed after 2FA: %v", err)
+			response.InternalServerError(w, "failed to create account")
+			return
+		}
+		accounts = append(accounts, *acc)
+	}
+
+	newSess := &session.Session{
+		Email:    ownerEmail,
+		Username: pl.Username,
+		Accounts: accounts,
+	}
+
+	savedSess, err := h.store.Create(newSess, dek)
 	if err != nil {
 		log.Printf("[AUTH ERROR] Session create failed after 2FA: %v", err)
 		response.InternalServerError(w, "failed to create session")
 		return
 	}
 
-	_ = h.idleMgr.GetOrStartListener(savedSess, pl.Password)
+	h.startIdleForAccounts(savedSess, dek, accounts)
 	h.pendingLogin.Delete(challenge)
 
 	http.SetCookie(w, &http.Cookie{
@@ -292,8 +461,8 @@ func normalizeEmail(email string) string {
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	sess, ok := middleware.GetSessionFromContext(r.Context())
 	if ok && sess != nil {
-		h.idleMgr.StopListener(sess.ID)
-		h.poolMgr.DestroyPool(sess.ID)
+		h.idleMgr.StopSessionListeners(sess.ID)
+		h.poolMgr.DestroySessionPools(sess.ID)
 		_ = h.store.Delete(sess.ID)
 	}
 

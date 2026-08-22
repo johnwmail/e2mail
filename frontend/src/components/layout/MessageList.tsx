@@ -13,10 +13,13 @@ import {
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { useMailStore } from '../../stores/useMailStore';
+import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { MessageSummary } from '../../types/api';
 
 export const MessageList: React.FC = () => {
   const queryClient = useQueryClient();
+  const activeAccount = useActiveAccount();
+  const accountId = activeAccount?.id;
   const {
     currentFolder,
     selectedUID,
@@ -31,31 +34,32 @@ export const MessageList: React.FC = () => {
 
   // 取得郵件清單
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['messages', currentFolder, page, limit, searchQuery],
-    queryFn: () => mailApi.getMessages(currentFolder, page, limit, searchQuery),
+    queryKey: ['messages', accountId, currentFolder, page, limit, searchQuery],
+    queryFn: () => mailApi.getMessages(currentFolder, page, limit, searchQuery, accountId),
+    enabled: !!accountId,
     staleTime: 10000,
   });
 
   // 修改 Flag Mutation
   const flagMutation = useMutation({
     mutationFn: ({ uids, flags, op }: { uids: number[]; flags: string[]; op: 'add' | 'remove' }) =>
-      mailApi.setFlags(currentFolder, uids, flags, op),
+      mailApi.setFlags(currentFolder, uids, flags, op, accountId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages', currentFolder] });
-      queryClient.invalidateQueries({ queryKey: ['folders'] });
+      queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
+      queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
     },
   });
 
   // 刪除郵件 Mutation
   const deleteMutation = useMutation({
-    mutationFn: (uids: number[]) => mailApi.deleteMessages(currentFolder, uids),
+    mutationFn: (uids: number[]) => mailApi.deleteMessages(currentFolder, uids, false, accountId),
     onSuccess: () => {
       setSelectedUIDs([]);
       if (selectedUID && selectedUIDs.includes(selectedUID)) {
         setSelectedUID(null);
       }
-      queryClient.invalidateQueries({ queryKey: ['messages', currentFolder] });
-      queryClient.invalidateQueries({ queryKey: ['folders'] });
+      queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
+      queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
     },
   });
 

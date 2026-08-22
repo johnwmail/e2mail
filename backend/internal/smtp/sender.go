@@ -26,6 +26,65 @@ type SMTPConfig struct {
 	Password         string
 }
 
+// TestSMTPConnection 只測試 SMTP 連線 + 認證（唔發送任何郵件）
+func TestSMTPConnection(ctx context.Context, config SMTPConfig) error {
+	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+	tlsConfig := &tls.Config{
+		ServerName:         config.Host,
+		InsecureSkipVerify: config.AllowInsecureTLS,
+	}
+
+	var client *netsmtp.Client
+
+	if config.Port == 465 {
+		conn, err := tls.Dial("tcp", addr, tlsConfig)
+		if err != nil {
+			return fmt.Errorf("SMTP SSL dial failed to %s: %w", addr, err)
+		}
+		defer func() { _ = conn.Close() }()
+		client, err = netsmtp.NewClient(conn, config.Host)
+		if err != nil {
+			return fmt.Errorf("SMTP SSL client init failed: %w", err)
+		}
+	} else {
+		c, err := netsmtp.Dial(addr)
+		if err != nil {
+			return fmt.Errorf("SMTP connection failed to %s: %w", addr, err)
+		}
+		client = c
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			if err := client.StartTLS(tlsConfig); err != nil {
+				_ = client.Close()
+				return fmt.Errorf("SMTP STARTTLS negotiation failed on %s: %w", addr, err)
+			}
+		}
+	}
+	defer func() { _ = client.Quit() }()
+
+	// 驗證認證
+	if config.Username != "" && config.Password != "" {
+		if ok, mech := client.Extension("AUTH"); ok {
+			mechUpper := strings.ToUpper(mech)
+			if strings.Contains(mechUpper, "PLAIN") {
+				if err := client.Auth(netsmtp.PlainAuth("", config.Username, config.Password, config.Host)); err != nil {
+					return fmt.Errorf("SMTP authentication failed: %w", err)
+				}
+			} else if strings.Contains(mechUpper, "LOGIN") {
+				if err := client.Auth(LoginAuth(config.Username, config.Password)); err != nil {
+					return fmt.Errorf("SMTP authentication failed: %w", err)
+				}
+			} else {
+				if err := client.Auth(netsmtp.PlainAuth("", config.Username, config.Password, config.Host)); err != nil {
+					if err2 := client.Auth(LoginAuth(config.Username, config.Password)); err2 != nil {
+						return fmt.Errorf("SMTP authentication failed: %w", err2)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // OutgoingAttachment 寄信附件
 type OutgoingAttachment struct {
 	Filename    string `json:"filename"`

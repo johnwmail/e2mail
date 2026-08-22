@@ -19,6 +19,7 @@ func NewRouter(
 	pgpH *handler.PGPHandler,
 	contactsH *handler.ContactsHandler,
 	configH *handler.ServerConfigHandler,
+	accountsH *handler.AccountsHandler,
 	store session.Store,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -62,6 +63,17 @@ func NewRouter(
 
 			// 即時事件推播 (SSE)
 			protected.Get("/events", eventsH.SSE)
+
+			// 帳號管理（multi-account）
+			protected.Route("/accounts", func(accounts chi.Router) {
+				accounts.Get("/", accountsH.ListAccounts)
+				accounts.Post("/", accountsH.CreateAccount)
+				accounts.Post("/test", accountsH.TestAccount)
+				accounts.Put("/{id}", accountsH.UpdateAccount)
+				accounts.Delete("/{id}", accountsH.DeleteAccount)
+				accounts.Post("/{id}/default", accountsH.SetDefaultAccount)
+				accounts.Get("/{id}/folders", mailH.ListFolders)
+			})
 
 			// 郵件與資料夾管理
 			protected.Route("/mail", func(mail chi.Router) {

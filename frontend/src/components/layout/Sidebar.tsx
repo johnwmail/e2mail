@@ -14,15 +14,19 @@ import {
   Key,
   ShieldCheck,
   LogOut,
-  User,
   Eye,
   EyeOff,
+  ChevronDown,
+  ChevronRight,
+  UserRound,
+  Settings2,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { pgpService } from '../../api/pgp';
 import { useMailStore } from '../../stores/useMailStore';
 import { useAuthStore } from '../../stores/useAuthStore';
-import { FolderInfo } from '../../types/api';
+import { useActiveAccount } from '../../hooks/useActiveAccount';
+import { FolderInfo, Account } from '../../types/api';
 import { PgpKeyModal } from '../mail/PgpKeyModal';
 import { buildInfo } from '../../buildInfo';
 
@@ -56,31 +60,143 @@ const getFolderDisplayName = (folder: FolderInfo) => {
   }
 };
 
-export const Sidebar: React.FC = () => {
-  const { currentFolder, setCurrentFolder, openComposer, isSidebarOpen, setSidebarOpen } = useMailStore();
-  const { session, logout } = useAuthStore();
+const AccountFolders: React.FC<{
+  account: Account;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  setSidebarOpen: (open: boolean) => void;
+}> = ({ account, expanded, onToggleExpand, setSidebarOpen }) => {
   const queryClient = useQueryClient();
-  const [isPgpModalOpen, setIsPgpModalOpen] = useState(false);
-
-  const hasPgpKey = !!pgpService.getKeyPair();
+  const { currentFolder, setCurrentFolder, setActiveAccountId } = useMailStore();
+  const isActiveAccount = useActiveAccount()?.id === account.id;
 
   const { data: folders, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['folders'],
-    queryFn: mailApi.getFolders,
+    queryKey: ['folders', account.id],
+    queryFn: () => mailApi.getFolders(account.id),
+    enabled: expanded,
     staleTime: 30000,
   });
 
   const toggleSubscribe = async (folder: FolderInfo) => {
     const next = !folder.subscribed;
     try {
-      await mailApi.setFolderSubscription(folder.name, next);
-      queryClient.setQueryData(['folders'], (old: FolderInfo[] | undefined) =>
+      await mailApi.setFolderSubscription(folder.name, next, account.id);
+      queryClient.setQueryData(['folders', account.id], (old: FolderInfo[] | undefined) =>
         old?.map((f) => (f.name === folder.name ? { ...f, subscribed: next } : f))
       );
     } catch {
-      // 忽略失敗，下次 refetch 會反映真實狀態
+      // 忽略失敗
     }
   };
+
+  const accountUnread = folders?.reduce((sum, f) => sum + f.unreadCount, 0) ?? 0;
+
+  return (
+    <div>
+      <button
+        onClick={onToggleExpand}
+        className={`w-full flex items-center gap-2 px-2.5 py-2.5 rounded-xl text-xs font-semibold transition ${
+          isActiveAccount
+            ? 'text-blue-700 dark:text-blue-400'
+            : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+        }`}
+      >
+        <span className="text-slate-400">
+          {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        </span>
+        <span className="flex items-center gap-2 truncate">
+          <span className="w-5 h-5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+            <UserRound className="w-3.5 h-3.5" />
+          </span>
+          <span className="truncate">{account.label || account.email}</span>
+        </span>
+        {accountUnread > 0 && (
+          <span className="ml-auto px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded-full shrink-0">
+            {accountUnread}
+          </span>
+        )}
+      </button>
+
+      {expanded && (
+        <nav className="space-y-1 ml-5 border-l border-slate-200 dark:border-slate-800 pl-2 mb-2">
+          {isLoading ? (
+            <div className="p-3 text-xs text-slate-400">正在載入資料夾...</div>
+          ) : (
+            folders?.map((folder) => {
+              const isActive = isActiveAccount && currentFolder === folder.name;
+              return (
+                <div
+                  key={folder.name}
+                  className={`flex items-center rounded-lg transition ${
+                    isActive
+                      ? 'bg-blue-50 dark:bg-blue-950/60'
+                      : 'hover:bg-slate-200/60 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <button
+                    onClick={() => {
+                      setActiveAccountId(account.id);
+                      setCurrentFolder(folder.name);
+                      setSidebarOpen(false);
+                    }}
+                    className={`flex-1 min-w-0 flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition ${
+                      isActive ? 'text-blue-700 dark:text-blue-400 font-semibold' : 'text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 truncate">
+                      <span className={isActive ? 'text-blue-600' : 'text-slate-400'}>
+                        {getFolderIcon(folder.specialUse, folder.name)}
+                      </span>
+                      <span className="truncate">{getFolderDisplayName(folder)}</span>
+                    </div>
+                    {folder.unreadCount > 0 && (
+                      <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded-full shrink-0">
+                        {folder.unreadCount}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => toggleSubscribe(folder)}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0 rounded-lg"
+                    title={folder.subscribed ? '取消訂閱此資料夾' : '訂閱此資料夾'}
+                    aria-label={folder.subscribed ? `取消訂閱 ${getFolderDisplayName(folder)}` : `訂閱 ${getFolderDisplayName(folder)}`}
+                  >
+                    {folder.subscribed ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600" />}
+                  </button>
+                </div>
+              );
+            })
+          )}
+          <button
+            onClick={() => refetch()}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-slate-400 hover:text-slate-600 transition ${isFetching ? 'animate-spin' : ''}`}
+            title="重新整理資料夾"
+          >
+            <RefreshCw className="w-3 h-3" /> 重新整理
+          </button>
+        </nav>
+      )}
+    </div>
+  );
+};
+
+export const Sidebar: React.FC = () => {
+  const { openComposer, isSidebarOpen, setSidebarOpen, setView } = useMailStore();
+  const { session, logout } = useAuthStore();
+  const [isPgpModalOpen, setIsPgpModalOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {};
+    session?.accounts?.forEach((a, i) => {
+      init[a.id] = i === 0;
+    });
+    return init;
+  });
+
+  const hasPgpKey = !!pgpService.getKeyPair();
+  const accounts = session?.accounts ?? [];
+
+  const toggleCollapsed = (id: string) =>
+    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const sidebarContent = (
     <div className="flex flex-col h-full justify-between p-3.5 select-none overflow-y-auto">
@@ -95,7 +211,7 @@ export const Sidebar: React.FC = () => {
               <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
                 {session?.email}
               </div>
-              <div className="text-[10px] text-slate-400">已登入</div>
+              <div className="text-[10px] text-slate-400">{accounts.length} 個帳號</div>
             </div>
           </div>
           <button
@@ -118,70 +234,30 @@ export const Sidebar: React.FC = () => {
           撰寫新郵件
         </button>
 
-        {/* 資料夾清單 */}
+        {/* 帳號資料夾樹 */}
         <div>
-          <div className="flex items-center justify-between px-2 mb-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            <span>信箱資料夾</span>
+          <div className="flex items-center justify-between px-2 mb-1">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">信箱</span>
             <button
-              onClick={() => refetch()}
-              className={`p-1 hover:text-slate-600 transition ${isFetching ? 'animate-spin' : ''}`}
-              title="重新整理資料夾"
+              onClick={() => setView('accounts')}
+              className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 transition"
+              title="管理帳號"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <Settings2 className="w-3.5 h-3.5" /> 管理帳號
             </button>
           </div>
 
-          <nav className="space-y-1">
-            {isLoading ? (
-              <div className="p-3 text-xs text-slate-400">正在載入資料夾...</div>
-            ) : (
-              folders?.map((folder) => {
-                const isActive = currentFolder === folder.name;
-                return (
-                  <div
-                    key={folder.name}
-                    className={`flex items-center rounded-xl transition ${
-                      isActive
-                        ? 'bg-blue-50 dark:bg-blue-950/60'
-                        : 'hover:bg-slate-200/60 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <button
-                      onClick={() => {
-                        setCurrentFolder(folder.name);
-                        setSidebarOpen(false);
-                      }}
-                      className={`flex-1 min-w-0 flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium transition ${
-                        isActive ? 'text-blue-700 dark:text-blue-400 font-semibold' : 'text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 truncate">
-                        <span className={isActive ? 'text-blue-600' : 'text-slate-400'}>
-                          {getFolderIcon(folder.specialUse, folder.name)}
-                        </span>
-                        <span className="truncate text-[13px]">{getFolderDisplayName(folder)}</span>
-                      </div>
-
-                      {folder.unreadCount > 0 && (
-                        <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded-full shrink-0">
-                          {folder.unreadCount}
-                        </span>
-                      )}
-                    </button>
-
-                    <button
-                      onClick={() => toggleSubscribe(folder)}
-                      className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0 rounded-lg"
-                      title={folder.subscribed ? '取消訂閱此資料夾' : '訂閱此資料夾'}
-                      aria-label={folder.subscribed ? `取消訂閱 ${getFolderDisplayName(folder)}` : `訂閱 ${getFolderDisplayName(folder)}`}
-                    >
-                      {folder.subscribed ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600" />}
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </nav>
+          <div className="space-y-1">
+            {accounts.map((account, idx) => (
+              <AccountFolders
+                key={account.id}
+                account={account}
+                expanded={collapsed[account.id] ?? idx === 0}
+                onToggleExpand={() => toggleCollapsed(account.id)}
+                setSidebarOpen={setSidebarOpen}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -199,7 +275,7 @@ export const Sidebar: React.FC = () => {
             <span>PGP 金鑰設定</span>
           </div>
           {hasPgpKey ? (
-            <ShieldCheck className="w-4 h-4 text-emerald-600" title="已配置 PGP 金鑰" />
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
           ) : (
             <span className="text-[10px] text-amber-600 font-medium">未配置</span>
           )}

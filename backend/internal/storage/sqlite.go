@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 )
 
@@ -44,6 +45,38 @@ type TwoFA struct {
 	EnabledAt    time.Time
 }
 
+// Account 儲存於 SQLite 之郵件帳號設定（密碼以 DEK 加密，非明文）
+type Account struct {
+	ID                  string    `json:"id"`
+	UserEmail           string    `json:"-"` // 登入者（owner）
+	Label               string    `json:"label"`
+	Email               string    `json:"email"`
+	IMAPHost            string    `json:"imapHost"`
+	IMAPPort            int       `json:"imapPort"`
+	IMAPUseTLS          bool      `json:"imapUseTls"`
+	IMAPAllowInsecureTLS bool     `json:"imapAllowInsecureTls"`
+	SMTPHost            string    `json:"smtpHost"`
+	SMTPPort            int       `json:"smtpPort"`
+	SMTPUseTLS          bool      `json:"smtpUseTls"`
+	SMTPAllowInsecureTLS bool     `json:"smtpAllowInsecureTls"`
+	Username            string    `json:"username"`
+	EncIMAPPassword     string    `json:"-"` // AES-GCM(DEK, imap_password)
+	EncSMTPPassword     string    `json:"-"` // AES-GCM(DEK, smtp_password)
+	IsDefault           bool      `json:"isDefault"`
+	SortOrder           int       `json:"sortOrder"`
+	CreatedAt           time.Time `json:"createdAt"`
+	UpdatedAt           time.Time `json:"updatedAt"`
+}
+
+// UserCredential 儲存於 SQLite 之 per-user 憑證包（包裹 DEK）
+type UserCredential struct {
+	UserEmail  string    `json:"userEmail"`
+	Salt       []byte    `json:"salt"`
+	WrappedDEK string    `json:"wrappedDek"` // AES-GCM(MasterKey, DEK)
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
 // Store SQLite 儲存介面
 type Store interface {
 	// Contacts
@@ -62,6 +95,20 @@ type Store interface {
 	GetTwoFA(ownerEmail string) (*TwoFA, error)
 	SaveTwoFA(t *TwoFA) error
 	DeleteTwoFA(ownerEmail string) error
+
+	// Accounts (multi-account registry, per-user)
+	ListAccounts(userEmail string) ([]Account, error)
+	GetAccount(userEmail, accountID string) (*Account, error)
+	CreateAccount(acc *Account) error
+	UpdateAccount(acc *Account) error
+	DeleteAccount(userEmail, accountID string) error
+	SetDefaultAccount(userEmail, accountID string) error
+	CountAccounts(userEmail string) (int, error)
+
+	// User credentials (wrapped DEK per user)
+	GetUserCredential(userEmail string) (*UserCredential, error)
+	CreateUserCredential(cred *UserCredential) error
+	UpdateUserCredential(cred *UserCredential) error
 
 	// Lifecycle
 	MigrateLegacyKeyrings(dataDir string) (migrated int, err error)
@@ -96,6 +143,37 @@ CREATE TABLE IF NOT EXISTS two_fa (
 	backup_code_hashes TEXT NOT NULL DEFAULT '[]',
 	enabled_at         INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS users (
+	owner_email  TEXT NOT NULL PRIMARY KEY,
+	salt         BLOB NOT NULL,
+	wrapped_dek  TEXT NOT NULL,
+	created_at   INTEGER NOT NULL,
+	updated_at   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS accounts (
+	id                     TEXT NOT NULL PRIMARY KEY,
+	user_email             TEXT NOT NULL,
+	label                  TEXT NOT NULL,
+	email                  TEXT NOT NULL,
+	imap_host              TEXT NOT NULL,
+	imap_port              INTEGER NOT NULL,
+	imap_use_tls           INTEGER NOT NULL DEFAULT 1,
+	imap_allow_insecure_tls INTEGER NOT NULL DEFAULT 0,
+	smtp_host              TEXT NOT NULL,
+	smtp_port              INTEGER NOT NULL,
+	smtp_use_tls           INTEGER NOT NULL DEFAULT 1,
+	smtp_allow_insecure_tls INTEGER NOT NULL DEFAULT 0,
+	username               TEXT NOT NULL,
+	enc_imap_password      TEXT NOT NULL,
+	enc_smtp_password      TEXT NOT NULL,
+	is_default             INTEGER NOT NULL DEFAULT 0,
+	sort_order             INTEGER NOT NULL DEFAULT 0,
+	created_at             INTEGER NOT NULL,
+	updated_at             INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_email);
 `
 
 // SQLiteStore SQLite 儲存實作
@@ -442,4 +520,255 @@ func (s *SQLiteStore) DeleteTwoFA(ownerEmail string) error {
 		return fmt.Errorf("failed to delete two_fa: %w", err)
 	}
 	return nil
+}
+
+// ===== Accounts =====
+
+func scanAccount(rows interface{ Scan(...any) error }) (*Account, error) {
+	var a Account
+	var imapUseTLS, imapInsecure, smtpUseTLS, smtpInsecure, isDefault int
+	var createdAt, updatedAt int64
+	err := rows.Scan(
+		&a.ID, &a.UserEmail, &a.Label, &a.Email,
+		&a.IMAPHost, &a.IMAPPort, &imapUseTLS, &imapInsecure,
+		&a.SMTPHost, &a.SMTPPort, &smtpUseTLS, &smtpInsecure,
+		&a.Username, &a.EncIMAPPassword, &a.EncSMTPPassword,
+		&isDefault, &a.SortOrder, &createdAt, &updatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	a.IMAPUseTLS = imapUseTLS == 1
+	a.IMAPAllowInsecureTLS = imapInsecure == 1
+	a.SMTPUseTLS = smtpUseTLS == 1
+	a.SMTPAllowInsecureTLS = smtpInsecure == 1
+	a.IsDefault = isDefault == 1
+	a.CreatedAt = time.Unix(createdAt, 0).UTC()
+	a.UpdatedAt = time.Unix(updatedAt, 0).UTC()
+	return &a, nil
+}
+
+// ListAccounts 列出某使用者所有帳號（依 sort_order）
+func (s *SQLiteStore) ListAccounts(userEmail string) ([]Account, error) {
+	rows, err := s.db.Query(
+		`SELECT id, user_email, label, email,
+		        imap_host, imap_port, imap_use_tls, imap_allow_insecure_tls,
+		        smtp_host, smtp_port, smtp_use_tls, smtp_allow_insecure_tls,
+		        username, enc_imap_password, enc_smtp_password,
+		        is_default, sort_order, created_at, updated_at
+		 FROM accounts WHERE user_email = ? ORDER BY sort_order ASC, created_at ASC`,
+		userEmail,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list accounts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]Account, 0)
+	for rows.Next() {
+		a, err := scanAccount(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan account: %w", err)
+		}
+		out = append(out, *a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetAccount 取得單一帳號
+func (s *SQLiteStore) GetAccount(userEmail, accountID string) (*Account, error) {
+	row := s.db.QueryRow(
+		`SELECT id, user_email, label, email,
+		        imap_host, imap_port, imap_use_tls, imap_allow_insecure_tls,
+		        smtp_host, smtp_port, smtp_use_tls, smtp_allow_insecure_tls,
+		        username, enc_imap_password, enc_smtp_password,
+		        is_default, sort_order, created_at, updated_at
+		 FROM accounts WHERE user_email = ? AND id = ?`,
+		userEmail, accountID,
+	)
+	a, err := scanAccount(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account: %w", err)
+	}
+	return a, nil
+}
+
+// CreateAccount 建立新帳號
+func (s *SQLiteStore) CreateAccount(a *Account) error {
+	if a.ID == "" {
+		a.ID = uuid.New().String()
+	}
+	if a.EncIMAPPassword == "" || a.EncSMTPPassword == "" {
+		return errors.New("enc_imap_password and enc_smtp_password are required")
+	}
+	now := time.Now().UTC()
+	if a.CreatedAt.IsZero() {
+		a.CreatedAt = now
+	}
+	a.UpdatedAt = now
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`INSERT INTO accounts (id, user_email, label, email,
+		        imap_host, imap_port, imap_use_tls, imap_allow_insecure_tls,
+		        smtp_host, smtp_port, smtp_use_tls, smtp_allow_insecure_tls,
+		        username, enc_imap_password, enc_smtp_password,
+		        is_default, sort_order, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.UserEmail, a.Label, a.Email,
+		a.IMAPHost, a.IMAPPort, boolInt(a.IMAPUseTLS), boolInt(a.IMAPAllowInsecureTLS),
+		a.SMTPHost, a.SMTPPort, boolInt(a.SMTPUseTLS), boolInt(a.SMTPAllowInsecureTLS),
+		a.Username, a.EncIMAPPassword, a.EncSMTPPassword,
+		boolInt(a.IsDefault), a.SortOrder, a.CreatedAt.Unix(), a.UpdatedAt.Unix(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create account: %w", err)
+	}
+	return nil
+}
+
+// UpdateAccount 更新帳號（不含密碼欄位時保留原值，由 caller 決定）
+func (s *SQLiteStore) UpdateAccount(a *Account) error {
+	if a.ID == "" {
+		return errors.New("account id is required")
+	}
+	a.UpdatedAt = time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`UPDATE accounts SET
+		        label = ?, email = ?,
+		        imap_host = ?, imap_port = ?, imap_use_tls = ?, imap_allow_insecure_tls = ?,
+		        smtp_host = ?, smtp_port = ?, smtp_use_tls = ?, smtp_allow_insecure_tls = ?,
+		        username = ?, enc_imap_password = ?, enc_smtp_password = ?,
+		        is_default = ?, sort_order = ?, updated_at = ?
+		 WHERE user_email = ? AND id = ?`,
+		a.Label, a.Email,
+		a.IMAPHost, a.IMAPPort, boolInt(a.IMAPUseTLS), boolInt(a.IMAPAllowInsecureTLS),
+		a.SMTPHost, a.SMTPPort, boolInt(a.SMTPUseTLS), boolInt(a.SMTPAllowInsecureTLS),
+		a.Username, a.EncIMAPPassword, a.EncSMTPPassword,
+		boolInt(a.IsDefault), a.SortOrder, a.UpdatedAt.Unix(),
+		a.UserEmail, a.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update account: %w", err)
+	}
+	return nil
+}
+
+// DeleteAccount 刪除帳號
+func (s *SQLiteStore) DeleteAccount(userEmail, accountID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(`DELETE FROM accounts WHERE user_email = ? AND id = ?`, userEmail, accountID)
+	if err != nil {
+		return fmt.Errorf("failed to delete account: %w", err)
+	}
+	return nil
+}
+
+// SetDefaultAccount 將指定帳號設為預設（先清其他，再設目標）
+func (s *SQLiteStore) SetDefaultAccount(userEmail, accountID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(`UPDATE accounts SET is_default = 0 WHERE user_email = ?`, userEmail)
+	if err != nil {
+		return fmt.Errorf("failed to clear defaults: %w", err)
+	}
+	res, err := s.db.Exec(
+		`UPDATE accounts SET is_default = 1, updated_at = ? WHERE user_email = ? AND id = ?`,
+		time.Now().UTC().Unix(), userEmail, accountID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set default: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("account not found")
+	}
+	return nil
+}
+
+// CountAccounts 計算某使用者帳號數量
+func (s *SQLiteStore) CountAccounts(userEmail string) (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM accounts WHERE user_email = ?`, userEmail).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count accounts: %w", err)
+	}
+	return n, nil
+}
+
+// ===== User Credentials =====
+
+// GetUserCredential 取得使用者憑證包（無則回傳 nil）
+func (s *SQLiteStore) GetUserCredential(userEmail string) (*UserCredential, error) {
+	var c UserCredential
+	var createdAt, updatedAt int64
+	err := s.db.QueryRow(
+		`SELECT owner_email, salt, wrapped_dek, created_at, updated_at FROM users WHERE owner_email = ?`,
+		userEmail,
+	).Scan(&c.UserEmail, &c.Salt, &c.WrappedDEK, &createdAt, &updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user credential: %w", err)
+	}
+	c.CreatedAt = time.Unix(createdAt, 0).UTC()
+	c.UpdatedAt = time.Unix(updatedAt, 0).UTC()
+	return &c, nil
+}
+
+// CreateUserCredential 建立使用者憑證包
+func (s *SQLiteStore) CreateUserCredential(c *UserCredential) error {
+	if c.UserEmail == "" || len(c.Salt) == 0 || c.WrappedDEK == "" {
+		return errors.New("user_email, salt, and wrapped_dek are required")
+	}
+	now := time.Now().UTC()
+	c.CreatedAt = now
+	c.UpdatedAt = now
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`INSERT INTO users (owner_email, salt, wrapped_dek, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		c.UserEmail, c.Salt, c.WrappedDEK, c.CreatedAt.Unix(), c.UpdatedAt.Unix(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create user credential: %w", err)
+	}
+	return nil
+}
+
+// UpdateUserCredential 更新使用者憑證包（改 master password 後 re-wrap DEK）
+func (s *SQLiteStore) UpdateUserCredential(c *UserCredential) error {
+	if c.UserEmail == "" || len(c.Salt) == 0 || c.WrappedDEK == "" {
+		return errors.New("user_email, salt, and wrapped_dek are required")
+	}
+	c.UpdatedAt = time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`UPDATE users SET salt = ?, wrapped_dek = ?, updated_at = ? WHERE owner_email = ?`,
+		c.Salt, c.WrappedDEK, c.UpdatedAt.Unix(), c.UserEmail,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update user credential: %w", err)
+	}
+	return nil
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

@@ -12,13 +12,13 @@ import {
   Key,
 } from 'lucide-react';
 import { useMailStore } from '../../stores/useMailStore';
-import { useAuthStore } from '../../stores/useAuthStore';
+import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { mailApi } from '../../api/mail';
 import { pgpService } from '../../api/pgp';
 
 export const Composer: React.FC = () => {
   const { isComposerOpen, composerDraft, closeComposer } = useMailStore();
-  const { session } = useAuthStore();
+  const activeAccount = useActiveAccount();
 
   const [to, setTo] = useState(composerDraft?.to?.join(', ') || '');
   const [cc, setCc] = useState(composerDraft?.cc?.join(', ') || '');
@@ -145,7 +145,7 @@ export const Composer: React.FC = () => {
     setStatusText('正在透過 SMTP 發送郵件...');
     try {
       await mailApi.sendMessage({
-        from: session?.email,
+        from: activeAccount?.email,
         to: toList,
         cc: ccList,
         bcc: bccList,
@@ -156,7 +156,7 @@ export const Composer: React.FC = () => {
         inReplyTo: composerDraft?.inReplyTo,
         references: composerDraft?.references,
         attachments,
-      });
+      }, activeAccount?.id);
 
       setShowSignPassModal(false);
       closeComposer();

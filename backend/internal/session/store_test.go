@@ -15,18 +15,16 @@ func newTestStore(t *testing.T) *MemoryStore {
 	return ms
 }
 
-func TestCreateGetAndDecrypt(t *testing.T) {
+func TestCreateGetAndDecryptDEK(t *testing.T) {
 	ms := newTestStore(t)
 
-	sess, err := ms.Create(&Session{Email: "a@b.c", Username: "a"}, "secret-pass")
+	dek := []byte{1, 2, 3, 4, 5}
+	sess, err := ms.Create(&Session{Email: "a@b.c", Username: "a"}, dek)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if sess.ID == "" {
 		t.Fatal("expected generated session id")
-	}
-	if sess.EncryptedPassword == "secret-pass" {
-		t.Fatal("password must be encrypted at rest")
 	}
 	if sess.CreatedAt.IsZero() || sess.LastActiveAt.IsZero() {
 		t.Fatal("timestamps should be set")
@@ -40,18 +38,18 @@ func TestCreateGetAndDecrypt(t *testing.T) {
 		t.Fatalf("email = %q, want a@b.c", got.Email)
 	}
 
-	pass, err := ms.GetDecryptedPassword(got)
+	b, err := ms.GetDecryptedDEK(got)
 	if err != nil {
-		t.Fatalf("GetDecryptedPassword: %v", err)
+		t.Fatalf("GetDecryptedDEK: %v", err)
 	}
-	if pass != "secret-pass" {
-		t.Fatalf("password = %q, want secret-pass", pass)
+	if got2 := string(b); got2 != string(dek) {
+		t.Fatalf("DEK = %q, want %q", got2, string(dek))
 	}
 }
 
 func TestCreatePreservesProvidedID(t *testing.T) {
 	ms := newTestStore(t)
-	sess, err := ms.Create(&Session{ID: "fixed-id", Email: "a@b.c"}, "pw")
+	sess, err := ms.Create(&Session{ID: "fixed-id", Email: "a@b.c"}, []byte("pw"))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -79,7 +77,7 @@ func TestTouchNotFound(t *testing.T) {
 
 func TestTouchUpdatesLastActiveAt(t *testing.T) {
 	ms := newTestStore(t)
-	sess, _ := ms.Create(&Session{Email: "a@b.c"}, "pw")
+	sess, _ := ms.Create(&Session{Email: "a@b.c"}, []byte("pw"))
 	old := sess.LastActiveAt
 
 	time.Sleep(2 * time.Millisecond)
@@ -100,7 +98,7 @@ func TestExpiredSession(t *testing.T) {
 	}
 	defer func() { _ = ms.Close() }()
 
-	sess, _ := ms.Create(&Session{Email: "a@b.c"}, "pw")
+	sess, _ := ms.Create(&Session{Email: "a@b.c"}, []byte("pw"))
 	time.Sleep(80 * time.Millisecond)
 
 	if _, err := ms.Get(sess.ID); err != ErrSessionExpired {
@@ -110,7 +108,7 @@ func TestExpiredSession(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	ms := newTestStore(t)
-	sess, _ := ms.Create(&Session{Email: "a@b.c"}, "pw")
+	sess, _ := ms.Create(&Session{Email: "a@b.c"}, []byte("pw"))
 	if err := ms.Delete(sess.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -125,12 +123,19 @@ func TestInvalidMasterKeyLength(t *testing.T) {
 	}
 }
 
+func TestCreateRejectsEmptyDEK(t *testing.T) {
+	ms := newTestStore(t)
+	if _, err := ms.Create(&Session{Email: "a@b.c"}, nil); err == nil {
+		t.Fatal("expected error for empty dek")
+	}
+}
+
 func TestTamperedCiphertext(t *testing.T) {
 	ms := newTestStore(t)
-	sess, _ := ms.Create(&Session{Email: "a@b.c"}, "pw")
+	sess, _ := ms.Create(&Session{Email: "a@b.c"}, []byte("pw"))
 
-	sess.EncryptedPassword = sess.EncryptedPassword[:len(sess.EncryptedPassword)-4] + "AAAA"
-	if _, err := ms.GetDecryptedPassword(sess); err == nil {
+	sess.EncryptedDEK = sess.EncryptedDEK[:len(sess.EncryptedDEK)-4] + "AAAA"
+	if _, err := ms.GetDecryptedDEK(sess); err == nil {
 		t.Fatal("expected decryption error for tampered ciphertext")
 	}
 }

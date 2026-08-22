@@ -15,34 +15,37 @@ import {
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { useMailStore } from '../../stores/useMailStore';
+import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { EmailFrame } from '../mail/EmailFrame';
 
 export const ViewerPane: React.FC = () => {
   const queryClient = useQueryClient();
+  const activeAccount = useActiveAccount();
+  const accountId = activeAccount?.id;
   const { currentFolder, selectedUID, setSelectedUID, openComposer } = useMailStore();
 
   const { data: message, isLoading } = useQuery({
-    queryKey: ['message', currentFolder, selectedUID],
-    queryFn: () => (selectedUID ? mailApi.getMessageDetail(selectedUID, currentFolder) : null),
+    queryKey: ['message', accountId, currentFolder, selectedUID],
+    queryFn: () => (selectedUID ? mailApi.getMessageDetail(selectedUID, currentFolder, accountId) : null),
     enabled: !!selectedUID,
     staleTime: 60000,
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (uid: number) => mailApi.deleteMessages(currentFolder, [uid]),
+    mutationFn: (uid: number) => mailApi.deleteMessages(currentFolder, [uid], false, accountId),
     onSuccess: () => {
       setSelectedUID(null);
-      queryClient.invalidateQueries({ queryKey: ['messages', currentFolder] });
-      queryClient.invalidateQueries({ queryKey: ['folders'] });
+      queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
+      queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
     },
   });
 
   const flagMutation = useMutation({
     mutationFn: ({ flags, op }: { flags: string[]; op: 'add' | 'remove' }) =>
-      selectedUID ? mailApi.setFlags(currentFolder, [selectedUID], flags, op) : Promise.resolve(),
+      selectedUID ? mailApi.setFlags(currentFolder, [selectedUID], flags, op, accountId) : Promise.resolve(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['message', currentFolder, selectedUID] });
-      queryClient.invalidateQueries({ queryKey: ['messages', currentFolder] });
+      queryClient.invalidateQueries({ queryKey: ['message', accountId, currentFolder, selectedUID] });
+      queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
     },
   });
 
@@ -76,8 +79,8 @@ export const ViewerPane: React.FC = () => {
       cc: replyAll ? message.cc.map((c) => c.address) : [],
       subject: message.subject.startsWith('Re:') ? message.subject : `Re: ${message.subject}`,
       textBody: quoteHeader + (message.textBody || ''),
-      inReplyTo: message.messageID,
-      references: message.messageID,
+      inReplyTo: message.messageId,
+      references: message.messageId,
     });
   };
 
@@ -89,7 +92,7 @@ export const ViewerPane: React.FC = () => {
       to: [],
       subject: message.subject.startsWith('Fwd:') ? message.subject : `Fwd: ${message.subject}`,
       textBody: quoteHeader + (message.textBody || ''),
-      references: message.messageID,
+      references: message.messageId,
     });
   };
 
