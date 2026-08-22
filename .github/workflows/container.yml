@@ -48,7 +48,7 @@ jobs:
         run: |
           TAGS="ghcr.io/${{ github.repository }}:${{ github.ref_name }}
           ghcr.io/${{ github.repository }}:latest"
-          if [ -n "${{ secrets.DOCKER_USERNAME }}" ] && [ -n "${{ secrets.DOCKER_PASSWORD }}" ]; then
+          if [ "$DOCKER_HUB_ENABLED" = "true" ]; then
             TAGS="$TAGS
           docker.io/${{ secrets.DOCKER_USERNAME }}/e2mail:${{ github.ref_name }}
           docker.io/${{ secrets.DOCKER_USERNAME }}/e2mail:latest"
