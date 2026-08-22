@@ -53,7 +53,13 @@ jobs:
           docker.io/${{ secrets.DOCKER_USERNAME }}/e2mail:${{ github.ref_name }}
           docker.io/${{ secrets.DOCKER_USERNAME }}/e2mail:latest"
           fi
-          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+          # GITHUB_OUTPUT is single-line per assignment; use a heredoc delimiter
+          # so the newline-separated tag list survives as one value.
+          {
+            echo "tags<<EOF"
+            printf '%s\n' "$TAGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build & push
         uses: docker/build-push-action@v7
