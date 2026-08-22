@@ -1,11 +1,11 @@
-version: '3.8'
-
 services:
-  webmail:
+  e2mail:
+    #   docker compose up -d --build
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: modern-webmail
+    image: ghcr.io/johnwmail/e2mail:latest
+    container_name: e2mail
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -20,14 +20,17 @@ services:
       # - DEFAULT_SMTP_PORT=587
       # - DEFAULT_ALLOW_INSECURE_TLS=false    # 預設為 false；僅在自簽憑證環境顯式設為 true
     volumes:
-      - webmail-data:/data
+      - e2mail-data:/data
     networks:
-      - webmail-net
+      - e2mail-net
 
 volumes:
-  webmail-data:
+  # NOTE: older images used `webmail-data`. If upgrading from a prior install,
+  # the PGP keyring + DB already live there; one-time migrate:
+  #   docker run --rm -v webmail-data:/from -v e2mail-data:/to alpine cp -a /from/. /to/
+  e2mail-data:
     driver: local
 
 networks:
-  webmail-net:
+  e2mail-net:
     driver: bridge

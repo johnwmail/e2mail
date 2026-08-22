@@ -1,0 +1,41 @@
+# Git & VCS
+.git
+.gitignore
+.gitattributes
+
+# GitHub
+.github
+
+# Project docs (not needed at build time)
+README.md
+LICENSE
+AGENTS.md
+MultiAccounts.md
+
+# Orchestration
+docker-compose.yml
+docker-compose.*.yml
+
+# Local env / secrets
+.env
+.env.*
+
+# Frontend build artifacts / deps (recreated in-image)
+frontend/node_modules
+frontend/dist
+frontend/coverage
+
+# Backend local artifacts (dist is populated from the frontend stage)
+backend/web/dist/*
+!backend/web/dist/.gitkeep
+
+# Go
+backend/server
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
