@@ -237,3 +237,139 @@ func TestSaveKeyringValidation(t *testing.T) {
 		t.Fatal("expected error when key material missing")
 	}
 }
+func TestAccountCRUD(t *testing.T) {
+	s := newTestStore(t)
+
+	// 空清單
+	got, err := s.ListAccounts("u@x.com")
+	if err != nil {
+		t.Fatalf("ListAccounts: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected 0 accounts, got %d", len(got))
+	}
+
+	a := &Account{
+		UserEmail:       "u@x.com",
+		Label:           "公司信箱",
+		Email:           "work@x.com",
+		IMAPHost:        "imap.x.com",
+		IMAPPort:        993,
+		IMAPUseTLS:      true,
+		SMTPHost:        "smtp.x.com",
+		SMTPPort:        587,
+		SMTPUseTLS:      true,
+		Username:        "work@x.com",
+		EncIMAPPassword: "ENC_IMAP",
+		EncSMTPPassword: "ENC_SMTP",
+		IsDefault:       true,
+		SortOrder:       0,
+	}
+	if err := s.CreateAccount(a); err != nil {
+		t.Fatalf("CreateAccount: %v", err)
+	}
+
+	// 建立時 id 會生成
+	if a.ID == "" {
+		t.Fatal("expected generated account id")
+	}
+
+	// Get
+	loaded, err := s.GetAccount("u@x.com", a.ID)
+	if err != nil {
+		t.Fatalf("GetAccount: %v", err)
+	}
+	if loaded == nil || loaded.Email != "work@x.com" || loaded.EncIMAPPassword != "ENC_IMAP" {
+		t.Fatalf("unexpected account: %+v", loaded)
+	}
+	if !loaded.IsDefault {
+		t.Fatal("account should be default")
+	}
+	if !loaded.IMAPUseTLS || !loaded.SMTPUseTLS {
+		t.Fatal("TLS flags should be preserved")
+	}
+
+	// Update
+	loaded.Label = "私人信箱"
+	if err := s.UpdateAccount(loaded); err != nil {
+		t.Fatalf("UpdateAccount: %v", err)
+	}
+	reloaded, _ := s.GetAccount("u@x.com", a.ID)
+	if reloaded.Label != "私人信箱" {
+		t.Fatalf("label = %q, want 私人信箱", reloaded.Label)
+	}
+
+	// SetDefault (新增另一帳號)
+	b := &Account{UserEmail: "u@x.com", Label: "B", Email: "b@x.com", IMAPHost: "imap", IMAPPort: 993, SMTPHost: "smtp", SMTPPort: 587, Username: "b", EncIMAPPassword: "E", EncSMTPPassword: "S"}
+	if err := s.CreateAccount(b); err != nil {
+		t.Fatalf("CreateAccount b: %v", err)
+	}
+	if err := s.SetDefaultAccount("u@x.com", b.ID); err != nil {
+		t.Fatalf("SetDefaultAccount: %v", err)
+	}
+	list, _ := s.ListAccounts("u@x.com")
+	if len(list) != 2 {
+		t.Fatalf("expected 2 accounts, got %d", len(list))
+	}
+	for _, acc := range list {
+		if acc.ID == b.ID && !acc.IsDefault {
+			t.Fatal("b should be default")
+		}
+		if acc.ID == a.ID && acc.IsDefault {
+			t.Fatal("a should no longer be default")
+		}
+	}
+
+	// Count
+	n, err := s.CountAccounts("u@x.com")
+	if err != nil || n != 2 {
+		t.Fatalf("CountAccounts = %d, err %v, want 2", n, err)
+	}
+
+	// Delete
+	if err := s.DeleteAccount("u@x.com", a.ID); err != nil {
+		t.Fatalf("DeleteAccount: %v", err)
+	}
+	if got, _ := s.GetAccount("u@x.com", a.ID); got != nil {
+		t.Fatal("account should be gone after delete")
+	}
+}
+
+func TestCreateAccountValidation(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.CreateAccount(&Account{UserEmail: "u@x.com"}); err == nil {
+		t.Fatal("expected error when passwords missing")
+	}
+}
+
+func TestUserCredentialCRUD(t *testing.T) {
+	s := newTestStore(t)
+
+	got, err := s.GetUserCredential("u@x.com")
+	if err != nil {
+		t.Fatalf("GetUserCredential: %v", err)
+	}
+	if got != nil {
+		t.Fatal("expected nil for missing credential")
+	}
+
+	cred := &UserCredential{UserEmail: "u@x.com", Salt: []byte("somesalt12345678"), WrappedDEK: "wrapped-dek"}
+	if err := s.CreateUserCredential(cred); err != nil {
+		t.Fatalf("CreateUserCredential: %v", err)
+	}
+
+	got, _ = s.GetUserCredential("u@x.com")
+	if got == nil || got.WrappedDEK != "wrapped-dek" || string(got.Salt) != "somesalt12345678" {
+		t.Fatalf("unexpected credential: %+v", got)
+	}
+
+	// Update
+	got.WrappedDEK = "wrapped-dek-2"
+	if err := s.UpdateUserCredential(got); err != nil {
+		t.Fatalf("UpdateUserCredential: %v", err)
+	}
+	reloaded, _ := s.GetUserCredential("u@x.com")
+	if reloaded.WrappedDEK != "wrapped-dek-2" {
+		t.Fatalf("wrapped_dek = %q, want wrapped-dek-2", reloaded.WrappedDEK)
+	}
+}

@@ -3,17 +3,15 @@ package imap
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
-
-	"modern-webmail/backend/internal/session"
 )
 
 var (
 	ErrPoolClosed     = errors.New("connection pool is closed")
 	ErrAcquireTimeout = errors.New("timeout acquiring IMAP connection")
 )
-
 // UserPool 單一使用者專屬的 IMAP 連線池
 type UserPool struct {
 	mu          sync.Mutex
@@ -169,21 +167,25 @@ func NewPoolManager() *PoolManager {
 	return pm
 }
 
-// GetClient 快捷取得連線與釋放函式
-func (pm *PoolManager) GetClient(ctx context.Context, sess *session.Session, plainPassword string) (*Client, func(), error) {
+// poolKey 以 session + account 為鍵，令同一 session 內每個帳號有獨立連線池
+type poolKey struct {
+	sessionID string
+	accountID string
+}
+
+func (k poolKey) string() string {
+	return k.sessionID + "::" + k.accountID
+}
+
+// GetClient 快捷取得連線與釋放函式（按 session + account 隔離）
+func (pm *PoolManager) GetClient(ctx context.Context, sessionID, accountID string, config ConnectionConfig) (*Client, func(), error) {
+	key := poolKey{sessionID: sessionID, accountID: accountID}
+
 	pm.mu.Lock()
-	pool, exists := pm.pools[sess.ID]
+	pool, exists := pm.pools[key.string()]
 	if !exists {
-		config := ConnectionConfig{
-			Host:             sess.IMAPHost,
-			Port:             sess.IMAPPort,
-			UseTLS:           sess.IMAPUseTLS,
-			AllowInsecureTLS: sess.IMAPAllowInsecureTLS,
-			Username:         sess.Username,
-			Password:         plainPassword,
-		}
 		pool = NewUserPool(config, 4, 5*time.Minute)
-		pm.pools[sess.ID] = pool
+		pm.pools[key.string()] = pool
 	}
 	pm.mu.Unlock()
 
@@ -199,14 +201,30 @@ func (pm *PoolManager) GetClient(ctx context.Context, sess *session.Session, pla
 	return client, release, nil
 }
 
-// DestroyPool 銷毀指定會話的連線池
-func (pm *PoolManager) DestroyPool(sessionID string) {
+// DestroyPool 銷毀指定會話 + 帳號的連線池
+func (pm *PoolManager) DestroyPool(sessionID, accountID string) {
+	key := poolKey{sessionID: sessionID, accountID: accountID}
+
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	if pool, exists := pm.pools[sessionID]; exists {
+	if pool, exists := pm.pools[key.string()]; exists {
 		pool.Close()
-		delete(pm.pools, sessionID)
+		delete(pm.pools, key.string())
+	}
+}
+
+// DestroySessionPools 銷毀指定會話的所有帳號連線池
+func (pm *PoolManager) DestroySessionPools(sessionID string) {
+	prefix := sessionID + "::"
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	for k, p := range pm.pools {
+		if strings.HasPrefix(k, prefix) {
+			p.Close()
+			delete(pm.pools, k)
+		}
 	}
 }
 

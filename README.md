@@ -9,13 +9,19 @@ and the API from a single Go binary in one container.
 - **Any IMAP/SMTP server** — Gmail, Outlook, Fastmail, iCloud, QQ, custom
   domains, or a self-hosted mail server. Built-in adaptive table for common
   providers.
+- **Multi-account** — manage multiple mail accounts in one session, with a
+  Thunderbird/iOS-Mail-style sidebar folder tree, per-account unread badges,
+  and a `/accounts` management page. Account IMAP/SMTP passwords are stored
+  encrypted at rest (LUKS-style envelope encryption: a random DEK wraps all
+  account passwords, itself wrapped by the first account's IMAP password).
 - **End-to-end PGP** (OpenPGP.js, Ed25519) — generate, import, encrypt, sign,
   decrypt, verify. Multi-block / multi-key / armored-or-binary `.gpg` files
   are all parsed and re-armored before send.
 - **Server-side keyring** — passphrases never leave the browser; the server
   only stores the user's Passphrase-encrypted private key blob.
 - **Per-user contact keyrings** stored in SQLite, shared across browsers.
-- **Real-time push** via IMAP IDLE → SSE on `/api/events`.
+- **Real-time push** via IMAP IDLE → SSE on `/api/events` (multiplexes all
+  accounts over a single SSE connection).
 - **One-file storage** — `/data/webmail.db` (with WAL siblings). Legacy
   per-user JSON keyring files are auto-migrated on first boot.
 - **Container env defaults** — IMAP/SMTP host & port can be pre-configured by
@@ -76,7 +82,7 @@ Uncomment in `docker-compose.yml` (or set via your orchestrator) to activate.
 | `PORT`                    | `8080`  | Backend HTTP listen port                                |
 | `DATA_DIR`                | `/data` | SQLite + keyring directory (must be on a persistent volume) |
 | `SESSION_TTL_HOURS`       | `24`    | Idle session expiry                                     |
-| `SESSION_SECRET`          | (random)| 32-byte AES-GCM key for credential-at-rest encryption   |
+| `SESSION_SECRET`          | (random)| 32-byte AES-GCM key for encrypting the per-session DEK at rest |
 | `DEFAULT_IMAP_HOST`       | —       | Pre-fill IMAP host for users with custom domains        |
 | `DEFAULT_IMAP_PORT`       | `993`   | Pre-fill IMAP port                                      |
 | `DEFAULT_SMTP_HOST`       | —       | Pre-fill SMTP host                                      |
@@ -109,6 +115,10 @@ Everything user-private lives in one SQLite file:
   key ID, ASCII-armored key).
 - `personal_keyrings` — per-user cloud-synced private keyring (passphrase-
   encrypted private key + public key + metadata).
+- `accounts` — per-user mail account settings (IMAP/SMTP host/port/TLS flags);
+  passwords are stored encrypted with a per-user DEK.
+- `users` — per-user credential envelope (Argon2id salt + DEK wrapped by the
+  master key derived from the first account's IMAP password).
 
 WAL mode is enabled (`journal_mode=WAL`, `busy_timeout=5000`); the
 `-shm` / `-wal` siblings accompany the main file inside the same
@@ -135,8 +145,12 @@ npm run build
 
 - Private keys are encrypted at rest with the user's passphrase; the server
   never sees the passphrase.
-- Sessions are AES-GCM encrypted in memory; setting `SESSION_SECRET` is
-  recommended for multi-instance deployments.
+- Mail account passwords are never stored in plaintext: each user has a random
+  DEK that encrypts all account passwords, and the DEK itself is AES-GCM
+  wrapped by a master key derived (Argon2id) from the first account's IMAP
+  password. Losing that password permanently locks all stored account secrets.
+- Sessions hold only the in-memory DEK (AES-GCM encrypted); setting
+  `SESSION_SECRET` is recommended for multi-instance deployments.
 - TLS is mandatory by default (`allowInsecureTls = false`). Only enable
   self-signed certs via env when targeting a test environment.
 - Requests hit the Go server directly (no nginx/proxy in front), so large PGP

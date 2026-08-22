@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"modern-webmail/backend/internal/storage"
 )
 
 var (
@@ -19,29 +20,23 @@ var (
 	ErrSessionExpired  = errors.New("session expired")
 )
 
-// Session 儲存使用者於記憶體中的會話與連線參數
+// Session 儲存使用者於記憶體中的會話。密碼一律加密存 DB（見 storage.Account），
+// Session 只保留解鎖後嘅 DEK，用嚟解密每個帳號嘅 IMAP/SMTP 密碼。
 type Session struct {
-	ID                  string    `json:"id"`
-	Email               string    `json:"email"`
-	Username            string    `json:"username"`
-	EncryptedPassword   string    `json:"-"` // AES-GCM 加密後之 Base64 字串，不對外序列化
-	IMAPHost            string    `json:"imapHost"`
-	IMAPPort            int       `json:"imapPort"`
-	IMAPUseTLS          bool      `json:"imapUseTls"`
-	IMAPAllowInsecureTLS bool     `json:"imapAllowInsecureTls"`
-	SMTPHost            string    `json:"smtpHost"`
-	SMTPPort            int       `json:"smtpPort"`
-	SMTPUseTLS          bool      `json:"smtpUseTls"`
-	SMTPAllowInsecureTLS bool     `json:"smtpAllowInsecureTls"`
-	CreatedAt           time.Time `json:"createdAt"`
-	LastActiveAt        time.Time `json:"lastActiveAt"`
+	ID            string             `json:"id"`
+	Email         string             `json:"email"`    // 登入者（owner user_email）
+	Username      string             `json:"username"` // 首帳號認證使用者名稱
+	Accounts      []storage.Account  `json:"accounts"` // 帳號設定（密碼欄位 json:"-"）
+	EncryptedDEK  string             `json:"-"`        // AES-GCM(serverKey, DEK)，不對外序列化
+	CreatedAt     time.Time          `json:"createdAt"`
+	LastActiveAt  time.Time          `json:"lastActiveAt"`
 }
 
 // Store 會話管理介面
 type Store interface {
-	Create(sess *Session, rawPassword string) (*Session, error)
+	Create(sess *Session, dek []byte) (*Session, error)
 	Get(id string) (*Session, error)
-	GetDecryptedPassword(sess *Session) (string, error)
+	GetDecryptedDEK(sess *Session) ([]byte, error)
 	Touch(id string) error
 	Delete(id string) error
 	Close() error
@@ -88,50 +83,49 @@ func NewMemoryStore(ttl time.Duration, masterKey []byte) (*MemoryStore, error) {
 	return ms, nil
 }
 
-// encrypt 使用 AES-256-GCM 加密敏感字串
-func (ms *MemoryStore) encrypt(plaintext string) (string, error) {
+// encrypt 使用 AES-256-GCM 加密敏感資料（用 server key）
+func (ms *MemoryStore) encrypt(plaintext []byte) (string, error) {
 	nonce := make([]byte, ms.cipherGCM.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", err
 	}
-
-	ciphertext := ms.cipherGCM.Seal(nonce, nonce, []byte(plaintext), nil)
+	ciphertext := ms.cipherGCM.Seal(nonce, nonce, plaintext, nil)
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-// decrypt 使用 AES-256-GCM 解密敏感字串
-func (ms *MemoryStore) decrypt(encryptedBase64 string) (string, error) {
+// decrypt 使用 AES-256-GCM 解密資料
+func (ms *MemoryStore) decrypt(encryptedBase64 string) ([]byte, error) {
 	data, err := base64.StdEncoding.DecodeString(encryptedBase64)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-
 	nonceSize := ms.cipherGCM.NonceSize()
 	if len(data) < nonceSize {
-		return "", errors.New("ciphertext too short")
+		return nil, errors.New("ciphertext too short")
 	}
-
 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
 	plaintext, err := ms.cipherGCM.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to decrypt password: %w", err)
+		return nil, fmt.Errorf("failed to decrypt DEK: %w", err)
 	}
-
-	return string(plaintext), nil
+	return plaintext, nil
 }
 
-// Create 建立並加密儲存新會話
-func (ms *MemoryStore) Create(sess *Session, rawPassword string) (*Session, error) {
-	encPass, err := ms.encrypt(rawPassword)
+// Create 建立並加密儲存新會話（DEK 加密後存記憶體）
+func (ms *MemoryStore) Create(sess *Session, dek []byte) (*Session, error) {
+	if len(dek) == 0 {
+		return nil, errors.New("dek cannot be empty")
+	}
+	encDEK, err := ms.encrypt(dek)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encrypt session password: %w", err)
+		return nil, fmt.Errorf("failed to encrypt session DEK: %w", err)
 	}
 
 	if sess.ID == "" {
 		sess.ID = uuid.New().String()
 	}
 	now := time.Now()
-	sess.EncryptedPassword = encPass
+	sess.EncryptedDEK = encDEK
 	sess.CreatedAt = now
 	sess.LastActiveAt = now
 
@@ -160,9 +154,9 @@ func (ms *MemoryStore) Get(id string) (*Session, error) {
 	return sess, nil
 }
 
-// GetDecryptedPassword 取得解密後的密碼
-func (ms *MemoryStore) GetDecryptedPassword(sess *Session) (string, error) {
-	return ms.decrypt(sess.EncryptedPassword)
+// GetDecryptedDEK 取得解密後的 DEK
+func (ms *MemoryStore) GetDecryptedDEK(sess *Session) ([]byte, error) {
+	return ms.decrypt(sess.EncryptedDEK)
 }
 
 // Touch 更新會話活躍時間

@@ -200,6 +200,16 @@ export const LoginForm: React.FC = () => {
           </div>
         )}
 
+        {/* 帳號加密儲存提示（首次登入即建立帳號） */}
+        {!challenge && (
+          <div className="mb-5 flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-50 text-amber-800 text-xs border border-amber-200/70 leading-relaxed animate-in fade-in">
+            <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              首次登入即建立你的郵件帳號。帳號密碼會<strong className="font-semibold">加密儲存於伺服器</strong>；請緊記你嘅登入密碼——遺失將永久無法解鎖所有帳號。
+            </span>
+          </div>
+        )}
+
         {challenge ? (
           /* 2FA 驗證步驟 */
           <form onSubmit={handleTwoFASubmit} className="space-y-4">

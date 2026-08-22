@@ -15,10 +15,35 @@ import (
 	"github.com/go-chi/chi/v5"
 	"modern-webmail/backend/internal/api/middleware"
 	imapinternal "modern-webmail/backend/internal/imap"
-	"modern-webmail/backend/internal/session"
 	"modern-webmail/backend/internal/smtp"
+	"modern-webmail/backend/internal/storage"
 	"modern-webmail/backend/pkg/response"
 )
+
+// acquireClient 取得目前帳號嘅 IMAP 連線（account 參數缺省用 default）
+func (h *MailHandler) acquireClient(ctx context.Context, r *http.Request) (*imapinternal.Client, func(), *middleware.AuthContext, *storage.Account, error) {
+	authCtx, acc := middleware.GetCurrentAccount(ctx, r)
+	if authCtx == nil || acc == nil {
+		return nil, nil, nil, nil, fmt.Errorf("no account available")
+	}
+	password := middleware.GetCurrentAccountPassword(authCtx, acc)
+	if password == "" {
+		return nil, nil, nil, nil, fmt.Errorf("failed to decrypt account password")
+	}
+	config := imapinternal.ConnectionConfig{
+		Host:             acc.IMAPHost,
+		Port:             acc.IMAPPort,
+		UseTLS:           acc.IMAPUseTLS,
+		AllowInsecureTLS: acc.IMAPAllowInsecureTLS,
+		Username:         acc.Username,
+		Password:         password,
+	}
+	client, release, err := h.poolMgr.GetClient(ctx, authCtx.Session.ID, acc.ID, config)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return client, release, authCtx, acc, nil
+}
 
 // MailHandler 處理郵件與信箱相關請求
 type MailHandler struct {
@@ -36,9 +61,6 @@ func NewMailHandler(poolMgr *imapinternal.PoolManager, sender *smtp.Sender) *Mai
 
 // SetFolderSubscription 訂閱／取消訂閱 IMAP 資料夾
 func (h *MailHandler) SetFolderSubscription(w http.ResponseWriter, r *http.Request) {
-	sess, _ := middleware.GetSessionFromContext(r.Context())
-	password, _ := middleware.GetPasswordFromContext(r.Context())
-
 	var req struct {
 		Name       string `json:"name"`
 		Subscribed bool   `json:"subscribed"`
@@ -56,7 +78,7 @@ func (h *MailHandler) SetFolderSubscription(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	client, release, err := h.poolMgr.GetClient(r.Context(), sess, password)
+	client, release, _, _, err := h.acquireClient(r.Context(), r)
 	if err != nil {
 		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
 		return
@@ -81,10 +103,7 @@ func (h *MailHandler) SetFolderSubscription(w http.ResponseWriter, r *http.Reque
 
 // ListFolders 取得使用者所有資料夾與未讀數
 func (h *MailHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
-	sess, _ := middleware.GetSessionFromContext(r.Context())
-	password, _ := middleware.GetPasswordFromContext(r.Context())
-
-	client, release, err := h.poolMgr.GetClient(r.Context(), sess, password)
+	client, release, _, _, err := h.acquireClient(r.Context(), r)
 	if err != nil {
 		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
 		return
@@ -102,9 +121,6 @@ func (h *MailHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
 
 // ListMessages 分頁取得指定資料夾的信件清單
 func (h *MailHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
-	sess, _ := middleware.GetSessionFromContext(r.Context())
-	password, _ := middleware.GetPasswordFromContext(r.Context())
-
 	folder := r.URL.Query().Get("folder")
 	if folder == "" {
 		folder = "INBOX"
@@ -126,7 +142,7 @@ func (h *MailHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query().Get("q")
 
-	client, release, err := h.poolMgr.GetClient(r.Context(), sess, password)
+	client, release, _, _, err := h.acquireClient(r.Context(), r)
 	if err != nil {
 		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
 		return
@@ -144,9 +160,6 @@ func (h *MailHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 
 // GetMessageDetail 讀取特定 UID 的完整郵件內文與附件結構
 func (h *MailHandler) GetMessageDetail(w http.ResponseWriter, r *http.Request) {
-	sess, _ := middleware.GetSessionFromContext(r.Context())
-	password, _ := middleware.GetPasswordFromContext(r.Context())
-
 	uidStr := chi.URLParam(r, "uid")
 	uid64, err := strconv.ParseUint(uidStr, 10, 32)
 	if err != nil {
@@ -159,7 +172,7 @@ func (h *MailHandler) GetMessageDetail(w http.ResponseWriter, r *http.Request) {
 		folder = "INBOX"
 	}
 
-	client, release, err := h.poolMgr.GetClient(r.Context(), sess, password)
+	client, release, _, _, err := h.acquireClient(r.Context(), r)
 	if err != nil {
 		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
 		return
@@ -183,9 +196,6 @@ func (h *MailHandler) GetMessageDetail(w http.ResponseWriter, r *http.Request) {
 
 // DownloadAttachment 下載或預覽指定郵件中的附件檔案
 func (h *MailHandler) DownloadAttachment(w http.ResponseWriter, r *http.Request) {
-	sess, _ := middleware.GetSessionFromContext(r.Context())
-	password, _ := middleware.GetPasswordFromContext(r.Context())
-
 	uidStr := chi.URLParam(r, "uid")
 	attID := chi.URLParam(r, "attId")
 	uid64, err := strconv.ParseUint(uidStr, 10, 32)
@@ -199,7 +209,7 @@ func (h *MailHandler) DownloadAttachment(w http.ResponseWriter, r *http.Request)
 		folder = "INBOX"
 	}
 
-	client, release, err := h.poolMgr.GetClient(r.Context(), sess, password)
+	client, release, _, _, err := h.acquireClient(r.Context(), r)
 	if err != nil {
 		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
 		return
@@ -265,10 +275,7 @@ func (h *MailHandler) SetFlags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, _ := middleware.GetSessionFromContext(r.Context())
-	password, _ := middleware.GetPasswordFromContext(r.Context())
-
-	client, release, err := h.poolMgr.GetClient(r.Context(), sess, password)
+	client, release, _, _, err := h.acquireClient(r.Context(), r)
 	if err != nil {
 		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
 		return
@@ -303,10 +310,7 @@ func (h *MailHandler) MoveMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, _ := middleware.GetSessionFromContext(r.Context())
-	password, _ := middleware.GetPasswordFromContext(r.Context())
-
-	client, release, err := h.poolMgr.GetClient(r.Context(), sess, password)
+	client, release, _, _, err := h.acquireClient(r.Context(), r)
 	if err != nil {
 		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
 		return
@@ -344,10 +348,7 @@ func (h *MailHandler) DeleteMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, _ := middleware.GetSessionFromContext(r.Context())
-	password, _ := middleware.GetPasswordFromContext(r.Context())
-
-	client, release, err := h.poolMgr.GetClient(r.Context(), sess, password)
+	client, release, _, _, err := h.acquireClient(r.Context(), r)
 	if err != nil {
 		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
 		return
@@ -364,8 +365,12 @@ func (h *MailHandler) DeleteMessages(w http.ResponseWriter, r *http.Request) {
 
 // SendMessage 透過 SMTP 發送郵件並自動附加存入 IMAP「已發送 (Sent)」資料夾
 func (h *MailHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
-	sess, _ := middleware.GetSessionFromContext(r.Context())
-	password, _ := middleware.GetPasswordFromContext(r.Context())
+	authCtx, acc := middleware.GetCurrentAccount(r.Context(), r)
+	if authCtx == nil || acc == nil {
+		response.BadRequest(w, "no account selected")
+		return
+	}
+	accountPassword := middleware.GetCurrentAccountPassword(authCtx, acc)
 
 	var outMsg smtp.OutgoingMessage
 
@@ -377,7 +382,7 @@ func (h *MailHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		outMsg.From = sess.Email
+		outMsg.From = acc.Email
 		if fromForm := r.FormValue("from"); fromForm != "" {
 			outMsg.From = fromForm
 		}
@@ -420,7 +425,7 @@ func (h *MailHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if outMsg.From == "" {
-			outMsg.From = sess.Email
+			outMsg.From = acc.Email
 		}
 	}
 
@@ -430,12 +435,12 @@ func (h *MailHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	smtpCfg := smtp.SMTPConfig{
-		Host:             sess.SMTPHost,
-		Port:             sess.SMTPPort,
-		UseTLS:           sess.SMTPUseTLS,
-		AllowInsecureTLS: sess.SMTPAllowInsecureTLS,
-		Username:         sess.Username,
-		Password:         password,
+		Host:             acc.SMTPHost,
+		Port:             acc.SMTPPort,
+		UseTLS:           acc.SMTPUseTLS,
+		AllowInsecureTLS: acc.SMTPAllowInsecureTLS,
+		Username:         acc.Username,
+		Password:         accountPassword,
 	}
 
 	log.Printf("[SMTP] Sending email from %s to %v via %s:%d...", outMsg.From, outMsg.To, smtpCfg.Host, smtpCfg.Port)
@@ -454,11 +459,19 @@ func (h *MailHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	// 成功寄出後，自動在背景透過 IMAP APPEND 將該郵件寫入發件人的「已發送 (Sent)」資料夾
 	if len(rawMIME) > 0 {
-		go func(s *session.Session, pass string, mimeData []byte) {
+		go func(sessID, accountID string, acct storage.Account, pass string, mimeData []byte) {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 
-			imapClient, release, err := h.poolMgr.GetClient(ctx, s, pass)
+			cfg := imapinternal.ConnectionConfig{
+				Host:             acct.IMAPHost,
+				Port:             acct.IMAPPort,
+				UseTLS:           acct.IMAPUseTLS,
+				AllowInsecureTLS: acct.IMAPAllowInsecureTLS,
+				Username:         acct.Username,
+				Password:         pass,
+			}
+			imapClient, release, err := h.poolMgr.GetClient(ctx, sessID, accountID, cfg)
 			if err != nil {
 				log.Printf("[SENT APPEND ERROR] failed to acquire IMAP client: %v", err)
 				return
@@ -471,7 +484,7 @@ func (h *MailHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 			} else {
 				log.Printf("[SENT APPEND SUCCESS] Saved copy to sent folder: %s", sentFolder)
 			}
-		}(sess, password, rawMIME)
+		}(authCtx.Session.ID, acc.ID, *acc, accountPassword, rawMIME)
 	}
 
 	response.Success(w, map[string]string{"message": "email sent successfully"})

@@ -7,36 +7,40 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2"
-	"modern-webmail/backend/internal/session"
 )
 
 // MailboxEvent 定義即時推播事件
 type MailboxEvent struct {
 	Type        string    `json:"type"` // "NEW_MESSAGE", "EXPUNGE", "FLAG_UPDATE", "HEARTBEAT"
+	AccountID   string    `json:"accountId"`
 	Mailbox     string    `json:"mailbox"`
 	TotalCount  uint32    `json:"totalCount,omitempty"`
 	Timestamp   time.Time `json:"timestamp"`
 }
 
-// IdleListener 單一使用者的 IMAP IDLE 監聽協程
+// IdleListener 單一使用者某帳號嘅 IMAP IDLE 監聽協程
 type IdleListener struct {
-	sess         *session.Session
-	password     string
-	mailbox      string
-	eventCh      chan MailboxEvent
-	subscribers  map[chan MailboxEvent]struct{}
-	subMu        sync.Mutex
-	stopCh       chan struct{}
-	closed       bool
+	sessionID   string
+	accountID   string
+	config      ConnectionConfig
+	password    string
+	mailbox     string
+	eventCh     chan MailboxEvent
+	subscribers map[chan MailboxEvent]struct{}
+	subMu       sync.Mutex
+	stopCh      chan struct{}
+	closed      bool
 }
 
 // NewIdleListener 建立 IDLE 監聽器
-func NewIdleListener(sess *session.Session, plainPassword, mailbox string) *IdleListener {
+func NewIdleListener(sessionID, accountID string, config ConnectionConfig, plainPassword, mailbox string) *IdleListener {
 	if mailbox == "" {
 		mailbox = "INBOX"
 	}
 	return &IdleListener{
-		sess:        sess,
+		sessionID:   sessionID,
+		accountID:   accountID,
+		config:      config,
 		password:    plainPassword,
 		mailbox:     mailbox,
 		eventCh:     make(chan MailboxEvent, 100),
@@ -64,6 +68,9 @@ func (l *IdleListener) Subscribe() (<-chan MailboxEvent, func()) {
 
 // Broadcast 廣播事件至所有訂閱者
 func (l *IdleListener) Broadcast(event MailboxEvent) {
+	if l.accountID != "" {
+		event.AccountID = l.accountID
+	}
 	l.subMu.Lock()
 	defer l.subMu.Unlock()
 
@@ -85,7 +92,7 @@ func (l *IdleListener) Start() {
 			default:
 				err := l.runIdleLoop()
 				if err != nil {
-					log.Printf("[IMAP IDLE] session %s error: %v, retrying in 10s...", l.sess.ID, err)
+					log.Printf("[IMAP IDLE] session %s (account %s) error: %v, retrying in 10s...", l.sessionID, l.accountID, err)
 					time.Sleep(10 * time.Second)
 				}
 			}
@@ -95,14 +102,7 @@ func (l *IdleListener) Start() {
 
 // runIdleLoop 執行單次 IDLE 連線週期
 func (l *IdleListener) runIdleLoop() error {
-	config := ConnectionConfig{
-		Host:             l.sess.IMAPHost,
-		Port:             l.sess.IMAPPort,
-		UseTLS:           l.sess.IMAPUseTLS,
-		AllowInsecureTLS: l.sess.IMAPAllowInsecureTLS,
-		Username:         l.sess.Username,
-		Password:         l.password,
-	}
+	config := l.config
 
 	client, err := NewClient(config)
 	if err != nil {
@@ -190,28 +190,62 @@ func NewIdleManager() *IdleManager {
 	}
 }
 
-// GetOrStartListener 取得或建立監聽器
-func (im *IdleManager) GetOrStartListener(sess *session.Session, plainPassword string) *IdleListener {
+type idleKey struct {
+	sessionID string
+	accountID string
+}
+
+func (k idleKey) string() string {
+	return k.sessionID + "::" + k.accountID
+}
+
+// GetOrStartListener 取得或建立監聽器（按 session + account 隔離）
+func (im *IdleManager) GetOrStartListener(sessionID, accountID string, config ConnectionConfig, plainPassword string) *IdleListener {
+	key := idleKey{sessionID: sessionID, accountID: accountID}
+
 	im.mu.Lock()
 	defer im.mu.Unlock()
 
-	if l, exists := im.listeners[sess.ID]; exists {
+	if l, exists := im.listeners[key.string()]; exists {
 		return l
 	}
 
-	listener := NewIdleListener(sess, plainPassword, "INBOX")
+	listener := NewIdleListener(sessionID, accountID, config, plainPassword, "INBOX")
 	listener.Start()
-	im.listeners[sess.ID] = listener
+	im.listeners[key.string()] = listener
 	return listener
 }
 
 // StopListener 停止並移除監聽器
-func (im *IdleManager) StopListener(sessionID string) {
+func (im *IdleManager) StopListener(sessionID, accountID string) {
+	key := idleKey{sessionID: sessionID, accountID: accountID}
+
 	im.mu.Lock()
 	defer im.mu.Unlock()
 
-	if l, exists := im.listeners[sessionID]; exists {
+	if l, exists := im.listeners[key.string()]; exists {
 		l.Stop()
-		delete(im.listeners, sessionID)
+		delete(im.listeners, key.string())
 	}
+}
+
+// StopSessionListeners 停止並移除指定會話的所有帳號監聽器
+func (im *IdleManager) StopSessionListeners(sessionID string) {
+	prefix := sessionID + "::"
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
+	for k, l := range im.listeners {
+		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
+			l.Stop()
+			delete(im.listeners, k)
+		}
+	}
+}
+
+// ListenerCount 返回目前活躍監聽器數量（供連線上限檢查用）
+func (im *IdleManager) ListenerCount() int {
+	im.mu.RLock()
+	defer im.mu.RUnlock()
+	return len(im.listeners)
 }

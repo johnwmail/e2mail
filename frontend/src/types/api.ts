@@ -66,10 +66,10 @@ export interface MessageListResult {
   messages: MessageSummary[];
 }
 
-export interface Session {
+export interface Account {
   id: string;
+  label: string;
   email: string;
-  username: string;
   imapHost: string;
   imapPort: number;
   imapUseTls: boolean;
@@ -78,6 +78,18 @@ export interface Session {
   smtpPort: number;
   smtpUseTls: boolean;
   smtpAllowInsecureTls: boolean;
+  username: string;
+  isDefault: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Session {
+  id: string;
+  email: string;
+  username: string;
+  accounts: Account[];
   createdAt: string;
   lastActiveAt: string;
 }
@@ -143,6 +155,7 @@ export interface OutgoingMessage {
 
 export interface MailboxEvent {
   type: 'NEW_MESSAGE' | 'EXPUNGE' | 'FLAG_UPDATE' | 'HEARTBEAT' | string;
+  accountId?: string;
   mailbox: string;
   totalCount?: number;
   timestamp: string;

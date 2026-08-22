@@ -1,18 +1,23 @@
 import React, { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from './stores/useAuthStore';
+import { useMailStore } from './stores/useMailStore';
+import { useActiveAccount } from './hooks/useActiveAccount';
 import { LoginForm } from './components/auth/LoginForm';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { MessageList } from './components/layout/MessageList';
 import { ViewerPane } from './components/layout/ViewerPane';
 import { Composer } from './components/mail/Composer';
+import { AccountsPage } from './components/accounts/AccountsPage';
 import { connectEvents } from './api/sse';
 import { pgpService } from './api/pgp';
 
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
   const { isAuthenticated, isLoading, initAuth, token, logout } = useAuthStore();
+  const view = useMailStore((s) => s.view);
+  const activeAccount = useActiveAccount();
 
   useEffect(() => {
     initAuth();
@@ -45,8 +50,13 @@ export const App: React.FC = () => {
     const disconnect = connectEvents(token, (event) => {
       console.log('[SSE Event]', event);
       if (event.type === 'NEW_MESSAGE' || event.type === 'FLAG_UPDATE' || event.type === 'EXPUNGE') {
-        queryClient.invalidateQueries({ queryKey: ['messages'] });
-        queryClient.invalidateQueries({ queryKey: ['folders'] });
+        if (event.accountId) {
+          queryClient.invalidateQueries({ queryKey: ['messages', event.accountId] });
+          queryClient.invalidateQueries({ queryKey: ['folders', event.accountId] });
+        } else {
+          queryClient.invalidateQueries({ queryKey: ['messages'] });
+          queryClient.invalidateQueries({ queryKey: ['folders'] });
+        }
       }
     });
 
@@ -71,11 +81,17 @@ export const App: React.FC = () => {
     <div className="h-[100dvh] w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
       <Header />
       <div className="flex-1 flex overflow-hidden relative">
-        <Sidebar />
-        <MessageList />
-        <ViewerPane />
+        {view === 'accounts' ? (
+          <AccountsPage />
+        ) : (
+          <>
+            <Sidebar />
+            <MessageList />
+            <ViewerPane />
+          </>
+        )}
       </div>
-      <Composer />
+      {view === 'mail' && activeAccount && <Composer />}
     </div>
   );
 };

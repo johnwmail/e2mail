@@ -73,8 +73,9 @@ func main() {
 	pgpHandler := handler.NewPGPHandler(store)
 	contactsHandler := handler.NewContactsHandler(store)
 	configHandler := handler.NewServerConfigHandler(serverConfig)
+	accountsHandler := handler.NewAccountsHandler(sessionStore, store, poolManager, idleManager)
 
-	router := api.NewRouter(authHandler, mailHandler, eventsHandler, pgpHandler, contactsHandler, configHandler, sessionStore)
+	router := api.NewRouter(authHandler, mailHandler, eventsHandler, pgpHandler, contactsHandler, configHandler, accountsHandler, sessionStore)
 
 	server := &http.Server{
 		Addr:         ":" + port,
