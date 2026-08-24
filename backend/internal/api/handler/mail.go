@@ -187,7 +187,11 @@ func (h *MailHandler) GetMessageDetail(w http.ResponseWriter, r *http.Request) {
 
 	// 自動標記為已讀
 	if msg.Unread {
-		_ = client.SetFlags(r.Context(), folder, []uint32{uint32(uid64)}, []string{`\Seen`}, "add")
+		if err := client.SetFlags(r.Context(), folder, []uint32{uint32(uid64)}, []string{`\Seen`}, "add"); err != nil {
+			log.Printf("[MAIL] auto-mark seen FAILED for uid=%d folder=%s: %v", uid64, folder, err)
+		} else {
+			log.Printf("[MAIL] auto-mark seen OK for uid=%d folder=%s", uid64, folder)
+		}
 		msg.Unread = false
 	}
 
@@ -318,10 +322,12 @@ func (h *MailHandler) MoveMessages(w http.ResponseWriter, r *http.Request) {
 	defer release()
 
 	if err := client.MoveMessages(r.Context(), req.Folder, req.UIDs, req.DestFolder); err != nil {
+		log.Printf("[MAIL] move messages FAILED: folder=%s uids=%v dest=%s err=%v", req.Folder, req.UIDs, req.DestFolder, err)
 		response.InternalServerError(w, "failed to move messages: "+err.Error())
 		return
 	}
 
+	log.Printf("[MAIL] move messages OK: folder=%s uids=%v dest=%s", req.Folder, req.UIDs, req.DestFolder)
 	response.Success(w, map[string]string{"message": "messages moved successfully"})
 }
 
@@ -356,10 +362,12 @@ func (h *MailHandler) DeleteMessages(w http.ResponseWriter, r *http.Request) {
 	defer release()
 
 	if err := client.DeleteMessages(r.Context(), req.Folder, req.UIDs, req.Permanent); err != nil {
+		log.Printf("[MAIL] delete FAILED: folder=%s uids=%v permanent=%v err=%v", req.Folder, req.UIDs, req.Permanent, err)
 		response.InternalServerError(w, "failed to delete messages: "+err.Error())
 		return
 	}
 
+	log.Printf("[MAIL] delete OK: folder=%s uids=%v permanent=%v", req.Folder, req.UIDs, req.Permanent)
 	response.Success(w, map[string]string{"message": "messages deleted successfully"})
 }
 

@@ -95,6 +95,15 @@ export const LoginForm: React.FC = () => {
     }
   };
 
+  // 當 email 只填 user part，且 IMAP server host 已確定 → 顯示補全後嘅完整地址（一律用 imap server）
+  const autofillHint = (() => {
+    const v = email.trim();
+    if (!v || v.includes('@')) return '';
+    const domain = imapHost || '';
+    if (!domain) return '';
+    return `${v}@${domain}`;
+  })();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password) {
@@ -121,12 +130,19 @@ export const LoginForm: React.FC = () => {
       return;
     }
 
+    // 若 email 只輸入 user part（無 @domain），自動以伺服器 host 補全 domain
+    const atIdx = email.lastIndexOf('@');
+    let finalEmail = email.trim();
+    if (atIdx <= 0) {
+      finalEmail = `${email.trim()}@${finalImapHost}`;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
       const result = await login({
-        email: email.trim(),
+        email: finalEmail,
         password,
         imapHost: finalImapHost,
         imapPort: imapPort || 993,
@@ -280,7 +296,7 @@ export const LoginForm: React.FC = () => {
             <div className="relative">
               <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
-                type="email"
+                type="text"
                 required
                 autoFocus
                 value={email}
@@ -288,7 +304,15 @@ export const LoginForm: React.FC = () => {
                 placeholder="user@example.com"
                 className="w-full pl-10 pr-3.5 py-3 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 focus:bg-white text-slate-900 placeholder:text-slate-400 transition"
               />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-300 dark:text-slate-600 pointer-events-none hidden sm:block">
+                {autofillHint}
+              </span>
             </div>
+            {autofillHint && (
+              <p className="mt-1 text-[10px] text-slate-400">
+                將以 <span className="font-mono text-slate-500">{autofillHint}</span> 登入（可省略 @網域部分）
+              </p>
+            )}
           </div>
 
           {/* 密碼輸入框 */}

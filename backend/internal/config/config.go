@@ -12,6 +12,7 @@ type ServerConfig struct {
 	DefaultSMTPHost         string
 	DefaultSMTPPort         int
 	DefaultAllowInsecureTLS bool
+	CookieSecure            bool
 }
 
 // Load 從環境變數載入設定；未設定的欄位採用安全預設值（IMAP 993 / SMTP 587 / 不容許自簽）
@@ -20,6 +21,7 @@ func Load() *ServerConfig {
 		DefaultIMAPPort:         993,
 		DefaultSMTPPort:         587,
 		DefaultAllowInsecureTLS: false,
+		CookieSecure:            true,
 	}
 	if v := os.Getenv("DEFAULT_IMAP_HOST"); v != "" {
 		cfg.DefaultIMAPHost = v
@@ -39,6 +41,9 @@ func Load() *ServerConfig {
 	}
 	if v := os.Getenv("DEFAULT_ALLOW_INSECURE_TLS"); v != "" {
 		cfg.DefaultAllowInsecureTLS = parseBool(v)
+	}
+	if v := os.Getenv("COOKIE_SECURE"); v != "" {
+		cfg.CookieSecure = parseBool(v)
 	}
 	return cfg
 }

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { pgpService, PgpKeyPair, PgpContactKey, ParsedKeyInfo, fileToPublicKeyArmor, fileToPrivateKeyArmor } from '../../api/pgp';
 import { useAuthStore } from '../../stores/useAuthStore';
+import { refreshPgp } from '../../stores/usePgpStore';
 import { SecurityTab } from './SecurityTab';
 import { ShieldAlert } from 'lucide-react';
 
@@ -187,6 +188,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
     try {
       const imported = await pgpService.importPersonalKey(personalKeyInput);
       setKeyPair(imported);
+      refreshPgp();
       setShowImportPersonal(false);
       setPersonalKeyInput('');
       setMsg({ type: 'success', text: `已成功匯入個人金鑰 (${imported.userId}) 並同步備份至雲端！` });
@@ -205,6 +207,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
     try {
       const generated = await pgpService.generateKey(name || 'User', session.email, passphrase);
       setKeyPair(generated);
+      refreshPgp();
       setMsg({ type: 'success', text: 'PGP 金鑰對已成功生成並自動備份加密密文至伺服器！' });
     } catch (err: any) {
       setMsg({ type: 'error', text: '生成金鑰失敗: ' + err.message });
@@ -234,6 +237,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
       const cloudKey = await pgpService.fetchKeyringFromCloud();
       if (cloudKey) {
         setKeyPair(cloudKey);
+        refreshPgp();
         setMsg({ type: 'success', text: `已成功自伺服器拉取雲端金鑰 (${cloudKey.keyId})！` });
       } else {
         setMsg({ type: 'error', text: '伺服器上尚未備份任何 PGP 金鑰包。' });
@@ -333,24 +337,24 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
       <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Modal 頂部標題 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
-          <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-base">
-            <Key className="w-5 h-5 text-blue-600" />
-            <span>PGP / GPG 端到端加密金鑰管理</span>
+        <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
+          <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm md:text-base min-w-0">
+            <Key className="w-5 h-5 text-blue-600 shrink-0" />
+            <span className="truncate">PGP / GPG 端到端加密金鑰管理</span>
           </div>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg">
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg shrink-0">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* 分頁選單 */}
-        <div className="flex border-b border-slate-200 dark:border-slate-800 px-6 gap-6 text-xs font-semibold">
+        <div className="flex border-b border-slate-200 dark:border-slate-800 md:px-6 px-2 gap-3 md:gap-6 text-xs font-semibold overflow-x-auto">
           <button
             onClick={() => {
               setActiveTab('mykey');
               setMsg(null);
             }}
-            className={`py-3 border-b-2 transition ${
+            className={`py-3 px-1 md:px-0 border-b-2 whitespace-nowrap transition ${
               activeTab === 'mykey'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -363,7 +367,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
               setActiveTab('contacts');
               setMsg(null);
             }}
-            className={`py-3 border-b-2 transition ${
+            className={`py-3 px-1 md:px-0 border-b-2 whitespace-nowrap transition ${
               activeTab === 'contacts'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -376,7 +380,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
               setActiveTab('security');
               setMsg(null);
             }}
-            className={`py-3 border-b-2 transition flex items-center gap-1.5 ${
+            className={`py-3 px-1 md:px-0 border-b-2 whitespace-nowrap transition flex items-center gap-1.5 ${
               activeTab === 'security'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -390,7 +394,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
         {/* 提示訊息 */}
         {msg && (
           <div
-            className={`mx-6 mt-4 p-3 rounded-lg text-xs flex items-center gap-2 ${
+            className={`mx-4 md:mx-6 mt-4 p-3 rounded-lg text-xs flex items-center gap-2 ${
               msg.type === 'success'
                 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                 : 'bg-red-50 text-red-800 border border-red-200'
@@ -406,7 +410,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
         )}
 
         {/* 內容區塊 */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+        <div className="p-4 md:p-6 overflow-y-auto flex-1 space-y-6">
           {activeTab === 'security' ? (
             <SecurityTab sessionEmail={session?.email} />
           ) : activeTab === 'mykey' ? (
@@ -496,6 +500,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                             pgpService.saveKeyPair(null);
                             pgpService.deleteKeyringFromCloud().catch(() => {});
                             setKeyPair(null);
+                            refreshPgp();
                           }
                         }}
                         className="flex items-center gap-1 px-3 py-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg text-xs font-semibold transition ml-auto"
@@ -620,15 +625,19 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                            保護密碼 (Passphrase, 強烈建議設置)
+                            專用保護密碼 (Passphrase) <span className="text-red-500">*</span>
                           </label>
                           <input
                             type="password"
+                            required
                             value={passphrase}
                             onChange={(e) => setPassphrase(e.target.value)}
-                            placeholder="解密與簽名時需輸入此密碼以保護金鑰"
+                            placeholder="加密私鑰用（唔係登入密碼）；解密/簽名時需輸入"
                             className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                           />
+                          <p className="mt-1 text-[10px] text-slate-400 leading-relaxed">
+                            呢個係用嚟加密私鑰嘅<strong className="text-slate-500">專屬密碼</strong>，同登入密碼無關。加密郵件唔使輸入；解密/數碼簽名時先需要。請緊記，遺失將無法解密。
+                          </p>
                         </div>
                         <button
                           type="submit"

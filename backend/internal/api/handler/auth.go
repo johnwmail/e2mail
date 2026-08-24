@@ -348,8 +348,17 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 
 	code := strings.TrimSpace(req.Code)
 
+	// 用 master password unwrap DEK → 解密 TOTP secret（zero-knowledge at rest）
+	secret := twoFA.Secret
+	if _, dek, err := h.resolveCredential(normalizeEmail(pl.Email), pl.Password); err == nil && len(dek) > 0 {
+		if dec, dErr := crypto.Decrypt(dek, twoFA.Secret); dErr == nil {
+			secret = string(dec)
+		}
+		// decrypt 失敗則保留原值（backward compat：舊明文 secret）
+	}
+
 	// 驗證 TOTP code
-	if auth.ValidateCode(twoFA.Secret, code) {
+	if auth.ValidateCode(secret, code) {
 		h.completeLogin(w, r, pl, req.Challenge)
 		return
 	}

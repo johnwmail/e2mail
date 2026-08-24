@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Star,
@@ -10,11 +10,33 @@ import {
   ChevronLeft,
   ChevronRight,
   Inbox,
+  FolderInput,
+  AlertOctagon,
+  X,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
-import { MessageSummary } from '../../types/api';
+import { MessageSummary, FolderInfo } from '../../types/api';
+
+const getFolderDisplayName = (folder: FolderInfo) => {
+  switch (folder.specialUse) {
+    case 'inbox':
+      return '收件箱';
+    case 'sent':
+      return '已發送';
+    case 'drafts':
+      return '草稿箱';
+    case 'trash':
+      return '垃圾桶';
+    case 'junk':
+      return '垃圾郵件';
+    case 'archive':
+      return '封存';
+    default:
+      return folder.name;
+  }
+};
 
 export const MessageList: React.FC = () => {
   const queryClient = useQueryClient();
@@ -31,6 +53,91 @@ export const MessageList: React.FC = () => {
   } = useMailStore();
 
   const [selectedUIDs, setSelectedUIDs] = useState<number[]>([]);
+  const [isMultiSelect, setIsMultiSelect] = useState(false);
+  const [swipedUID, setSwipedUID] = useState<number | null>(null);
+  const [swipeError, setSwipeError] = useState<string | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressIndex = useRef<number>(-1);
+  const isMultiSelectRef = useRef(false);
+  const pointerDownTimeRef = useRef(0);
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    longPressIndex.current = -1;
+  };
+
+  // 鎖定後揀選某一封（用作 sweep 拖曳）
+  const selectUID = (uid: number) => {
+    setSelectedUIDs((prev) => (prev.includes(uid) ? prev : [...prev, uid]));
+  };
+
+  // --- Mobile swipe-to-reveal（左滑=垃圾桶/更多、右滑=已讀/封存） ---
+  const swipeStartRef = useRef<{ x: number; y: number; uid: number; horizontal: boolean | null } | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState(0); // 揭示位移 (px)，負=向左揭示垃圾桶
+  const [draggingUID, setDraggingUID] = useState<number | null>(null);
+
+  const handleTouchStart = (msg: MessageSummary) => (e: React.TouchEvent) => {
+    if (isMultiSelectRef.current) return;
+    const t = e.touches[0];
+    swipeStartRef.current = { x: t.clientX, y: t.clientY, uid: msg.uid, horizontal: null };
+    setDraggingUID(msg.uid);
+  };
+
+  const handleTouchMove = (msg: MessageSummary) => (e: React.TouchEvent) => {
+    const start = swipeStartRef.current;
+    if (!start || start.uid !== msg.uid) return;
+    const t = e.touches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+
+    // 未判定方向：先分辨水平定垂直
+    if (start.horizontal === null && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) {
+      start.horizontal = Math.abs(dx) > Math.abs(dy);
+    }
+
+    if (start.horizontal) {
+      let next = dx;
+      const max = 160;
+      next = Math.max(-max, Math.min(max, next));
+      setSwipeOffset(next);
+    }
+    // CSS touch-action: pan-y 已限制垂直 roll；水平 swipe 不需 preventDefault
+  };
+
+  const handleTouchEnd = (msg: MessageSummary) => (e: React.TouchEvent) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    setDraggingUID(null);
+    if (!start || start.uid !== msg.uid) return;
+    // 只有水平方向先觸發動作；且唔係響多選模式
+    if (!start.horizontal || isMultiSelectRef.current) {
+      setSwipeOffset(0);
+      setSwipedUID(null);
+      return;
+    }
+
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const threshold = 40;
+    if (Math.abs(dx) < threshold) {
+      // 唔夠過 threshold → 收返
+      setSwipeOffset(0);
+      setSwipedUID(null);
+      return;
+    }
+    if (dx < 0) {
+      // 向左滑 → 揭示垃圾桶
+      setSwipedUID(msg.uid);
+      setSwipeOffset(-160);
+    } else {
+      // 向右滑 → 揭示已讀/未讀
+      setSwipedUID(msg.uid);
+      setSwipeOffset(160);
+    }
+  };
 
   // 取得郵件清單
   const { data, isLoading, isFetching, refetch } = useQuery({
@@ -63,6 +170,59 @@ export const MessageList: React.FC = () => {
     },
   });
 
+  // 移動郵件 Mutation
+  const moveMutation = useMutation({
+    mutationFn: ({ uids, dest }: { uids: number[]; dest: string }) =>
+      mailApi.moveMessages(currentFolder, uids, dest, accountId),
+    onSuccess: () => {
+      setSelectedUIDs([]);
+      if (selectedUID) setSelectedUID(null);
+      queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
+      queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
+    },
+    onError: (err: any) => {
+      setSwipeError(err?.message || '移動郵件失敗');
+      setTimeout(() => setSwipeError(null), 3000);
+    },
+  });
+
+  // 取得資料夾清單（供移動目的地）
+  const { data: folders } = useQuery({
+    queryKey: ['folders', accountId],
+    queryFn: () => mailApi.getFolders(accountId),
+    enabled: !!accountId,
+    staleTime: 60000,
+  });
+
+  // 垃圾郵件資料夾名（specialUse=junk/spam 或名稱含 junk/spam）；搵唔到則為 undefined（唔顯示按鈕）
+  const junkFolder =
+    folders?.find((f) => f.specialUse === 'junk' || f.specialUse === 'spam')?.name ??
+    folders?.find((f) => /junk|spam/i.test(f.name))?.name;
+
+  // Desktop: Delete/Backspace 鍵刪除「而家睇緊嗰封」
+  const deleteRef = useRef(deleteMutation);
+  deleteRef.current = deleteMutation;
+  const selectedUIDRef = useRef(selectedUID);
+  selectedUIDRef.current = selectedUID;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      // 忽略輸入框/內容可編輯區/Composer 聚焦，避免誤刪
+      const target = e.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      if (tagName === 'input' || tagName === 'textarea' || target?.isContentEditable) return;
+      const uid = selectedUIDRef.current;
+      if (uid == null) return;
+      e.preventDefault();
+      deleteRef.current.mutate([uid], {
+        onSuccess: () => setSelectedUID(null),
+      });
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked && data?.messages) {
       setSelectedUIDs(data.messages.map((m) => m.uid));
@@ -76,6 +236,98 @@ export const MessageList: React.FC = () => {
     setSelectedUIDs((prev) =>
       prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]
     );
+  };
+
+  // Desktop multi-select (Ctrl/Cmd+click toggle, Shift+click range)
+  const lastClickedIndexRef = useRef<number>(-1);
+  const handleRowClick = (msg: MessageSummary, index: number, e: React.MouseEvent) => {
+    // 長按（>=500ms）鎖定後釋放觸發嘅 click：吞掉，避免誤取消揀選
+    if (Date.now() - pointerDownTimeRef.current >= 500) {
+      e.preventDefault();
+      return;
+    }
+
+    // 有揭示嘅 row：click 時先收返，唔開 viewer
+    if (swipedUID !== null) {
+      e.preventDefault();
+      setSwipedUID(null);
+      setSwipeOffset(0);
+      return;
+    }
+
+    const isCtrl = e.ctrlKey || e.metaKey;
+    const isShift = e.shiftKey;
+
+    // Mobile 多選模式：tap 加/減
+    if (isMultiSelectRef.current) {
+      e.preventDefault();
+      setSelectedUIDs((prev) =>
+        prev.includes(msg.uid) ? prev.filter((id) => id !== msg.uid) : [...prev, msg.uid]
+      );
+      return;
+    }
+
+    if (isCtrl) {
+      // Ctrl/Cmd+click: 逐封加/減
+      e.preventDefault();
+      lastClickedIndexRef.current = index;
+      setSelectedUIDs((prev) =>
+        prev.includes(msg.uid) ? prev.filter((id) => id !== msg.uid) : [...prev, msg.uid]
+      );
+      return;
+    }
+
+    if (isShift) {
+      // Shift+click: 選連續範圍
+      e.preventDefault();
+      const from = lastClickedIndexRef.current >= 0 ? lastClickedIndexRef.current : index;
+      const to = index;
+      const [lo, hi] = from <= to ? [from, to] : [to, from];
+      setSelectedUIDs((prev) => {
+        const next = new Set(prev);
+        for (let i = lo; i <= hi; i++) {
+          const m = messages[i];
+          if (m) next.add(m.uid);
+        }
+        return Array.from(next);
+      });
+      return;
+    }
+
+    // 普通 click: 開 viewer
+    lastClickedIndexRef.current = index;
+    setSelectedUID(msg.uid);
+  };
+
+  // Mobile 長按 → 進入多選模式
+  const handlePointerDown = (index: number) => {
+    pointerDownTimeRef.current = Date.now();
+    if (isMultiSelectRef.current) {
+      // 已鎖定：拖曳 sweep
+      setIsMultiSelect(true);
+      const m = messages[index];
+      if (m) selectUID(m.uid);
+      return;
+    }
+    cancelLongPress();
+    longPressIndex.current = index;
+    longPressTimer.current = setTimeout(() => {
+      longPressTimer.current = null;
+      isMultiSelectRef.current = true;
+      setIsMultiSelect(true);
+      const m = messages[index];
+      if (m) selectUID(m.uid);
+    }, 400);
+  };
+
+  // container-level pointermove：鎖定後 sweep 揀選
+  const handleListPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMultiSelectRef.current) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+    const row = el?.closest('[data-uid]') as HTMLElement | null;
+    if (!row) return;
+    const uid = Number(row.dataset.uid);
+    if (!Number.isNaN(uid)) selectUID(uid);
   };
 
   const toggleStar = (msg: MessageSummary, e: React.MouseEvent) => {
@@ -105,15 +357,37 @@ export const MessageList: React.FC = () => {
         selectedUID !== null ? 'hidden lg:flex' : 'flex'
       }`}
     >
+      {/* 操作錯誤提示 */}
+      {swipeError && (
+        <div className="px-3.5 py-2 bg-red-50 text-red-700 text-xs border-b border-red-200/60 flex items-center gap-2 shrink-0">
+          <AlertOctagon className="w-3.5 h-3.5 shrink-0" />
+          {swipeError}
+        </div>
+      )}
       {/* 頂部操作欄 */}
       <div className="px-3.5 py-2.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0 bg-slate-50/70 dark:bg-slate-900/70 w-full min-w-0">
         <div className="flex items-center gap-2 min-w-0">
-          <input
-            type="checkbox"
-            checked={messages.length > 0 && selectedUIDs.length === messages.length}
-            onChange={handleSelectAll}
-            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer"
-          />
+          {isMultiSelect ? (
+            <button
+              onClick={() => {
+                isMultiSelectRef.current = false;
+                setIsMultiSelect(false);
+                setSelectedUIDs([]);
+              }}
+              className="flex items-center gap-1 p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition"
+              title="完成 / 退出多選"
+            >
+              <X className="w-4 h-4" />
+              <span className="text-xs font-semibold">完成</span>
+            </button>
+          ) : (
+            <input
+              type="checkbox"
+              checked={messages.length > 0 && selectedUIDs.length === messages.length}
+              onChange={handleSelectAll}
+              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer"
+            />
+          )}
 
           {selectedUIDs.length > 0 ? (
             <div className="flex items-center gap-1">
@@ -153,6 +427,29 @@ export const MessageList: React.FC = () => {
               >
                 <Trash2 className="w-4 h-4" />
               </button>
+              <select
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) {
+                    moveMutation.mutate({ uids: selectedUIDs, dest: e.target.value });
+                    e.target.value = '';
+                  }
+                }}
+                className="max-w-[120px] text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 py-1 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 outline-none"
+                title="移動到資料夾"
+                disabled={moveMutation.isPending}
+              >
+                <option value="" disabled>
+                  {moveMutation.isPending ? '移動中...' : '移動到…'}
+                </option>
+                {folders
+                  ?.filter((f) => f.name !== currentFolder)
+                  .map((f) => (
+                    <option key={f.name} value={f.name}>
+                      {getFolderDisplayName(f)}
+                    </option>
+                  ))}
+              </select>
             </div>
           ) : (
             <span className="text-xs font-medium text-slate-500 truncate">
@@ -191,7 +488,13 @@ export const MessageList: React.FC = () => {
       </div>
 
       {/* 郵件清單容器 */}
-      <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/80 w-full min-w-0 overscroll-contain">
+      <div
+        onPointerMove={handleListPointerMove}
+        onPointerUp={() => {
+          // 手指放開後停留喺多選模式，等用戶繼續 tap 加減
+        }}
+        className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/80 w-full min-w-0 overscroll-contain"
+      >
         {isLoading ? (
           <div className="p-8 text-center text-xs text-slate-400">正在讀取信件...</div>
         ) : messages.length === 0 ? (
@@ -200,7 +503,7 @@ export const MessageList: React.FC = () => {
             <p className="text-xs">此資料夾沒有郵件</p>
           </div>
         ) : (
-          messages.map((msg) => {
+          messages.map((msg, index) => {
             const isSelected = selectedUID === msg.uid;
             const isChecked = selectedUIDs.includes(msg.uid);
             const fromName = msg.from?.[0]?.name || msg.from?.[0]?.address || '未知寄件者';
@@ -208,13 +511,79 @@ export const MessageList: React.FC = () => {
             return (
               <div
                 key={msg.uid}
-                onClick={() => setSelectedUID(msg.uid)}
-                className={`flex items-start gap-3 px-3.5 py-3 text-xs cursor-pointer transition select-none w-full min-w-0 ${
-                  isSelected
-                    ? 'bg-blue-50/90 dark:bg-blue-950/50 border-l-4 border-blue-600'
-                    : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 active:bg-slate-100 dark:active:bg-slate-800'
-                }`}
+                className="relative overflow-hidden w-full"
               >
+                {/* 揭示按鈕層 — 向左滑揭露（右邊：垃圾桶 + 垃圾郵件[若存在]） */}
+                <div className="absolute inset-y-0 right-0 flex">
+                  <button
+                    onClick={() => {
+                      deleteMutation.mutate([msg.uid], { onSuccess: () => setSelectedUID(null) });
+                      setSwipedUID(null);
+                      setSwipeOffset(0);
+                    }}
+                    className="w-[80px] bg-red-500 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold h-full"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                    垃圾桶
+                  </button>
+                  {junkFolder && (
+                    <button
+                      onClick={() => {
+                        moveMutation.mutate({ uids: [msg.uid], dest: junkFolder });
+                        setSwipedUID(null);
+                        setSwipeOffset(0);
+                      }}
+                      className="w-[80px] bg-orange-500 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold h-full"
+                    >
+                      <AlertOctagon className="w-5 h-5" />
+                      垃圾郵件
+                    </button>
+                  )}
+                </div>
+
+                {/* 揭示按鈕層 — 向右滑揭露（左邊：已讀） */}
+                <div className="absolute inset-y-0 left-0 flex">
+                  <button
+                    onClick={() => {
+                      flagMutation.mutate({ uids: [msg.uid], flags: ['\\Seen'], op: msg.unread ? 'add' : 'remove' });
+                      setSwipedUID(null);
+                      setSwipeOffset(0);
+                    }}
+                    className="w-[80px] bg-blue-500 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold h-full"
+                  >
+                    <MailCheck className="w-5 h-5" />
+                    {msg.unread ? '已讀' : '未讀'}
+                  </button>
+                </div>
+
+                {/* 郵件內容（translate-x revealing） */}
+                <div
+                  data-uid={msg.uid}
+                  onClick={(e) => handleRowClick(msg, index, e)}
+                  onPointerDown={() => handlePointerDown(index)}
+                  onPointerUp={cancelLongPress}
+                  onPointerMove={cancelLongPress}
+                  onPointerLeave={cancelLongPress}
+                  onTouchStart={handleTouchStart(msg)}
+                  onTouchMove={handleTouchMove(msg)}
+                  onTouchEnd={handleTouchEnd(msg)}
+                  onContextMenu={(e) => e.preventDefault()}
+                  style={{
+                    touchAction: isMultiSelect ? 'none' : 'pan-y',
+                    transform:
+                      swipedUID === msg.uid || draggingUID === msg.uid
+                        ? `translateX(${swipeOffset}px)`
+                        : 'translateX(0)',
+                    transition: draggingUID === msg.uid ? 'none' : 'transform 0.2s ease',
+                  }}
+                  className={`flex items-start gap-3 px-3.5 py-3 text-xs cursor-pointer transition select-none w-full min-w-0 bg-white dark:bg-slate-900 ${
+                    isSelected
+                      ? 'bg-blue-50/90 dark:bg-blue-950/50 border-l-4 border-blue-600'
+                      : isChecked
+                        ? 'bg-blue-100/40 dark:bg-blue-900/30 border-l-4 border-blue-400'
+                        : ''
+                  }`}
+                >
                 {/* 勾選與星標 */}
                 <div className="flex flex-col items-center gap-2 pt-0.5 shrink-0">
                   <input
@@ -275,6 +644,7 @@ export const MessageList: React.FC = () => {
                 {msg.unread && (
                   <div className="w-2.5 h-2.5 rounded-full bg-blue-600 mt-1.5 shrink-0 ml-1" />
                 )}
+                </div>
               </div>
             );
           })

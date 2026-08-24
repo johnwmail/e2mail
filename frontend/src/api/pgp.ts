@@ -431,8 +431,8 @@ export const pgpService = {
             privateKey,
             passphrase: passphrase || '',
           });
-        } catch {
-          throw new Error('私鑰密碼 (Passphrase) 錯誤，無法完成 PGP 簽名');
+        } catch (e: any) {
+          throw new Error('私鑰密碼 (Passphrase) 錯誤，無法完成 PGP 簽名: ' + (e?.message || e));
         }
       }
       signingKeys = privateKey;

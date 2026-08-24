@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,6 +28,34 @@ var (
 	CommitHash = "sha-unknown"
 )
 
+// sensitiveEnvVars 唔會 print 出嚟嘅敏感/機密環境變數
+var sensitiveEnvVars = map[string]bool{
+	"SESSION_SECRET": true,
+	"SECRET_KEY":     true,
+	"DOCKER_PASSWORD": true,
+}
+
+// printDefinedEnv 啟動時打印所有已定義嘅環境變數（過濾敏感 key）
+func printDefinedEnv() {
+	log.Println("📋 Defined environment variables:")
+	for _, kv := range os.Environ() {
+		idx := strings.Index(kv, "=")
+		if idx <= 0 {
+			continue
+		}
+		key := kv[:idx]
+		if sensitiveEnvVars[strings.ToUpper(key)] {
+			continue
+		}
+		val := kv[idx+1:]
+		if val == "" {
+			log.Printf("   %s=<empty>", key)
+		} else {
+			log.Printf("   %s=%q", key, val)
+		}
+	}
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -39,10 +68,11 @@ func main() {
 	}
 
 	sessionTTL := 24 * time.Hour
+	// Session 記憶體加密 key：永遠隨機生成（每-boot），唔用固定 server key。
+	// 咁做確保 RAM 內嘅敏感資料唔會被跨 restart 解密；restart 後舊 session 自然失效。
 	var keyBytes []byte
-	if secret := os.Getenv("SESSION_SECRET"); secret != "" {
-		keyBytes = []byte(secret)
-	}
+
+	printDefinedEnv()
 
 	sessionStore, err := session.NewMemoryStore(sessionTTL, keyBytes)
 	if err != nil {

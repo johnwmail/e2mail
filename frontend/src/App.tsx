@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from './stores/useAuthStore';
 import { useMailStore } from './stores/useMailStore';
@@ -10,14 +10,18 @@ import { MessageList } from './components/layout/MessageList';
 import { ViewerPane } from './components/layout/ViewerPane';
 import { Composer } from './components/mail/Composer';
 import { AccountsPage } from './components/accounts/AccountsPage';
+import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { connectEvents } from './api/sse';
 import { pgpService } from './api/pgp';
+import { refreshPgp } from './stores/usePgpStore';
+import { onboardingApi } from './api/onboarding';
 
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
   const { isAuthenticated, isLoading, initAuth, token, logout } = useAuthStore();
   const view = useMailStore((s) => s.view);
   const activeAccount = useActiveAccount();
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     initAuth();
@@ -29,6 +33,21 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
   }, [initAuth, logout]);
 
+  // 登入後檢查 onboarding 完成度（2FA + PGP）；未完成則顯示 wizard
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    (async () => {
+      try {
+        const st = await onboardingApi.status();
+        if (!st.completed) {
+          setShowOnboarding(true);
+        }
+      } catch {
+        // 忽略檢查失敗
+      }
+    })();
+  }, [isAuthenticated, view]);
+
   // 登入後自動檢查並自雲端同步 PGP 加密金鑰包（跨裝置無縫加載）
   useEffect(() => {
     if (isAuthenticated) {
@@ -38,7 +57,11 @@ export const App: React.FC = () => {
           if (cloudKey) {
             console.log('✅ 已成功自雲端同步 PGP 密文金鑰包:', cloudKey.keyId);
           }
+          // 無論有冇 load 到，都要 refresh 令 sidebar 更新「已配置」狀態
+          refreshPgp();
         });
+      } else {
+        refreshPgp();
       }
     }
   }, [isAuthenticated]);
@@ -92,6 +115,16 @@ export const App: React.FC = () => {
         )}
       </div>
       {view === 'mail' && activeAccount && <Composer />}
+
+      {/* 首次登入 onboarding 強制完成 2FA + PGP */}
+      {showOnboarding && (
+        <OnboardingWizard
+          onComplete={() => {
+            setShowOnboarding(false);
+            refreshPgp();
+          }}
+        />
+      )}
     </div>
   );
 };

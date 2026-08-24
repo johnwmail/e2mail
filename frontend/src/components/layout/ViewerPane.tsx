@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Reply,
@@ -12,11 +12,13 @@ import {
   MailOpen,
   Calendar,
   ArrowLeft,
+  AlertOctagon,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { EmailFrame } from '../mail/EmailFrame';
+import { MessageListResult, MessageSummary } from '../../types/api';
 
 export const ViewerPane: React.FC = () => {
   const queryClient = useQueryClient();
@@ -30,6 +32,26 @@ export const ViewerPane: React.FC = () => {
     enabled: !!selectedUID,
     staleTime: 60000,
   });
+
+  // 後端讀取郵件時會自動標記為已讀：直接更新 list cache 中該 mail 嘅 unread flag
+  useEffect(() => {
+    if (selectedUID != null && message) {
+      queryClient.setQueriesData<{ messages: MessageSummary[] } | MessageListResult>(
+        { queryKey: ['messages', accountId, currentFolder] },
+        (old) => {
+          if (!old || !('messages' in old)) return old;
+          return {
+            ...old,
+            messages: old.messages.map((m) =>
+              m.uid === selectedUID ? { ...m, unread: false } : m
+            ),
+          };
+        }
+      );
+      // 同步 sidebar folders unreadCount（讀咗一封 → 該 folder unread -1）
+      queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
+    }
+  }, [message, selectedUID, accountId, currentFolder, queryClient]);
 
   const deleteMutation = useMutation({
     mutationFn: (uid: number) => mailApi.deleteMessages(currentFolder, [uid], false, accountId),
@@ -48,6 +70,32 @@ export const ViewerPane: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
     },
   });
+
+  // 垃圾郵件資料夾名 + 移動 mutation
+  const { data: folders } = useQuery({
+    queryKey: ['folders', accountId],
+    queryFn: () => mailApi.getFolders(accountId),
+    enabled: !!accountId,
+    staleTime: 60000,
+  });
+  const junkFolder =
+    folders?.find((f) => f.specialUse === 'junk' || f.specialUse === 'spam')?.name ??
+    folders?.find((f) => /junk|spam/i.test(f.name))?.name;
+
+  const moveToJunkMutation = useMutation({
+    mutationFn: (uid: number) =>
+      junkFolder ? mailApi.moveMessages(currentFolder, [uid], junkFolder, accountId) : Promise.resolve(),
+    onSuccess: () => {
+      setSelectedUID(null);
+      queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
+      queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
+    },
+  });
+
+  const handleMoveToJunk = () => {
+    if (!junkFolder) return;
+    moveToJunkMutation.mutate(message.uid);
+  };
 
   if (!selectedUID) {
     return (
@@ -153,6 +201,16 @@ export const ViewerPane: React.FC = () => {
           >
             <Mail className="w-4 h-4" />
           </button>
+          {junkFolder && (
+            <button
+              onClick={handleMoveToJunk}
+              disabled={moveToJunkMutation.isPending}
+              className="p-1.5 text-slate-500 hover:text-orange-600 rounded-lg transition disabled:opacity-40"
+              title="移到垃圾郵件"
+            >
+              <AlertOctagon className="w-4 h-4" />
+            </button>
+          )}
           <button
             onClick={() => deleteMutation.mutate(message.uid)}
             className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg transition"

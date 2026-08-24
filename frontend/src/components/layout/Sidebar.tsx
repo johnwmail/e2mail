@@ -21,9 +21,9 @@ import {
   ListTree,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
-import { pgpService } from '../../api/pgp';
 import { useMailStore } from '../../stores/useMailStore';
 import { useAuthStore } from '../../stores/useAuthStore';
+import { usePgpStore } from '../../stores/usePgpStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { FolderInfo, Account } from '../../types/api';
 import { PgpKeyModal } from '../mail/PgpKeyModal';
@@ -189,7 +189,7 @@ export const Sidebar: React.FC = () => {
     return init;
   });
 
-  const hasPgpKey = !!pgpService.getKeyPair();
+  const hasPgpKey = usePgpStore((s) => s.hasKey);
   const accounts = session?.accounts ?? [];
 
   const toggleCollapsed = (id: string) =>

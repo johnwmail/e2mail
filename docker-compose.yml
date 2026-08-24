@@ -4,9 +4,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-vdev}
+        BUILD_TIME: ${BUILD_TIME:-timeless}
+        COMMIT_HASH: ${COMMIT_HASH:-sha-unknown}
     image: ghcr.io/johnwmail/e2mail:latest
     container_name: e2mail
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "8080:8080"
     environment:

@@ -205,6 +205,29 @@ func (c *Client) ListFolders(ctx context.Context) ([]FolderInfo, error) {
 	return results, nil
 }
 
+// EnsureFolder 若資料夾唔存在則建立（重名忽略）。返回最終資料夾名。
+func (c *Client) EnsureFolder(ctx context.Context, folder string) (string, error) {
+	if folder == "" {
+		folder = "Junk"
+	}
+	// 檢查是否已存在
+	exists := false
+	if mailboxes, err := c.rawClient.List("", "*", nil).Collect(); err == nil {
+		for _, mb := range mailboxes {
+			if strings.EqualFold(mb.Mailbox, folder) {
+				exists = true
+				break
+			}
+		}
+	}
+	if !exists {
+		if err := c.rawClient.Create(folder, nil).Wait(); err != nil {
+			return folder, fmt.Errorf("failed to create folder %s: %w", folder, err)
+		}
+	}
+	return folder, nil
+}
+
 // ListSubscribed 回傳已訂閱資料夾集合（LIST (SUBSCRIBED) "" "*"；需 LIST-EXTENDED）
 func (c *Client) ListSubscribed(ctx context.Context) (map[string]bool, error) {
 	c.lastUsed = time.Now()
@@ -689,12 +712,36 @@ func (c *Client) MoveMessages(ctx context.Context, folder string, uids []uint32,
 	return nil
 }
 
+// FindTrashFolder 偵測垃圾桶/Trash 資料夾（special_use=\Trash 或名稱匹配），fallback "Trash"
+func (c *Client) FindTrashFolder(ctx context.Context) string {
+	folders, err := c.ListFolders(ctx)
+	if err == nil {
+		for _, f := range folders {
+			if strings.EqualFold(f.SpecialUse, "trash") {
+				return f.Name
+			}
+			for _, attr := range f.Attributes {
+				if strings.EqualFold(attr, `\Trash`) || strings.EqualFold(attr, "trash") {
+					return f.Name
+				}
+			}
+		}
+		for _, f := range folders {
+			nameLower := strings.ToLower(f.Name)
+			if nameLower == "trash" || nameLower == "deleted messages" || nameLower == "deleted" || strings.Contains(nameLower, "trash") {
+				return f.Name
+			}
+		}
+	}
+	return "Trash"
+}
+
 // DeleteMessages 批次刪除郵件
 func (c *Client) DeleteMessages(ctx context.Context, folder string, uids []uint32, permanent bool) error {
 	c.lastUsed = time.Now()
 
 	if !permanent && !strings.EqualFold(folder, "Trash") {
-		return c.MoveMessages(ctx, folder, uids, "Trash")
+		return c.MoveMessages(ctx, folder, uids, c.FindTrashFolder(ctx))
 	}
 
 	if _, err := c.rawClient.Select(folder, nil).Wait(); err != nil {

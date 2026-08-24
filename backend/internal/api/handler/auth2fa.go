@@ -7,6 +7,7 @@ import (
 
 	"modern-webmail/backend/internal/api/middleware"
 	"modern-webmail/backend/internal/auth"
+	"modern-webmail/backend/internal/crypto"
 	"modern-webmail/backend/internal/storage"
 	"modern-webmail/backend/pkg/response"
 )
@@ -116,9 +117,18 @@ func (h *AuthHandler) TwoFAEnable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	plainCodes, hashedCodes := auth.GenerateBackupCodes()
+
+	// 用 session 內 DEK 加密 TOTP secret（zero-knowledge at rest，唔靠 server key）
+	encSecret := req.Secret
+	if authCtx := middleware.GetAccountContext(r.Context()); authCtx != nil && len(authCtx.DEK) > 0 {
+		if enc, err := crypto.Encrypt(authCtx.DEK, []byte(req.Secret)); err == nil {
+			encSecret = enc
+		}
+	}
+
 	twoFA := &storage.TwoFA{
 		OwnerEmail:   normalizeEmail(sess.Email),
-		Secret:       req.Secret,
+		Secret:       encSecret,
 		BackupHashes: hashedCodes,
 	}
 	if err := h.storage.SaveTwoFA(twoFA); err != nil {
@@ -132,6 +142,19 @@ func (h *AuthHandler) TwoFAEnable(w http.ResponseWriter, r *http.Request) {
 		"enabled":     true,
 		"backupCodes": plainCodes,
 	})
+}
+
+// decryptTwoFASecret 用 session 內 DEK 解密 2FA secret（backward compat：解密失敗保留原值）
+func decryptTwoFASecret(r *http.Request, twoFA *storage.TwoFA) string {
+	if twoFA == nil {
+		return ""
+	}
+	if authCtx := middleware.GetAccountContext(r.Context()); authCtx != nil && len(authCtx.DEK) > 0 {
+		if dec, err := crypto.Decrypt(authCtx.DEK, twoFA.Secret); err == nil {
+			return string(dec)
+		}
+	}
+	return twoFA.Secret
 }
 
 // TwoFADisable 停用 2FA（需驗證 code）
@@ -159,7 +182,7 @@ func (h *AuthHandler) TwoFADisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !auth.ValidateCode(twoFA.Secret, req.Code) {
+	if !auth.ValidateCode(decryptTwoFASecret(r, twoFA), req.Code) {
 		response.Unauthorized(w, "驗證碼錯誤，請重試")
 		return
 	}
@@ -199,7 +222,7 @@ func (h *AuthHandler) TwoFARegenerateBackupCodes(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if !auth.ValidateCode(twoFA.Secret, req.Code) {
+	if !auth.ValidateCode(decryptTwoFASecret(r, twoFA), req.Code) {
 		response.Unauthorized(w, "驗證碼錯誤，請重試")
 		return
 	}

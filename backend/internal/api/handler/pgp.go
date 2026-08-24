@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"modern-webmail/backend/internal/api/middleware"
+	"modern-webmail/backend/internal/crypto"
 	"modern-webmail/backend/internal/storage"
 	"modern-webmail/backend/pkg/response"
 )
@@ -20,9 +21,11 @@ func NewPGPHandler(store storage.Store) *PGPHandler {
 }
 
 // SaveKeyring 儲存或更新使用者的加密金鑰包
+// 雙保險：前端已用 PGP passphrase 加密 private key armor；server 再以 DEK 加密落盤（zero-knowledge）。
 func (h *PGPHandler) SaveKeyring(w http.ResponseWriter, r *http.Request) {
+	authCtx := middleware.GetAccountContext(r.Context())
 	sess, ok := middleware.GetSessionFromContext(r.Context())
-	if !ok || sess.Email == "" {
+	if !ok || sess.Email == "" || authCtx == nil {
 		response.Unauthorized(w, "unauthorized session")
 		return
 	}
@@ -39,6 +42,14 @@ func (h *PGPHandler) SaveKeyring(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Email = sess.Email
+
+	// Server-side 再加密：用 DEK 加密 passphrase-armor（存嘅係 DEK_ciphertext）
+	if len(authCtx.DEK) > 0 {
+		if enc, err := crypto.Encrypt(authCtx.DEK, []byte(req.EncryptedPrivateKeyArmored)); err == nil {
+			req.EncryptedPrivateKeyArmored = enc
+		}
+	}
+
 	if err := h.store.SaveKeyring(&req); err != nil {
 		response.InternalServerError(w, "failed to persist keyring: "+err.Error())
 		return
@@ -52,8 +63,9 @@ func (h *PGPHandler) SaveKeyring(w http.ResponseWriter, r *http.Request) {
 
 // GetKeyring 取得使用者的加密金鑰包（若無則回傳空）
 func (h *PGPHandler) GetKeyring(w http.ResponseWriter, r *http.Request) {
+	authCtx := middleware.GetAccountContext(r.Context())
 	sess, ok := middleware.GetSessionFromContext(r.Context())
-	if !ok || sess.Email == "" {
+	if !ok || sess.Email == "" || authCtx == nil {
 		response.Unauthorized(w, "unauthorized session")
 		return
 	}
@@ -67,6 +79,14 @@ func (h *PGPHandler) GetKeyring(w http.ResponseWriter, r *http.Request) {
 		response.Success(w, nil)
 		return
 	}
+
+	// 解開 server-side DEK 加密層（backward compat：解唔到就當係舊明文 armor）
+	if len(authCtx.DEK) > 0 {
+		if dec, dErr := crypto.Decrypt(authCtx.DEK, payload.EncryptedPrivateKeyArmored); dErr == nil {
+			payload.EncryptedPrivateKeyArmored = string(dec)
+		}
+	}
+
 	response.Success(w, payload)
 }
 

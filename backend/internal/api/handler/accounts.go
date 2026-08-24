@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"modern-webmail/backend/internal/api/middleware"
@@ -47,6 +48,80 @@ type AccountRequest struct {
 	SMTPAllowInsecureTLS bool   `json:"smtpAllowInsecureTls"`
 	Username             string `json:"username"`
 	Password             string `json:"password"`
+}
+
+// OnboardingStatus 返回使用者 onboarding 完成度（2FA 是否已設 + 有冇 PGP keyring）
+func (h *AccountsHandler) OnboardingStatus(w http.ResponseWriter, r *http.Request) {
+	authCtx := middleware.GetAccountContext(r.Context())
+	if authCtx == nil || authCtx.Session == nil {
+		response.Unauthorized(w, "unauthorized")
+		return
+	}
+	email := authCtx.Session.Email
+
+	twoFA, _ := h.storage.GetTwoFA(email)
+	keyring, _ := h.storage.GetKeyring(email)
+
+	response.Success(w, map[string]bool{
+		"twoFAEnabled": twoFA != nil,
+		"pgpEnabled":   keyring != nil,
+		"completed":    twoFA != nil && keyring != nil,
+	})
+}
+
+// EnsureJunkFolder 為指定帳號建立 Junk/spam 資料夾（若不存在）
+func (h *AccountsHandler) EnsureJunkFolder(w http.ResponseWriter, r *http.Request) {
+	authCtx := middleware.GetAccountContext(r.Context())
+	if authCtx == nil || authCtx.Session == nil {
+		response.Unauthorized(w, "unauthorized")
+		return
+	}
+	id := chi.URLParam(r, "id")
+
+	// 找出該帳號
+	var acc *storage.Account
+	for i := range authCtx.Session.Accounts {
+		if authCtx.Session.Accounts[i].ID == id {
+			acc = &authCtx.Session.Accounts[i]
+			break
+		}
+	}
+	if acc == nil {
+		response.NotFound(w, "account not found")
+		return
+	}
+
+	password := middleware.GetCurrentAccountPassword(authCtx, acc)
+	imapCfg := imapinternal.ConnectionConfig{
+		Host:             acc.IMAPHost,
+		Port:             acc.IMAPPort,
+		UseTLS:           acc.IMAPUseTLS,
+		AllowInsecureTLS: acc.IMAPAllowInsecureTLS,
+		Username:         acc.Username,
+		Password:         password,
+	}
+	client, err := imapinternal.NewClient(imapCfg)
+	if err != nil {
+		response.InternalServerError(w, "failed to connect IMAP: "+err.Error())
+		return
+	}
+	defer func() { _ = client.Close() }()
+
+	// 搵現有 junk，或者建立 Junk
+	junkFolder := ""
+	if folders, err := client.ListFolders(r.Context()); err == nil {
+		for _, f := range folders {
+			if f.SpecialUse == "junk" || f.SpecialUse == "spam" || strings.Contains(strings.ToLower(f.Name), "junk") || strings.Contains(strings.ToLower(f.Name), "spam") {
+				junkFolder = f.Name
+				break
+			}
+		}
+	}
+	if junkFolder == "" {
+		junkFolder, _ = client.EnsureFolder(r.Context(), "Junk")
+	}
+
+	response.Success(w, map[string]string{"junkFolder": junkFolder})
 }
 
 // ListAccounts 列出所有帳號（不含密碼）

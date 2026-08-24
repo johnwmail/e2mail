@@ -69,11 +69,15 @@ func NewRouter(
 				accounts.Get("/", accountsH.ListAccounts)
 				accounts.Post("/", accountsH.CreateAccount)
 				accounts.Post("/test", accountsH.TestAccount)
+				accounts.Post("/{id}/ensure-junk-folder", accountsH.EnsureJunkFolder)
 				accounts.Put("/{id}", accountsH.UpdateAccount)
 				accounts.Delete("/{id}", accountsH.DeleteAccount)
 				accounts.Post("/{id}/default", accountsH.SetDefaultAccount)
 				accounts.Get("/{id}/folders", mailH.ListFolders)
 			})
+
+			// Onboarding 完成度（2FA + PGP）
+			protected.Get("/onboarding/status", accountsH.OnboardingStatus)
 
 			// 郵件與資料夾管理
 			protected.Route("/mail", func(mail chi.Router) {
