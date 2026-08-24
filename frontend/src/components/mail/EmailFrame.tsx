@@ -55,6 +55,15 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
     }
 
     setDecryptError(null);
+    // 若私鑰受 passphrase 保護而用戶未輸入，先提示輸入（唔直接報「密碼錯誤」）
+    if (!passphrase) {
+      const encrypted = await pgpService.isPrivateKeyEncrypted(keyPair.privateKeyArmored).catch(() => false);
+      if (encrypted) {
+        setShowPassModal(true);
+        setDecryptError(null);
+        return;
+      }
+    }
     try {
       const raw = textBody || htmlBody || '';
       const { data: cleanDecryptedText, verified, signatureKeyId: keyId } = await pgpService.decrypt({
@@ -259,6 +268,9 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
               <Key className="w-4 h-4 text-blue-600" />
               <span>輸入 PGP 私鑰密碼 (Passphrase)</span>
             </div>
+            <p className="text-xs text-slate-500">
+              請輸入你<b>生成/導入 PGP 金鑰時設定嘅 Passphrase</b>（唔係登入密碼）。
+            </p>
 
             {decryptError && (
               <div className="p-2 text-xs bg-red-50 text-red-700 border border-red-200 rounded">
@@ -271,7 +283,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
                 type="password"
                 value={passphrase}
                 onChange={(e) => setPassphrase(e.target.value)}
-                placeholder="若你的私鑰未設密碼可留空"
+                placeholder="輸入 PGP 私鑰 Passphrase"
                 className="w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                 autoFocus
               />
