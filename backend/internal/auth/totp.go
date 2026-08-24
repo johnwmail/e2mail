@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	Issuer            = "Modern Webmail"
+	Issuer            = "WebMail"
 	BackupCodeCharset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	BackupCodeCount   = 10
 	BackupCodeGroups  = 2

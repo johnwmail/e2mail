@@ -116,8 +116,8 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("📦 Modern Webmail Backend %s (commit %s, built %s)", Version, CommitHash, BuildTime)
-		log.Printf("🚀 Modern Webmail Backend running on http://localhost:%s", port)
+		log.Printf("📦 WebMail Backend %s (commit %s, built %s)", Version, CommitHash, BuildTime)
+		log.Printf("🚀 WebMail Backend running on http://localhost:%s", port)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("HTTP server error: %v", err)
 		}
@@ -126,7 +126,7 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down Modern Webmail Backend...")
+	log.Println("Shutting down WebMail Backend...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

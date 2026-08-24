@@ -86,7 +86,7 @@ export const App: React.FC = () => {
   if (isLoading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-slate-900 text-white text-sm">
-        正在載入 Modern Webmail...
+        正在載入 WebMail...
       </div>
     );
   }

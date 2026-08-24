@@ -88,7 +88,7 @@ export const Header: React.FC = () => {
                 </div>
                 <div className="flex flex-col">
                   <span className="font-bold text-sm md:text-base text-slate-900 dark:text-white leading-tight">
-                    Modern Webmail
+                    WebMail
                   </span>
                   <span className="lg:hidden text-[11px] text-slate-400 font-medium leading-none mt-0.5">
                     {getFolderDisplayName(currentFolder)}
