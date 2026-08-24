@@ -741,7 +741,10 @@ func (c *Client) DeleteMessages(ctx context.Context, folder string, uids []uint3
 	c.lastUsed = time.Now()
 
 	if !permanent && !strings.EqualFold(folder, "Trash") {
-		return c.MoveMessages(ctx, folder, uids, c.FindTrashFolder(ctx))
+		// server 若未有 trash folder 則自動建立（Dovecot 未必預設 \Trash）
+		trash := c.FindTrashFolder(ctx)
+		trash, _ = c.EnsureFolder(ctx, trash)
+		return c.MoveMessages(ctx, folder, uids, trash)
 	}
 
 	if _, err := c.rawClient.Select(folder, nil).Wait(); err != nil {
