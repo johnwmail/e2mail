@@ -63,8 +63,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     localStorage.removeItem('webmail_token');
     localStorage.removeItem('webmail_session');
-    // logout 同時清除本機 PGP 金鑰包，確保下次登入時自雲端重新載入 server 嘅 key（跨裝置一致）
-    pgpService.saveKeyPair(null);
+    // logout 同時清除 in-memory PGP key（唔留 localStorage），下次登入重新自 server fetch
+    pgpService.clearKey();
     set({
       token: null,
       session: null,

@@ -48,9 +48,9 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
 
   const handleDecrypt = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const keyPair = pgpService.getKeyPair();
+    const keyPair = await pgpService.ensureKey();
     if (!keyPair) {
-      setDecryptError('請先在右上角「PGP 金鑰設定」中生成或匯入你的私鑰');
+      setDecryptError('請先在「PGP 金鑰設定」中生成或匯入你的私鑰');
       return;
     }
 

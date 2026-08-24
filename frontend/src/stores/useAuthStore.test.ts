@@ -16,6 +16,7 @@ vi.mock('../api/pgp', () => ({
   pgpService: {
     saveKeyPair: vi.fn(),
     getKeyPair: vi.fn(),
+    clearKey: vi.fn(),
   },
 }));
 

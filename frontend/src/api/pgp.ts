@@ -36,7 +36,13 @@ export interface CloudKeyringPayload {
   updatedAt: string;
 }
 
-const PGP_STORAGE_KEY = 'webmail_pgp_keypair';
+// 唔將 PGP key 存落 localStorage（最大化 privacy）：只存 in-memory cache，
+// readonly 期間有效，logout / session expired / 重新登入時重新自 server fetch。
+let memoryKeyPair: PgpKeyPair | null = null;
+
+function setMemoryKeyPair(kp: PgpKeyPair | null) {
+  memoryKeyPair = kp;
+}
 
 export const isAsciiText = (bytes: Uint8Array): boolean => {
   const checkLen = Math.min(bytes.length, 256);
@@ -301,23 +307,22 @@ export const pgpService = {
     });
   },
 
-  // 5. 本機 Storage 操作
-  saveKeyPair: (keyPair: PgpKeyPair | null) => {
-    if (!keyPair) {
-      localStorage.removeItem(PGP_STORAGE_KEY);
-    } else {
-      localStorage.setItem(PGP_STORAGE_KEY, JSON.stringify(keyPair));
-    }
+  // 若 in-memory 無 key，就先從雲端 fetch（每次 login/session 後）
+  ensureKey: async (): Promise<PgpKeyPair | null> => {
+    if (memoryKeyPair) return memoryKeyPair;
+    return pgpService.fetchKeyringFromCloud();
   },
 
-  getKeyPair: (): PgpKeyPair | null => {
-    const raw = localStorage.getItem(PGP_STORAGE_KEY);
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
+  // 5. In-memory key 操作（唔落 localStorage，maximize privacy）
+  saveKeyPair: (keyPair: PgpKeyPair | null) => {
+    setMemoryKeyPair(keyPair);
+  },
+
+  getKeyPair: (): PgpKeyPair | null => memoryKeyPair,
+
+  // 清空 in-memory key（logout / session expired 時呼叫）
+  clearKey: () => {
+    setMemoryKeyPair(null);
   },
 
   isPrivateKeyEncrypted: async (privateKeyArmored: string): Promise<boolean> => {
@@ -485,7 +490,7 @@ export const pgpService = {
         verificationKeys.push(await openpgp.readKey({ armoredKey: c.publicKeyArmored }));
       } catch {}
     }
-    const myKey = pgpService.getKeyPair();
+    const myKey = await pgpService.ensureKey();
     if (myKey?.publicKeyArmored) {
       try {
         verificationKeys.push(await openpgp.readKey({ armoredKey: myKey.publicKeyArmored }));

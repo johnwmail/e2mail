@@ -48,21 +48,15 @@ export const App: React.FC = () => {
     })();
   }, [isAuthenticated, view]);
 
-  // 登入後自動檢查並自雲端同步 PGP 加密金鑰包（跨裝置無縫加載）
+  // 登入後每次從雲端載入 PGP 金鑰包（唔留 localStorage；logout/session 過期後再 fetch）
   useEffect(() => {
     if (isAuthenticated) {
-      const localKey = pgpService.getKeyPair();
-      if (!localKey) {
-        pgpService.fetchKeyringFromCloud().then((cloudKey) => {
-          if (cloudKey) {
-            console.log('✅ 已成功自雲端同步 PGP 密文金鑰包:', cloudKey.keyId);
-          }
-          // 無論有冇 load 到，都要 refresh 令 sidebar 更新「已配置」狀態
-          refreshPgp();
-        });
-      } else {
+      pgpService.fetchKeyringFromCloud().then((cloudKey) => {
+        if (cloudKey) {
+          console.log('✅ 已成功自雲端同步 PGP 密文金鑰包:', cloudKey.keyId);
+        }
         refreshPgp();
-      }
+      });
     }
   }, [isAuthenticated]);
 

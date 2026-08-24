@@ -62,7 +62,7 @@ export const Composer: React.FC = () => {
 
     // 若啟用簽名，先檢查私鑰是否需要 Passphrase
     if (enablePgpSign) {
-      const myKeyPair = pgpService.getKeyPair();
+      const myKeyPair = await pgpService.ensureKey();
       if (!myKeyPair) {
         setError('請先在「PGP 金鑰設定」中生成或匯入你的私鑰才能進行數位簽名');
         return;
@@ -91,7 +91,7 @@ export const Composer: React.FC = () => {
 
     // 處理 PGP 加密與簽名 (支援自動自 keyserver 抓取收件人公鑰)
     if (isPgpActive) {
-      const myKeyPair = pgpService.getKeyPair();
+      const myKeyPair = await pgpService.ensureKey();
       const allContactKeys = await pgpService.getContactKeys();
       const recipientKeys: string[] = [];
 
@@ -115,14 +115,18 @@ export const Composer: React.FC = () => {
 
       if (enablePgpEncrypt) {
         if (recipientKeys.length === 0) {
-          if (myKeyPair?.publicKeyArmored) {
-            recipientKeys.push(myKeyPair.publicKeyArmored);
-          } else {
-            setError(`未找到收件人 (${toList.join(', ')}) 的 PGP 公開金鑰（已嘗試檢索本地與 keys.openpgp.org）。請確認對方是否已公開金鑰或手動至「PGP 金鑰設定」新增。`);
-            setIsSending(false);
-            setStatusText(null);
-            return;
-          }
+          // 一個都揾唔到收件人公鑰 → 唔可以 encrypt（唔應 fallback 用自己公鑰，對方會 decrypt 唔到）
+          setError(`未找到收件人 (${toList.join(', ')}) 的 PGP 公開金鑰（已嘗試檢索本地與 keys.openpgp.org）。請確認對方是否已公開金鑰或手動至「PGP 金鑰設定」新增。`);
+          setIsSending(false);
+          setStatusText(null);
+          return;
+        }
+        // 部分收件人冇公鑰 → 都唔可以 encrypt（會令嗰啲人讀唔到）
+        if (recipientKeys.length < toList.length) {
+          setError(`有 ${toList.length - recipientKeys.length} 位收件人未有 PGP 公開金鑰，無法加密到全部人。請確認所有收件人公鑰齊先再發送。`);
+          setIsSending(false);
+          setStatusText(null);
+          return;
         }
       }
 

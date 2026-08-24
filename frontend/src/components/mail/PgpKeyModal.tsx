@@ -72,7 +72,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
   }, [isOpen, session]);
 
   const loadKeys = async () => {
-    setKeyPair(pgpService.getKeyPair());
+    setKeyPair(await pgpService.ensureKey());
     const list = await pgpService.getContactKeys();
     setContacts(list);
   };
@@ -497,7 +497,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                       <button
                         onClick={() => {
                           if (confirm('確定要自瀏覽器與雲端移除此金鑰對嗎？')) {
-                            pgpService.saveKeyPair(null);
+                            pgpService.clearKey();
                             pgpService.deleteKeyringFromCloud().catch(() => {});
                             setKeyPair(null);
                             refreshPgp();
