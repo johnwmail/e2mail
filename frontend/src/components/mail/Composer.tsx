@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Minus,
@@ -40,6 +40,22 @@ export const Composer: React.FC = () => {
   // PGP 簽名 Passphrase 彈窗
   const [showSignPassModal, setShowSignPassModal] = useState(false);
   const [signingPassphrase, setSigningPassphrase] = useState('');
+
+  // composerDraft 改變時（openComposer reply/forward 等）重新 sync 表單 state
+  useEffect(() => {
+    if (!isComposerOpen || !composerDraft) return;
+    const d = composerDraft;
+    setTo(d.to?.join(', ') || '');
+    setCc(d.cc?.join(', ') || '');
+    setBcc(d.bcc?.join(', ') || '');
+    setShowCc(!!d.cc?.length);
+    setShowBcc(!!d.bcc?.length);
+    setSubject(d.subject || '');
+    setBody(d.textBody || '');
+    setAttachments([]);
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isComposerOpen, composerDraft]);
 
   if (!isComposerOpen) return null;
 
