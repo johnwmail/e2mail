@@ -115,15 +115,15 @@ export const Composer: React.FC = () => {
 
       if (enablePgpEncrypt) {
         if (recipientKeys.length === 0) {
-          // 一個都揾唔到收件人公鑰 → 唔可以 encrypt（唔應 fallback 用自己公鑰，對方會 decrypt 唔到）
-          setError(`未找到收件人 (${toList.join(', ')}) 的 PGP 公開金鑰（已嘗試檢索本地與 keys.openpgp.org）。請確認對方是否已公開金鑰或手動至「PGP 金鑰設定」新增。`);
+          // 全部收件人都揾唔到公鑰（本地 + keys.openpgp.org 都冇）→ 唔可以 encrypt
+          setError(`以下收件人搵唔到 PGP 公鑰：${toList.join(', ')}。已檢查「聯絡人公鑰庫」同 online keyserver (keys.openpgp.org)，請確認對方有公開金鑰，或手動去「PGP 金鑰設定」加入。`);
           setIsSending(false);
           setStatusText(null);
           return;
         }
-        // 部分收件人冇公鑰 → 都唔可以 encrypt（會令嗰啲人讀唔到）
+        // 部分收件人冇公鑰 → encrypt 會令嗰啲人讀唔到
         if (recipientKeys.length < toList.length) {
-          setError(`有 ${toList.length - recipientKeys.length} 位收件人未有 PGP 公開金鑰，無法加密到全部人。請確認所有收件人公鑰齊先再發送。`);
+          setError(`有 ${toList.length - recipientKeys.length} 位收件人冇 PGP 公鑰（本地「聯絡人公鑰庫」同 online keyserver 都搵唔到）。為免佢哋睇唔到，請先確認齊晒公鑰先行發送。`);
           setIsSending(false);
           setStatusText(null);
           return;
