@@ -19,6 +19,8 @@ import {
   UserRound,
   Settings2,
   ListTree,
+  Plus,
+  Minus,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { useMailStore } from '../../stores/useMailStore';
@@ -63,6 +65,113 @@ const getFolderDisplayName = (folder: FolderInfo) => {
 // 只有已訂閱（或 INBOX）嘅 folder 先顯示喺側邊欄
 const isVisibleFolder = (f: FolderInfo) => f.subscribed || f.specialUse === 'inbox' || f.name.toUpperCase() === 'INBOX';
 
+// 樹狀節點：將 flat folder list 依 delimiter + name path 組成樹
+interface FolderNode {
+  path: string;        // 完整資料夾名（name）
+  displayName: string; // 最後一段睇到嘅名
+  folder?: FolderInfo; // 若 node 對應一個實際 folder（leaf or 有 own unread）
+  children: Map<string, FolderNode>;
+}
+
+function buildFolderTree(folders: FolderInfo[]): FolderNode {
+  const root: FolderNode = { path: '', displayName: '', children: new Map() };
+  // 確保祖先 nodes 都存在（即使未有對應 folder）
+  for (const f of folders) {
+    const delim = f.delimiter || '/';
+    const parts = f.name.split(delim).filter(Boolean);
+    let node = root;
+    let path = '';
+    parts.forEach((part, idx) => {
+      path = idx === 0 ? part : path + delim + part;
+      if (!node.children.has(part)) {
+        node.children.set(part, { path, displayName: part, children: new Map() });
+      }
+      node = node.children.get(part)!;
+      if (idx === parts.length - 1) {
+        node.folder = f;
+      }
+    });
+  }
+  return root;
+}
+
+// 遞迴 folder tree 節點（支援 +/- 展開/收合）
+const FolderBranch: React.FC<{
+  node: FolderNode;
+  depth: number;
+  accountId: string;
+  isActiveAccount: boolean;
+  currentFolder: string;
+  onSelectFolder: (name: string) => void;
+  setSidebarOpen: (open: boolean) => void;
+  expandedMap: Record<string, boolean>;
+  onToggle: (path: string) => void;
+}> = ({ node, depth, accountId, isActiveAccount, currentFolder, onSelectFolder, setSidebarOpen, expandedMap, onToggle }) => {
+  const hasChildren = node.children.size > 0;
+  const isExpanded = expandedMap[node.path] ?? (depth === 0 ? true : false);
+  const isActive = isActiveAccount && currentFolder === node.path;
+  const unread = node.folder?.unreadCount ?? 0;
+
+  return (
+    <div>
+      <div className={`flex items-center rounded-lg transition ${isActive ? 'bg-blue-50 dark:bg-blue-950/60' : 'hover:bg-slate-200/60 dark:hover:bg-slate-800'}`}>
+        {hasChildren ? (
+          <button
+            onClick={() => onToggle(node.path)}
+            className="flex items-center justify-center w-5 h-5 shrink-0 text-slate-400 hover:text-slate-600"
+            title={isExpanded ? '收合' : '展開'}
+          >
+            {isExpanded ? <Minus className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+          </button>
+        ) : (
+          <span className="w-5 shrink-0" />
+        )}
+        <button
+          onClick={() => {
+            onSelectFolder(node.path);
+            setSidebarOpen(false);
+          }}
+          className={`flex-1 min-w-0 flex items-center justify-between pl-1 pr-2.5 py-2 rounded-lg text-xs font-medium transition ${
+            isActive ? 'text-blue-700 dark:text-blue-400 font-semibold' : 'text-slate-700 dark:text-slate-300'
+          }`}
+          style={{ paddingLeft: `${8 + depth * 12}px` }}
+        >
+          <div className="flex items-center gap-2.5 truncate">
+            <span className={isActive ? 'text-blue-600' : 'text-slate-400'}>
+              {node.folder ? getFolderIcon(node.folder.specialUse, node.folder.name) : <Folder className="w-4 h-4" />}
+            </span>
+            <span className="truncate">{node.displayName}</span>
+          </div>
+          {unread > 0 && (
+            <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded-full shrink-0">
+              {unread}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {hasChildren && isExpanded && (
+        <div className="border-l border-slate-200 dark:border-slate-800 ml-[11px]">
+          {Array.from(node.children.values()).map((child) => (
+            <FolderBranch
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              accountId={accountId}
+              isActiveAccount={isActiveAccount}
+              currentFolder={currentFolder}
+              onSelectFolder={onSelectFolder}
+              setSidebarOpen={setSidebarOpen}
+              expandedMap={expandedMap}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AccountFolders: React.FC<{
   account: Account;
   expanded: boolean;
@@ -72,6 +181,13 @@ const AccountFolders: React.FC<{
   const { currentFolder, setCurrentFolder, setActiveAccountId } = useMailStore();
   const isActiveAccount = useActiveAccount()?.id === account.id;
   const [isManagerOpen, setIsManagerOpen] = useState(false);
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(() => {
+    // 預設展開有 children 嘅 folder？改為預設全收合；用戶可 +/- 展開
+    return {};
+  });
+
+  const toggleFolder = (path: string) =>
+    setExpandedFolders((prev) => ({ ...prev, [path]: !prev[path] }));
 
   const { data: folders, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['folders', account.id],
@@ -117,42 +233,26 @@ const AccountFolders: React.FC<{
             ) : visibleFolders.length === 0 ? (
               <div className="p-3 text-xs text-slate-400">未有已訂閱資料夾</div>
             ) : (
-              visibleFolders.map((folder) => {
-                const isActive = isActiveAccount && currentFolder === folder.name;
-                return (
-                  <div
-                    key={folder.name}
-                    className={`flex items-center rounded-lg transition ${
-                      isActive
-                        ? 'bg-blue-50 dark:bg-blue-950/60'
-                        : 'hover:bg-slate-200/60 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <button
-                      onClick={() => {
-                        setActiveAccountId(account.id);
-                        setCurrentFolder(folder.name);
-                        setSidebarOpen(false);
-                      }}
-                      className={`flex-1 min-w-0 flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition ${
-                        isActive ? 'text-blue-700 dark:text-blue-400 font-semibold' : 'text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 truncate">
-                        <span className={isActive ? 'text-blue-600' : 'text-slate-400'}>
-                          {getFolderIcon(folder.specialUse, folder.name)}
-                        </span>
-                        <span className="truncate">{getFolderDisplayName(folder)}</span>
-                      </div>
-                      {folder.unreadCount > 0 && (
-                        <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded-full shrink-0">
-                          {folder.unreadCount}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                );
-              })
+              (() => {
+                const tree = buildFolderTree(visibleFolders);
+                return Array.from(tree.children.values()).map((child) => (
+                  <FolderBranch
+                    key={child.path}
+                    node={child}
+                    depth={0}
+                    accountId={account.id}
+                    isActiveAccount={isActiveAccount}
+                    currentFolder={currentFolder}
+                    onSelectFolder={(name) => {
+                      setActiveAccountId(account.id);
+                      setCurrentFolder(name);
+                    }}
+                    setSidebarOpen={setSidebarOpen}
+                    expandedMap={expandedFolders}
+                    onToggle={toggleFolder}
+                  />
+                ));
+              })()
             )}
             <button
               onClick={() => refetch()}
