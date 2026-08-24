@@ -11,6 +11,7 @@ interface EmailFrameProps {
   htmlBody: string;
   textBody: string;
   attachments: AttachmentInfo[];
+  onDecryptedChange?: (text: string) => void;
 }
 
 export const EmailFrame: React.FC<EmailFrameProps> = ({
@@ -19,6 +20,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
   htmlBody,
   textBody,
   attachments,
+  onDecryptedChange,
 }) => {
   const [allowRemoteImages, setAllowRemoteImages] = useState(false);
   const [hasRemoteImages, setHasRemoteImages] = useState(false);
@@ -77,6 +79,8 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       setIsSignatureVerified(verified);
       setSignatureKeyId(keyId || null);
       setShowPassModal(false);
+      // 通知外層 viewer 已解密，reply/forward 可用明文 quote
+      onDecryptedChange?.(cleanDecryptedText);
     } catch (err: any) {
       setDecryptError(err.message || '解密失敗，可能是 Passphrase 錯誤或非針對此金鑰加密');
     }

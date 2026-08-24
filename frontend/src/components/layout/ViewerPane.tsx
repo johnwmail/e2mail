@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Reply,
@@ -97,6 +97,10 @@ export const ViewerPane: React.FC = () => {
     moveToJunkMutation.mutate(message.uid);
   };
 
+  // PGP 解密後嘅明文（reply/forward 用）；未解密就用原始 body
+  const [decryptedContent, setDecryptedContent] = useState<string | null>(null);
+  const replyBodyText = decryptedContent ?? message?.textBody ?? '';
+
   if (!selectedUID) {
     return (
       <main className="hidden lg:flex flex-1 bg-slate-50/50 dark:bg-slate-950 flex-col items-center justify-center text-slate-400 p-8 select-none">
@@ -126,7 +130,7 @@ export const ViewerPane: React.FC = () => {
       to: toList,
       cc: replyAll ? message.cc.map((c) => c.address) : [],
       subject: message.subject.startsWith('Re:') ? message.subject : `Re: ${message.subject}`,
-      textBody: quoteHeader + (message.textBody || ''),
+      textBody: quoteHeader + replyBodyText,
       inReplyTo: message.messageId,
       references: message.messageId,
     });
@@ -139,7 +143,7 @@ export const ViewerPane: React.FC = () => {
     openComposer({
       to: [],
       subject: message.subject.startsWith('Fwd:') ? message.subject : `Fwd: ${message.subject}`,
-      textBody: quoteHeader + (message.textBody || ''),
+      textBody: quoteHeader + replyBodyText,
       references: message.messageId,
     });
   };
@@ -337,6 +341,7 @@ export const ViewerPane: React.FC = () => {
           htmlBody={message.htmlBody}
           textBody={message.textBody}
           attachments={message.attachments}
+          onDecryptedChange={setDecryptedContent}
         />
       </div>
 
