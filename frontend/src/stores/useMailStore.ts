@@ -10,6 +10,7 @@ interface MailState {
   limit: number;
   isComposerOpen: boolean;
   composerDraft: Partial<OutgoingMessage> | null;
+  composerKey: number;
   isSidebarOpen: boolean;
   view: 'mail' | 'accounts';
 
@@ -34,6 +35,7 @@ export const useMailStore = create<MailState>((set) => ({
   limit: 50,
   isComposerOpen: false,
   composerDraft: null,
+  composerKey: 0,
   isSidebarOpen: false,
   view: 'mail',
 
@@ -50,7 +52,7 @@ export const useMailStore = create<MailState>((set) => ({
   setPage: (page) => set({ page }),
 
   openComposer: (draft = {}) =>
-    set({ isComposerOpen: true, composerDraft: draft }),
+    set((s) => ({ isComposerOpen: true, composerDraft: draft, composerKey: s.composerKey + 1 })),
 
   closeComposer: () =>
     set({ isComposerOpen: false, composerDraft: null }),

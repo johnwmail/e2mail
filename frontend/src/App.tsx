@@ -20,6 +20,7 @@ export const App: React.FC = () => {
   const queryClient = useQueryClient();
   const { isAuthenticated, isLoading, initAuth, token, logout } = useAuthStore();
   const view = useMailStore((s) => s.view);
+  const composerKey = useMailStore((s) => s.composerKey);
   const activeAccount = useActiveAccount();
   const [showOnboarding, setShowOnboarding] = useState(false);
 
@@ -108,7 +109,7 @@ export const App: React.FC = () => {
           </>
         )}
       </div>
-      {view === 'mail' && activeAccount && <Composer />}
+      {view === 'mail' && activeAccount && <Composer key={composerKey} />}
 
       {/* 首次登入 onboarding 強制完成 2FA + PGP */}
       {showOnboarding && (
