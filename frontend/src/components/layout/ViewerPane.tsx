@@ -121,14 +121,14 @@ export const ViewerPane: React.FC = () => {
   const handleReply = (replyAll = false) => {
     const fromAddr = message.from?.[0]?.address || '';
     const toList = replyAll
-      ? [fromAddr, ...message.to.map((t) => t.address).filter((a) => a !== fromAddr)]
+      ? [fromAddr, ...(message.to ?? []).map((t) => t.address).filter((a) => a !== fromAddr)]
       : [fromAddr];
 
     const quoteHeader = `\n\n--- 原始郵件 (${message.date}) ---\n寄件者: ${fromAddr}\n主旨: ${message.subject}\n\n`;
 
     openComposer({
       to: toList,
-      cc: replyAll ? message.cc.map((c) => c.address) : [],
+      cc: replyAll ? (message.cc ?? []).map((c) => c.address) : [],
       subject: message.subject.startsWith('Re:') ? message.subject : `Re: ${message.subject}`,
       textBody: quoteHeader + replyBodyText,
       inReplyTo: message.messageId,
@@ -138,7 +138,7 @@ export const ViewerPane: React.FC = () => {
 
   const handleForward = () => {
     const fromAddr = message.from?.[0]?.address || '';
-    const quoteHeader = `\n\n---------- 轉寄郵件 ----------\n寄件者: ${fromAddr}\n日期: ${message.date}\n主旨: ${message.subject}\n收件者: ${message.to.map((t) => t.address).join(', ')}\n\n`;
+    const quoteHeader = `\n\n---------- 轉寄郵件 ----------\n寄件者: ${fromAddr}\n日期: ${message.date}\n主旨: ${message.subject}\n收件者: ${(message.to ?? []).map((t) => t.address).join(', ')}\n\n`;
 
     openComposer({
       to: [],
