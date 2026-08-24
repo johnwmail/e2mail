@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { authApi } from '../api/auth';
+import { pgpService } from '../api/pgp';
 import { LoginRequest, Session } from '../types/api';
 
 export interface LoginResult {
@@ -62,6 +63,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     localStorage.removeItem('webmail_token');
     localStorage.removeItem('webmail_session');
+    // logout 同時清除本機 PGP 金鑰包，確保下次登入時自雲端重新載入 server 嘅 key（跨裝置一致）
+    pgpService.saveKeyPair(null);
     set({
       token: null,
       session: null,

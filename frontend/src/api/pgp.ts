@@ -501,6 +501,9 @@ export const pgpService = {
       message,
       decryptionKeys: privateKey,
       verificationKeys: verificationKeys.length > 0 ? verificationKeys : undefined,
+      // 繞過舊版 openpgp.js（#1148）對「signing-only key 用嚟解密」嘅限制，
+      // 修正 iOS/WebKit 上「Session key decryption failed」問題
+      config: { allowInsecureDecryptionWithSigningKeys: true },
     });
 
     let verified = false;

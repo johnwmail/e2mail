@@ -12,6 +12,13 @@ vi.mock('../api/auth', () => ({
   },
 }));
 
+vi.mock('../api/pgp', () => ({
+  pgpService: {
+    saveKeyPair: vi.fn(),
+    getKeyPair: vi.fn(),
+  },
+}));
+
 const mockAuthApi = vi.mocked(authApi);
 
 const fakeSession: Session = {
