@@ -43,6 +43,17 @@ export const accountsApi = {
     return request<{ isDefault: boolean }>(`/accounts/${id}/default`, { method: 'POST' });
   },
 
+  getFolderPrefs: async (id: string): Promise<Record<string, boolean>> => {
+    return request<Record<string, boolean>>(`/accounts/${id}/folders/prefs`);
+  },
+
+  setFolderPref: async (id: string, folder: string, visible: boolean): Promise<{ visible: boolean }> => {
+    return request<{ visible: boolean }>(`/accounts/${id}/folders/prefs`, {
+      method: 'PUT',
+      body: JSON.stringify({ folder, visible }),
+    });
+  },
+
   test: async (input: AccountInput): Promise<{ imap: string; smtp: string }> => {
     return request<{ imap: string; smtp: string }>('/accounts/test', {
       method: 'POST',

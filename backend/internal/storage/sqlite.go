@@ -110,6 +110,10 @@ type Store interface {
 	CreateUserCredential(cred *UserCredential) error
 	UpdateUserCredential(cred *UserCredential) error
 
+	// Folder display prefs (WebMail-only, per account; not IMAP subscription)
+	ListFolderPrefs(userEmail, accountID string) (map[string]bool, error)
+	SetFolderPref(userEmail, accountID, folderName string, visible bool) error
+
 	// Lifecycle
 	MigrateLegacyKeyrings(dataDir string) (migrated int, err error)
 	Close() error
@@ -174,6 +178,15 @@ CREATE TABLE IF NOT EXISTS accounts (
 	updated_at             INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_email);
+
+CREATE TABLE IF NOT EXISTS folder_prefs (
+	user_email   TEXT NOT NULL,
+	account_id   TEXT NOT NULL,
+	folder_name  TEXT NOT NULL,
+	visible      INTEGER NOT NULL DEFAULT 1,
+	PRIMARY KEY (user_email, account_id, folder_name)
+);
+CREATE INDEX IF NOT EXISTS idx_folder_prefs_account ON folder_prefs(account_id);
 `
 
 // SQLiteStore SQLite 儲存實作
@@ -518,6 +531,46 @@ func (s *SQLiteStore) DeleteTwoFA(ownerEmail string) error {
 	_, err := s.db.Exec(`DELETE FROM two_fa WHERE owner_email = ?`, ownerEmail)
 	if err != nil {
 		return fmt.Errorf("failed to delete two_fa: %w", err)
+	}
+	return nil
+}
+
+// ===== Folder display prefs (WebMail-only) =====
+
+// ListFolderPrefs 返回帳號各 folder 嘅顯示偏好（visible map）；無記錄嘅 folder 唔喺 map 入面（視作 default）
+func (s *SQLiteStore) ListFolderPrefs(userEmail, accountID string) (map[string]bool, error) {
+	rows, err := s.db.Query(
+		`SELECT folder_name, visible FROM folder_prefs WHERE user_email = ? AND account_id = ?`,
+		userEmail, accountID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list folder prefs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		var visible int
+		if err := rows.Scan(&name, &visible); err != nil {
+			return nil, err
+		}
+		out[name] = visible == 1
+	}
+	return out, rows.Err()
+}
+
+// SetFolderPref 設定單一 folder 嘅顯示偏好（upsert）
+func (s *SQLiteStore) SetFolderPref(userEmail, accountID, folderName string, visible bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`INSERT INTO folder_prefs (user_email, account_id, folder_name, visible)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(user_email, account_id, folder_name) DO UPDATE SET visible = excluded.visible`,
+		userEmail, accountID, folderName, boolInt(visible),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set folder pref: %w", err)
 	}
 	return nil
 }

@@ -74,6 +74,8 @@ func NewRouter(
 				accounts.Delete("/{id}", accountsH.DeleteAccount)
 				accounts.Post("/{id}/default", accountsH.SetDefaultAccount)
 				accounts.Get("/{id}/folders", mailH.ListFolders)
+				accounts.Get("/{id}/folders/prefs", accountsH.GetFolderPrefs)
+				accounts.Put("/{id}/folders/prefs", accountsH.SetFolderPref)
 			})
 
 			// Onboarding 完成度（2FA + PGP）

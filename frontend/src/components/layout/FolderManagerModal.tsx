@@ -13,6 +13,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
+import { accountsApi } from '../../api/accounts';
 import { Account, FolderInfo } from '../../types/api';
 
 const getFolderIcon = (specialUse?: string, name?: string) => {
@@ -58,20 +59,23 @@ const FolderManagerModal: React.FC<{
     staleTime: 30000,
   });
 
+  // WebMail-only folder 顯示偏好（唔影響 IMAP subscription）
+  const { data: prefs, refetch: refetchPrefs } = useQuery({
+    queryKey: ['folderPrefs', account.id],
+    queryFn: () => accountsApi.getFolderPrefs(account.id),
+    staleTime: 30000,
+  });
+
+  const isVisible = (folder: FolderInfo): boolean =>
+    prefs?.[folder.name] ?? true;
+
   const toggle = async (folder: FolderInfo) => {
-    const next = !folder.subscribed;
-    // 樂觀更新
-    queryClient.setQueryData(['folders', account.id], (old: FolderInfo[] | undefined) =>
-      old?.map((f) => (f.name === folder.name ? { ...f, subscribed: next } : f))
-    );
+    const next = !isVisible(folder);
+    // 寫入 WebMail 專屬偏好（唔 send IMAP subscribe/unsubscribe）
     setPending((p) => ({ ...p, [folder.name]: true }));
     try {
-      await mailApi.setFolderSubscription(folder.name, next, account.id);
-    } catch {
-      // 失敗回滾
-      queryClient.setQueryData(['folders', account.id], (old: FolderInfo[] | undefined) =>
-        old?.map((f) => (f.name === folder.name ? { ...f, subscribed: folder.subscribed } : f))
-      );
+      await accountsApi.setFolderPref(account.id, folder.name, next);
+      await refetchPrefs();
     } finally {
       setPending((p) => ({ ...p, [folder.name]: false }));
     }
@@ -108,7 +112,7 @@ const FolderManagerModal: React.FC<{
                 <label key={folder.name} className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
                   <input
                     type="checkbox"
-                    checked={folder.subscribed}
+                    checked={disabled || isVisible(folder)}
                     disabled={disabled || isPending}
                     onChange={() => toggle(folder)}
                     className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-0"

@@ -124,6 +124,49 @@ func (h *AccountsHandler) EnsureJunkFolder(w http.ResponseWriter, r *http.Reques
 	response.Success(w, map[string]string{"junkFolder": junkFolder})
 }
 
+// GetFolderPrefs 取得帳號嘅 WebMail 專屬 folder 顯示偏好
+func (h *AccountsHandler) GetFolderPrefs(w http.ResponseWriter, r *http.Request) {
+	authCtx := middleware.GetAccountContext(r.Context())
+	if authCtx == nil || authCtx.Session == nil {
+		response.Unauthorized(w, "unauthorized")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	prefs, err := h.storage.ListFolderPrefs(authCtx.Session.Email, id)
+	if err != nil {
+		response.InternalServerError(w, "failed to read folder prefs")
+		return
+	}
+	response.Success(w, prefs)
+}
+
+// SetFolderPref 設定帳號嘅 WebMail 專屬 folder 顯示偏好（唔影響 IMAP subscription）
+func (h *AccountsHandler) SetFolderPref(w http.ResponseWriter, r *http.Request) {
+	authCtx := middleware.GetAccountContext(r.Context())
+	if authCtx == nil || authCtx.Session == nil {
+		response.Unauthorized(w, "unauthorized")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Folder  string `json:"folder"`
+		Visible bool   `json:"visible"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.BadRequest(w, "invalid json payload")
+		return
+	}
+	if req.Folder == "" {
+		response.BadRequest(w, "folder is required")
+		return
+	}
+	if err := h.storage.SetFolderPref(authCtx.Session.Email, id, req.Folder, req.Visible); err != nil {
+		response.InternalServerError(w, "failed to save folder pref")
+		return
+	}
+	response.Success(w, map[string]bool{"visible": req.Visible})
+}
+
 // ListAccounts 列出所有帳號（不含密碼）
 func (h *AccountsHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	authCtx := middleware.GetAccountContext(r.Context())

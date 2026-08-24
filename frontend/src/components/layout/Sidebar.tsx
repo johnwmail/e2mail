@@ -23,6 +23,7 @@ import {
   Minus,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
+import { accountsApi } from '../../api/accounts';
 import { useMailStore } from '../../stores/useMailStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { usePgpStore } from '../../stores/usePgpStore';
@@ -62,8 +63,9 @@ const getFolderDisplayName = (folder: FolderInfo) => {
   }
 };
 
-// 只有已訂閱（或 INBOX）嘅 folder 先顯示喺側邊欄
-const isVisibleFolder = (f: FolderInfo) => f.subscribed || f.specialUse === 'inbox' || f.name.toUpperCase() === 'INBOX';
+// 只有 INBOX 或「WebMail 偏好設為顯示」嘅 folder 先顯示喺側邊欄（唔依賴 IMAP subscription）
+const isVisibleFolder = (f: FolderInfo, prefs: Record<string, boolean> | undefined) =>
+  f.specialUse === 'inbox' || f.name.toUpperCase() === 'INBOX' || (prefs?.[f.name] ?? true);
 
 // 樹狀節點：將 flat folder list 依 delimiter + name path 組成樹
 interface FolderNode {
@@ -196,7 +198,15 @@ const AccountFolders: React.FC<{
     staleTime: 30000,
   });
 
-  const visibleFolders = folders?.filter(isVisibleFolder) ?? [];
+  // WebMail-only folder 顯示偏好（唔影響 IMAP subscription）
+  const { data: folderPrefs } = useQuery({
+    queryKey: ['folderPrefs', account.id],
+    queryFn: () => accountsApi.getFolderPrefs(account.id),
+    enabled: expanded,
+    staleTime: 30000,
+  });
+
+  const visibleFolders = folders?.filter((f) => isVisibleFolder(f, folderPrefs)) ?? [];
   const accountUnread = visibleFolders.reduce((sum, f) => sum + f.unreadCount, 0) ?? 0;
 
   return (
