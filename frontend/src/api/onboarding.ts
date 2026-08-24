@@ -3,6 +3,8 @@ import { request } from './client';
 export interface OnboardingStatus {
   twoFAEnabled: boolean;
   pgpEnabled: boolean;
+  require2FA: boolean;
+  requirePGP: boolean;
   completed: boolean;
 }
 

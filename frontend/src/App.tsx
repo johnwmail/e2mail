@@ -14,7 +14,7 @@ import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { connectEvents } from './api/sse';
 import { pgpService } from './api/pgp';
 import { refreshPgp } from './stores/usePgpStore';
-import { onboardingApi } from './api/onboarding';
+import { onboardingApi, OnboardingStatus } from './api/onboarding';
 
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
@@ -34,12 +34,14 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
   }, [initAuth, logout]);
 
-  // 登入後檢查 onboarding 完成度（2FA + PGP）；未完成則顯示 wizard
+  // 登入後檢查 onboarding 完成度（依 REQUIRE_2FA / REQUIRE_PGP）；未完成則顯示 wizard
+  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
   useEffect(() => {
     if (!isAuthenticated) return;
     (async () => {
       try {
         const st = await onboardingApi.status();
+        setOnboardingStatus(st);
         if (!st.completed) {
           setShowOnboarding(true);
         }
@@ -111,9 +113,11 @@ export const App: React.FC = () => {
       </div>
       {view === 'mail' && activeAccount && <Composer key={composerKey} />}
 
-      {/* 首次登入 onboarding 強制完成 2FA + PGP */}
+      {/* 首次登入 onboarding 強制完成 2FA + PGP（依 REQUIRE_2FA / REQUIRE_PGP） */}
       {showOnboarding && (
         <OnboardingWizard
+          require2FA={onboardingStatus?.require2FA ?? true}
+          requirePGP={onboardingStatus?.requirePGP ?? true}
           onComplete={() => {
             setShowOnboarding(false);
             refreshPgp();

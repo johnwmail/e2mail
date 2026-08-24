@@ -19,11 +19,16 @@ import { useMailStore } from '../../stores/useMailStore';
 type Step = '2fa' | 'pgp' | 'done';
 
 export const OnboardingWizard: React.FC<{
+  require2FA?: boolean;
+  requirePGP?: boolean;
   onComplete: () => void;
-}> = ({ onComplete }) => {
+}> = ({ require2FA = true, requirePGP = true, onComplete }) => {
   const { session } = useAuthStore();
   const setView = useMailStore((s) => s.setView);
-  const [step, setStep] = useState<Step>('2fa');
+  const [step, setStep] = useState<Step>(() => {
+    if (!require2FA) return requirePGP ? 'pgp' : 'done';
+    return '2fa';
+  });
 
   // 2FA state
   const [secret, setSecret] = useState('');
@@ -49,7 +54,7 @@ export const OnboardingWizard: React.FC<{
       try {
         const status = await twoFApi.getStatus();
         if (status.enabled) {
-          setStep('pgp');
+          setStep(requirePGP ? 'pgp' : 'done');
           return;
         }
         setLoading(true);
@@ -77,7 +82,7 @@ export const OnboardingWizard: React.FC<{
     try {
       const res = await twoFApi.enable(secret, code);
       setBackupCodes(res.backupCodes);
-      setStep('pgp');
+      setStep(requirePGP ? 'pgp' : 'done');
       setMsg(null);
     } catch (e: any) {
       setMsg({ type: 'error', text: e?.message || '2FA 啟用失敗' });

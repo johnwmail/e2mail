@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"modern-webmail/backend/internal/api/middleware"
+	"modern-webmail/backend/internal/config"
 	"modern-webmail/backend/internal/crypto"
 	imapinternal "modern-webmail/backend/internal/imap"
 	"modern-webmail/backend/internal/session"
@@ -21,16 +22,18 @@ type AccountsHandler struct {
 	store   session.Store
 	storage storage.Store
 	poolMgr *imapinternal.PoolManager
+	cfg     *config.ServerConfig
 	idleMgr *imapinternal.IdleManager
 }
 
 // NewAccountsHandler 初始化 AccountsHandler
-func NewAccountsHandler(store session.Store, storageStore storage.Store, poolMgr *imapinternal.PoolManager, idleMgr *imapinternal.IdleManager) *AccountsHandler {
+func NewAccountsHandler(store session.Store, storageStore storage.Store, poolMgr *imapinternal.PoolManager, idleMgr *imapinternal.IdleManager, cfg *config.ServerConfig) *AccountsHandler {
 	return &AccountsHandler{
 		store:   store,
 		storage: storageStore,
 		poolMgr: poolMgr,
 		idleMgr: idleMgr,
+		cfg:     cfg,
 	}
 }
 
@@ -50,7 +53,7 @@ type AccountRequest struct {
 	Password             string `json:"password"`
 }
 
-// OnboardingStatus 返回使用者 onboarding 完成度（2FA 是否已設 + 有冇 PGP keyring）
+// OnboardingStatus 返回使用者 onboarding 完成度（依 REQUIRE_2FA / REQUIRE_PGP 環境變數決定邊啲係必須）
 func (h *AccountsHandler) OnboardingStatus(w http.ResponseWriter, r *http.Request) {
 	authCtx := middleware.GetAccountContext(r.Context())
 	if authCtx == nil || authCtx.Session == nil {
@@ -62,10 +65,25 @@ func (h *AccountsHandler) OnboardingStatus(w http.ResponseWriter, r *http.Reques
 	twoFA, _ := h.storage.GetTwoFA(email)
 	keyring, _ := h.storage.GetKeyring(email)
 
+	has2FA := twoFA != nil
+	hasPGP := keyring != nil
+
+	require2FA := true
+	requirePGP := true
+	if h.cfg != nil {
+		require2FA = h.cfg.Require2FA
+		requirePGP = h.cfg.RequirePGP
+	}
+
+	// completed：要求嘅部分全部已設；optional 部分就算未設都算完成
+	completed := (!require2FA || has2FA) && (!requirePGP || hasPGP)
+
 	response.Success(w, map[string]bool{
-		"twoFAEnabled": twoFA != nil,
-		"pgpEnabled":   keyring != nil,
-		"completed":    twoFA != nil && keyring != nil,
+		"twoFAEnabled": has2FA,
+		"pgpEnabled":   hasPGP,
+		"require2FA":   require2FA,
+		"requirePGP":   requirePGP,
+		"completed":    completed,
 	})
 }
 
