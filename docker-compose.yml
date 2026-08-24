@@ -19,6 +19,10 @@ services:
       - PORT=8080
       - DATA_DIR=/data
       - SESSION_TTL_HOURS=24
+      # === Onboarding 強制設定（新帳號首次登入；true=強制要求設 2FA / PGP） ===
+      # 可直接喺呢度寫死，或用 .env / shell env 覆蓋（default 都係 true）
+      - REQUIRE_2FA=${REQUIRE_2FA:-true}
+      - REQUIRE_PGP=${REQUIRE_PGP:-true}
       # === 伺服器預設值（自訂網域登入時預填；ADMIN 若部署給多人使用可設定） ===
       # - DEFAULT_IMAP_HOST=mail.example.com
       # - DEFAULT_IMAP_PORT=993
