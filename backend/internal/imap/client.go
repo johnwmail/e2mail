@@ -758,6 +758,34 @@ func (c *Client) DeleteMessages(ctx context.Context, folder string, uids []uint3
 	return c.rawClient.Expunge().Close()
 }
 
+// EmptyFolder 清空資料夾（select → 全部標記 \Deleted → expunge；Trash 清空用）
+func (c *Client) EmptyFolder(ctx context.Context, folder string) error {
+	c.lastUsed = time.Now()
+
+	selectData, err := c.rawClient.Select(folder, nil).Wait()
+	if err != nil {
+		return fmt.Errorf("failed to select folder %s: %w", folder, err)
+	}
+	if selectData.NumMessages == 0 {
+		return nil // 已空
+	}
+
+	// 用 sequence set 1:*（全部訊息）標記 \Deleted
+	storeOpts := &imap.StoreFlags{
+		Op:     imap.StoreFlagsAdd,
+		Flags:  []imap.Flag{imap.FlagDeleted},
+		Silent: true,
+	}
+	seqSet := &imap.SeqSet{}
+	seqSet.AddRange(1, 0) // 1:* = 全部
+	storeCmd := c.rawClient.Store(seqSet, storeOpts, nil)
+	if err := storeCmd.Close(); err != nil {
+		return fmt.Errorf("failed to mark %s messages as deleted: %w", folder, err)
+	}
+
+	return c.rawClient.Expunge().Close()
+}
+
 // Close 關閉連線
 func (c *Client) Close() error {
 	if c.rawClient != nil {

@@ -331,6 +331,40 @@ func (h *MailHandler) MoveMessages(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, map[string]string{"message": "messages moved successfully"})
 }
 
+// EmptyFolderRequest 清空資料夾請求
+type EmptyFolderRequest struct {
+	Folder string `json:"folder"`
+}
+
+// EmptyFolder 清空指定資料夾（例如 Trash）
+func (h *MailHandler) EmptyFolder(w http.ResponseWriter, r *http.Request) {
+	var req EmptyFolderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.BadRequest(w, "invalid request body")
+		return
+	}
+	if req.Folder == "" {
+		response.BadRequest(w, "folder is required")
+		return
+	}
+
+	client, release, _, _, err := h.acquireClient(r.Context(), r)
+	if err != nil {
+		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
+		return
+	}
+	defer release()
+
+	if err := client.EmptyFolder(r.Context(), req.Folder); err != nil {
+		log.Printf("[MAIL] empty folder FAILED: folder=%s err=%v", req.Folder, err)
+		response.InternalServerError(w, "failed to empty folder: "+err.Error())
+		return
+	}
+
+	log.Printf("[MAIL] empty folder OK: folder=%s", req.Folder)
+	response.Success(w, map[string]string{"message": "folder emptied successfully"})
+}
+
 // DeleteRequest 批次刪除郵件請求
 type DeleteRequest struct {
 	Folder    string   `json:"folder"`

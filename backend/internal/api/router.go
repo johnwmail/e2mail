@@ -91,6 +91,7 @@ func NewRouter(
 				mail.Post("/messages/flags", mailH.SetFlags)
 				mail.Post("/messages/move", mailH.MoveMessages)
 				mail.Post("/messages/delete", mailH.DeleteMessages)
+				mail.Post("/messages/empty", mailH.EmptyFolder)
 				mail.Post("/send", mailH.SendMessage)
 			})
 

@@ -21,6 +21,7 @@ import {
   ListTree,
   Plus,
   Minus,
+  Loader2,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { accountsApi } from '../../api/accounts';
@@ -113,6 +114,23 @@ const FolderBranch: React.FC<{
   const isExpanded = expandedMap[node.path] ?? (depth === 0 ? true : false);
   const isActive = isActiveAccount && currentFolder === node.path;
   const unread = node.folder?.unreadCount ?? 0;
+  const isTrash = node.folder?.specialUse === 'trash' || /trash|bin|垃圾/i.test(node.path);
+  const [emptying, setEmptying] = useState(false);
+  const queryClient = useQueryClient();
+
+  const handleEmptyTrash = async () => {
+    if (!window.confirm(`確定要清空「${node.displayName}」全部郵件嗎？此操作無法復原。`)) return;
+    setEmptying(true);
+    try {
+      await mailApi.emptyFolder(node.path, accountId);
+      queryClient.invalidateQueries({ queryKey: ['messages', accountId, node.path] });
+      queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
+    } catch (e: any) {
+      window.alert('清空失敗: ' + (e?.message || e));
+    } finally {
+      setEmptying(false);
+    }
+  };
 
   return (
     <div>
@@ -150,6 +168,17 @@ const FolderBranch: React.FC<{
             </span>
           )}
         </button>
+        {isTrash && (
+          <button
+            onClick={handleEmptyTrash}
+            disabled={emptying}
+            className="flex items-center justify-center w-6 h-6 mr-1 shrink-0 text-slate-400 hover:text-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 transition disabled:opacity-40"
+            title="清空垃圾桶 (Empty Trash)"
+            aria-label="清空垃圾桶"
+          >
+            {emptying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+          </button>
+        )}
       </div>
 
       {hasChildren && isExpanded && (

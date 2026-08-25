@@ -98,6 +98,13 @@ export const mailApi = {
     });
   },
 
+  emptyFolder: async (folder: string, account?: string): Promise<void> => {
+    return request<void>(`/mail/messages/empty${accountParam(account)}`, {
+      method: 'POST',
+      body: JSON.stringify({ folder }),
+    });
+  },
+
   sendMessage: async (msg: OutgoingMessage, account?: string): Promise<void> => {
     if (msg.attachments && msg.attachments.length > 0) {
       const formData = new FormData();
