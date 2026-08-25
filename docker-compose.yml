@@ -10,6 +10,14 @@ services:
         COMMIT_HASH: ${COMMIT_HASH:-sha-unknown}
     image: ghcr.io/johnwmail/e2mail:latest
     container_name: e2mail
+    user: "8080:8080"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
     restart: unless-stopped
     env_file:
       - .env
