@@ -109,6 +109,28 @@ func ParseRFC822Message(raw []byte, uid uint32, flags []string) (*ParsedMessage,
 		Attachments: make([]AttachmentInfo, 0),
 	}
 
+	populateFlags(msg, flags)
+
+	mr, err := gomail.CreateReader(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create mail reader: %w", err)
+	}
+
+	populateHeaders(msg, mr.Header)
+
+	topContentType, topParams, _ := mr.Header.ContentType()
+	isPgpMime := strings.HasPrefix(topContentType, "multipart/encrypted") && strings.EqualFold(topParams["protocol"], "application/pgp-encrypted")
+
+	if err := collectParts(msg, mr); err != nil {
+		return nil, err
+	}
+
+	handlePgpMime(msg, isPgpMime)
+
+	return msg, nil
+}
+
+func populateFlags(msg *ParsedMessage, flags []string) {
 	for _, f := range flags {
 		fUpper := strings.ToUpper(f)
 		if fUpper == `\FLAGGED` {
@@ -119,14 +141,9 @@ func ParseRFC822Message(raw []byte, uid uint32, flags []string) (*ParsedMessage,
 		}
 	}
 	msg.Unread = !containsFlag(flags, `\Seen`)
+}
 
-	mr, err := gomail.CreateReader(bytes.NewReader(raw))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create mail reader: %w", err)
-	}
-
-	// 提取 Header 資訊
-	header := mr.Header
+func populateHeaders(msg *ParsedMessage, header gomail.Header) {
 	if subject, err := header.Subject(); err == nil {
 		msg.Subject = charsetutil.DecodeHeader(subject)
 	}
@@ -151,12 +168,10 @@ func ParseRFC822Message(raw []byte, uid uint32, flags []string) (*ParsedMessage,
 	if replyToList, err := header.AddressList("Reply-To"); err == nil {
 		msg.ReplyTo = ParseAddressList(replyToList)
 	}
+}
 
+func collectParts(msg *ParsedMessage, mr *gomail.Reader) error {
 	attachmentIndex := 0
-	topContentType, topParams, _ := header.ContentType()
-	isPgpMime := strings.HasPrefix(topContentType, "multipart/encrypted") && strings.EqualFold(topParams["protocol"], "application/pgp-encrypted")
-
-	// 遞迴遍歷 MIME Parts
 	for {
 		part, err := mr.NextPart()
 		if err == io.EOF {
@@ -165,75 +180,72 @@ func ParseRFC822Message(raw []byte, uid uint32, flags []string) (*ParsedMessage,
 		if err != nil {
 			break
 		}
-
 		switch h := part.Header.(type) {
 		case *gomail.InlineHeader:
-			contentType, params, _ := h.ContentType()
-			charsetParam := params["charset"]
-
-			bodyBytes, _ := io.ReadAll(part.Body)
-			utf8Body, _ := charsetutil.ToUTF8(bodyBytes, charsetParam)
-
-			if strings.HasPrefix(contentType, "text/plain") {
-				if msg.TextBody == "" {
-					msg.TextBody = utf8Body
-				}
-			} else if strings.HasPrefix(contentType, "text/html") {
-				if msg.HTMLBody == "" {
-					msg.HTMLBody = utf8Body
-				}
-			}
-
+			handleInlinePart(msg, h, part)
 		case *gomail.AttachmentHeader:
-			contentType, _, _ := h.ContentType()
-			filename, _ := h.Filename()
-			if filename == "" {
-				filename = fmt.Sprintf("attachment_%d", attachmentIndex+1)
-			}
-			filename = charsetutil.DecodeHeader(filename)
-
-			contentID := h.Get("Content-Id")
-			contentID = strings.Trim(contentID, "<>")
-			isInline := strings.EqualFold(h.Get("Content-Disposition"), "inline") || contentID != ""
-
-			data, _ := io.ReadAll(part.Body)
 			attachmentIndex++
-
-			att := AttachmentInfo{
-				ID:          fmt.Sprintf("%d", attachmentIndex),
-				Filename:    filename,
-				ContentType: contentType,
-				Size:        int64(len(data)),
-				ContentID:   contentID,
-				IsInline:    isInline,
-				Data:        data,
-			}
-			msg.Attachments = append(msg.Attachments, att)
+			handleAttachmentPart(msg, h, part, attachmentIndex)
 		}
 	}
+	return nil
+}
 
-	// PGP/MIME: multipart/encrypted 的第二部分為加密負載（encrypted.asc），內含 -----BEGIN PGP MESSAGE-----
-	if isPgpMime || (msg.TextBody == "" && msg.HTMLBody == "") {
-		for i, att := range msg.Attachments {
-			if strings.Contains(string(att.Data), "-----BEGIN PGP MESSAGE-----") {
-				if msg.TextBody == "" {
-					msg.TextBody = string(att.Data)
-				}
-				msg.Attachments = append(msg.Attachments[:i], msg.Attachments[i+1:]...)
-				break
-			}
-		}
-		filtered := msg.Attachments[:0]
-		for _, att := range msg.Attachments {
-			if strings.EqualFold(att.ContentType, "application/pgp-encrypted") && strings.TrimSpace(string(att.Data)) == "Version: 1" {
-				continue
-			}
-			filtered = append(filtered, att)
-		}
-		msg.Attachments = filtered
+func handleInlinePart(msg *ParsedMessage, h *gomail.InlineHeader, part *gomail.Part) {
+	contentType, params, _ := h.ContentType()
+	charsetParam := params["charset"]
+	bodyBytes, _ := io.ReadAll(part.Body)
+	utf8Body, _ := charsetutil.ToUTF8(bodyBytes, charsetParam)
+	if strings.HasPrefix(contentType, "text/plain") && msg.TextBody == "" {
+		msg.TextBody = utf8Body
+	} else if strings.HasPrefix(contentType, "text/html") && msg.HTMLBody == "" {
+		msg.HTMLBody = utf8Body
 	}
+}
 
-	return msg, nil
+func handleAttachmentPart(msg *ParsedMessage, h *gomail.AttachmentHeader, part *gomail.Part, idx int) {
+	contentType, _, _ := h.ContentType()
+	filename, _ := h.Filename()
+	if filename == "" {
+		filename = fmt.Sprintf("attachment_%d", idx)
+	}
+	filename = charsetutil.DecodeHeader(filename)
+	contentID := strings.Trim(h.Get("Content-Id"), "<>")
+	isInline := strings.EqualFold(h.Get("Content-Disposition"), "inline") || contentID != ""
+	data, _ := io.ReadAll(part.Body)
+	att := AttachmentInfo{
+		ID:          fmt.Sprintf("%d", idx),
+		Filename:    filename,
+		ContentType: contentType,
+		Size:        int64(len(data)),
+		ContentID:   contentID,
+		IsInline:    isInline,
+		Data:        data,
+	}
+	msg.Attachments = append(msg.Attachments, att)
+}
+
+func handlePgpMime(msg *ParsedMessage, isPgpMime bool) {
+	if !isPgpMime && (msg.TextBody != "" || msg.HTMLBody != "") {
+		return
+	}
+	for i, att := range msg.Attachments {
+		if strings.Contains(string(att.Data), "-----BEGIN PGP MESSAGE-----") {
+			if msg.TextBody == "" {
+				msg.TextBody = string(att.Data)
+			}
+			msg.Attachments = append(msg.Attachments[:i], msg.Attachments[i+1:]...)
+			break
+		}
+	}
+	filtered := msg.Attachments[:0]
+	for _, att := range msg.Attachments {
+		if strings.EqualFold(att.ContentType, "application/pgp-encrypted") && strings.TrimSpace(string(att.Data)) == "Version: 1" {
+			continue
+		}
+		filtered = append(filtered, att)
+	}
+	msg.Attachments = filtered
 }
 
 func containsFlag(flags []string, target string) bool {
