@@ -235,6 +235,14 @@ const AccountFolders: React.FC<{
     staleTime: 30000,
   });
 
+  // 頂層 folder 顯示次序
+  const { data: folderOrder } = useQuery({
+    queryKey: ['folderOrder', account.id],
+    queryFn: () => accountsApi.getFolderOrder(account.id),
+    enabled: expanded,
+    staleTime: 30000,
+  });
+
   const visibleFolders = folders?.filter((f) => isVisibleFolder(f, folderPrefs)) ?? [];
   const accountUnread = visibleFolders.reduce((sum, f) => sum + f.unreadCount, 0) ?? 0;
 
@@ -274,7 +282,17 @@ const AccountFolders: React.FC<{
             ) : (
               (() => {
                 const tree = buildFolderTree(visibleFolders);
-                return Array.from(tree.children.values()).map((child) => (
+                const children = Array.from(tree.children.values());
+                // 依 folderOrder（頂層次序）排序；無次序記錄則保存原本
+                const order = folderOrder ?? [];
+                if (order.length > 0) {
+                  children.sort((a, b) => {
+                    const ia = order.indexOf(a.path);
+                    const ib = order.indexOf(b.path);
+                    return (ia < 0 ? Number.MAX_SAFE_INTEGER : ia) - (ib < 0 ? Number.MAX_SAFE_INTEGER : ib);
+                  });
+                }
+                return children.map((child) => (
                   <FolderBranch
                     key={child.path}
                     node={child}

@@ -54,6 +54,17 @@ export const accountsApi = {
     });
   },
 
+  getFolderOrder: async (id: string): Promise<string[]> => {
+    return request<string[]>(`/accounts/${id}/folders/order`);
+  },
+
+  setFolderOrder: async (id: string, order: string[]): Promise<{ saved: boolean }> => {
+    return request<{ saved: boolean }>(`/accounts/${id}/folders/order`, {
+      method: 'PUT',
+      body: JSON.stringify({ order }),
+    });
+  },
+
   test: async (input: AccountInput): Promise<{ imap: string; smtp: string }> => {
     return request<{ imap: string; smtp: string }>('/accounts/test', {
       method: 'POST',

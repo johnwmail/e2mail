@@ -11,6 +11,8 @@ import {
   Folder,
   Loader2,
   RefreshCw,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { accountsApi } from '../../api/accounts';
@@ -81,6 +83,43 @@ const FolderManagerModal: React.FC<{
     }
   };
 
+  // ===== 頂層 folder 顯示次序（↑/↓ 重排）=====
+  const delim = folders?.[0]?.delimiter || '/';
+  const isTopLevel = (name: string) => !name.includes(delim);
+  const topFolders = (folders ?? []).filter((f) => isTopLevel(f.name) && isVisible(f));
+
+  const { data: savedOrder, refetch: refetchOrder } = useQuery({
+    queryKey: ['folderOrder', account.id],
+    queryFn: () => accountsApi.getFolderOrder(account.id),
+    staleTime: 30000,
+  });
+
+  // 依 saved order 排好頂層 folders；其餘補尾
+  const orderedTopFolders = (() => {
+    const ordered = (savedOrder ?? [])
+      .map((name) => topFolders.find((f) => f.name === name))
+      .filter(Boolean) as FolderInfo[];
+    const missing = topFolders.filter((f) => !(savedOrder ?? []).includes(f.name));
+    return [...ordered, ...missing];
+  })();
+
+  const persistOrder = async (order: string[]) => {
+    try {
+      await accountsApi.setFolderOrder(account.id, order);
+      await refetchOrder();
+    } catch (e: any) {
+      window.alert('儲存排序失敗: ' + (e?.message || e));
+    }
+  };
+
+  const moveTop = async (index: number, dir: -1 | 1) => {
+    const next = [...orderedTopFolders];
+    const target = index + dir;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    await persistOrder(next.map((f) => f.name));
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
@@ -100,6 +139,29 @@ const FolderManagerModal: React.FC<{
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
         </div>
+
+        {/* 頂層資料夾顯示次序（↑/↓ 重排） */}
+        {orderedTopFolders.length > 0 && (
+          <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-800">
+            <div className="text-[11px] font-semibold text-slate-500 mb-1.5">頂層資料夾次序</div>
+            <div className="space-y-1">
+              {orderedTopFolders.map((f, i) => (
+                <div key={f.name} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg px-2 py-1.5">
+                  <span className="text-slate-400">{getFolderIcon(f.specialUse, f.name)}</span>
+                  <span className="flex-1 min-w-0 truncate text-xs font-medium text-slate-700 dark:text-slate-200">
+                    {getFolderDisplayName(f)}
+                  </span>
+                  <button onClick={() => moveTop(i, -1)} disabled={i === 0} className="p-1 text-slate-400 hover:text-blue-600 rounded disabled:opacity-20 transition" title="上移">
+                    <ArrowUp className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => moveTop(i, 1)} disabled={i === orderedTopFolders.length - 1} className="p-1 text-slate-400 hover:text-blue-600 rounded disabled:opacity-20 transition" title="下移">
+                    <ArrowDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="max-h-[60vh] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
           {isLoading ? (
