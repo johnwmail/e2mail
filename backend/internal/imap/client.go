@@ -760,6 +760,9 @@ func (c *Client) DeleteMessages(ctx context.Context, folder string, uids []uint3
 
 // EmptyFolder 清空資料夾（select → 全部標記 \Deleted → expunge；Trash 清空用）
 func (c *Client) EmptyFolder(ctx context.Context, folder string) error {
+	if c == nil || c.rawClient == nil {
+		return fmt.Errorf("imap client not connected")
+	}
 	c.lastUsed = time.Now()
 
 	selectData, err := c.rawClient.Select(folder, nil).Wait()

@@ -107,6 +107,13 @@ func (p *UserPool) Acquire(ctx context.Context) (*Client, error) {
 				n := len(p.available) - 1
 				client := p.available[n]
 				p.available = p.available[:n]
+				// 驗證連線有效性（與 Acquire 快捷路徑一致）
+				if client.rawClient == nil || time.Since(client.lastUsed) >= p.idleTimeout {
+					_ = client.Close()
+					p.activeCount--
+					p.mu.Unlock()
+					continue
+				}
 				p.mu.Unlock()
 				return client, nil
 			}

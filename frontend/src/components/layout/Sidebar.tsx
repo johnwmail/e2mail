@@ -113,7 +113,7 @@ const FolderBranch: React.FC<{
   onToggle: (path: string) => void;
 }> = ({ node, depth, accountId, isActiveAccount, currentFolder, onSelectFolder, setSidebarOpen, expandedMap, onToggle }) => {
   const hasChildren = node.children.size > 0;
-  const isExpanded = expandedMap[node.path] ?? (depth === 0 ? true : false);
+  const isExpanded = expandedMap[node.path] ?? false;
   const isActive = isActiveAccount && currentFolder === node.path;
   const unread = node.folder?.unreadCount ?? 0;
   const isTrash = node.folder?.specialUse === 'trash' || /trash|bin|垃圾/i.test(node.path);

@@ -153,6 +153,8 @@ func ParseRFC822Message(raw []byte, uid uint32, flags []string) (*ParsedMessage,
 	}
 
 	attachmentIndex := 0
+	topContentType, topParams, _ := header.ContentType()
+	isPgpMime := strings.HasPrefix(topContentType, "multipart/encrypted") && strings.EqualFold(topParams["protocol"], "application/pgp-encrypted")
 
 	// 遞迴遍歷 MIME Parts
 	for {
@@ -208,6 +210,27 @@ func ParseRFC822Message(raw []byte, uid uint32, flags []string) (*ParsedMessage,
 			}
 			msg.Attachments = append(msg.Attachments, att)
 		}
+	}
+
+	// PGP/MIME: multipart/encrypted 的第二部分為加密負載（encrypted.asc），內含 -----BEGIN PGP MESSAGE-----
+	if isPgpMime || (msg.TextBody == "" && msg.HTMLBody == "") {
+		for i, att := range msg.Attachments {
+			if strings.Contains(string(att.Data), "-----BEGIN PGP MESSAGE-----") {
+				if msg.TextBody == "" {
+					msg.TextBody = string(att.Data)
+				}
+				msg.Attachments = append(msg.Attachments[:i], msg.Attachments[i+1:]...)
+				break
+			}
+		}
+		filtered := msg.Attachments[:0]
+		for _, att := range msg.Attachments {
+			if strings.EqualFold(att.ContentType, "application/pgp-encrypted") && strings.TrimSpace(string(att.Data)) == "Version: 1" {
+				continue
+			}
+			filtered = append(filtered, att)
+		}
+		msg.Attachments = filtered
 	}
 
 	return msg, nil
