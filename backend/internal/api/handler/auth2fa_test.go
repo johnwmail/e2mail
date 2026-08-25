@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/pquerna/otp/totp"
-	"modern-webmail/backend/internal/api/middleware"
-	"modern-webmail/backend/internal/auth"
-	"modern-webmail/backend/internal/imap"
-	"modern-webmail/backend/internal/session"
-	"modern-webmail/backend/internal/storage"
+	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
+	"github.com/johnwmail/e2mail/backend/internal/auth"
+	"github.com/johnwmail/e2mail/backend/internal/imap"
+	"github.com/johnwmail/e2mail/backend/internal/session"
+	"github.com/johnwmail/e2mail/backend/internal/storage"
 )
 
 func newTestAuthHandler(t *testing.T) *AuthHandler {
@@ -31,7 +31,7 @@ func newTestAuthHandler(t *testing.T) *AuthHandler {
 	}
 	t.Cleanup(func() { _ = storageStore.Close() })
 
-	return NewAuthHandler(store, storageStore, imap.NewPoolManager(), imap.NewIdleManager())
+	return NewAuthHandler(store, storageStore, imap.NewPoolManager(), imap.NewIdleManager(), nil, 10*time.Minute)
 }
 
 func sessionContext(email string) context.Context {

@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"modern-webmail/backend/internal/config"
-	"modern-webmail/backend/pkg/response"
+	"github.com/johnwmail/e2mail/backend/internal/config"
+	"github.com/johnwmail/e2mail/backend/pkg/response"
 )
 
 // ServerConfigHandler 對外公開伺服器預設值（無需認證，登入頁面用以預填表單）

@@ -5,11 +5,11 @@ import (
 	"log"
 	"net/http"
 
-	"modern-webmail/backend/internal/api/middleware"
-	"modern-webmail/backend/internal/auth"
-	"modern-webmail/backend/internal/crypto"
-	"modern-webmail/backend/internal/storage"
-	"modern-webmail/backend/pkg/response"
+	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
+	"github.com/johnwmail/e2mail/backend/internal/auth"
+	"github.com/johnwmail/e2mail/backend/internal/crypto"
+	"github.com/johnwmail/e2mail/backend/internal/storage"
+	"github.com/johnwmail/e2mail/backend/pkg/response"
 )
 
 // TwoFAStatusResponse 2FA 狀態回應

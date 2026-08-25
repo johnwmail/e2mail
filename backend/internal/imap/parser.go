@@ -8,7 +8,7 @@ import (
 	"time"
 
 	gomail "github.com/emersion/go-message/mail"
-	"modern-webmail/backend/pkg/charsetutil"
+	"github.com/johnwmail/e2mail/backend/pkg/charsetutil"
 )
 
 // EmailAddress 封裝電子郵件地址與顯示名稱

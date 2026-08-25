@@ -11,7 +11,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"modern-webmail/backend/pkg/charsetutil"
+	"github.com/johnwmail/e2mail/backend/pkg/charsetutil"
 )
 
 // ConnectionConfig 連線設定

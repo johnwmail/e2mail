@@ -7,14 +7,14 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"modern-webmail/backend/internal/api/middleware"
-	"modern-webmail/backend/internal/config"
-	"modern-webmail/backend/internal/crypto"
-	imapinternal "modern-webmail/backend/internal/imap"
-	"modern-webmail/backend/internal/session"
-	"modern-webmail/backend/internal/smtp"
-	"modern-webmail/backend/internal/storage"
-	"modern-webmail/backend/pkg/response"
+	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
+	"github.com/johnwmail/e2mail/backend/internal/config"
+	"github.com/johnwmail/e2mail/backend/internal/crypto"
+	imapinternal "github.com/johnwmail/e2mail/backend/internal/imap"
+	"github.com/johnwmail/e2mail/backend/internal/session"
+	"github.com/johnwmail/e2mail/backend/internal/smtp"
+	"github.com/johnwmail/e2mail/backend/internal/storage"
+	"github.com/johnwmail/e2mail/backend/pkg/response"
 )
 
 // AccountsHandler 管理郵件帳號 CRUD

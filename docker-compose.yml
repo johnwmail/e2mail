@@ -24,9 +24,11 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - PORT=8080
-      - DATA_DIR=/data
-      - SESSION_TTL_HOURS=24
+      - PORT=${PORT:-8080}
+      - DATA_DIR=${DATA_DIR:-/data}
+      - SESSION_TTL_HOURS=${SESSION_TTL_HOURS:-24}
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - COOKIE_SECURE=${COOKIE_SECURE:-true}
       # === Onboarding 強制設定（新帳號首次登入；true=強制要求設 2FA / PGP） ===
       # 可直接喺呢度寫死，或用 .env / shell env 覆蓋（default 都係 true）
       - REQUIRE_2FA=${REQUIRE_2FA:-true}

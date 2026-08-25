@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	"modern-webmail/backend/internal/crypto"
-	"modern-webmail/backend/internal/session"
-	"modern-webmail/backend/internal/storage"
-	"modern-webmail/backend/pkg/response"
+	"github.com/johnwmail/e2mail/backend/internal/crypto"
+	"github.com/johnwmail/e2mail/backend/internal/session"
+	"github.com/johnwmail/e2mail/backend/internal/storage"
+	"github.com/johnwmail/e2mail/backend/pkg/response"
 )
 
 type contextKey string

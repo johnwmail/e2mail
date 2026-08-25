@@ -6,7 +6,7 @@ import (
 	"path"
 	"strings"
 
-	"modern-webmail/backend/web"
+	"github.com/johnwmail/e2mail/backend/web"
 )
 
 // staticHandler 服務 embedded frontend（SPA）。

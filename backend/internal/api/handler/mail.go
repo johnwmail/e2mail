@@ -13,11 +13,11 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/go-chi/chi/v5"
-	"modern-webmail/backend/internal/api/middleware"
-	imapinternal "modern-webmail/backend/internal/imap"
-	"modern-webmail/backend/internal/smtp"
-	"modern-webmail/backend/internal/storage"
-	"modern-webmail/backend/pkg/response"
+	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
+	imapinternal "github.com/johnwmail/e2mail/backend/internal/imap"
+	"github.com/johnwmail/e2mail/backend/internal/smtp"
+	"github.com/johnwmail/e2mail/backend/internal/storage"
+	"github.com/johnwmail/e2mail/backend/pkg/response"
 )
 
 // acquireClient 取得目前帳號嘅 IMAP 連線（account 參數缺省用 default）

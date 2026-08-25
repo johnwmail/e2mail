@@ -81,13 +81,16 @@ Uncomment in `docker-compose.yml` (or set via your orchestrator) to activate.
 |---------------------------|---------|---------------------------------------------------------|
 | `PORT`                    | `8080`  | Backend HTTP listen port                                |
 | `DATA_DIR`                | `/data` | SQLite + keyring directory (must be on a persistent volume) |
-| `SESSION_TTL_HOURS`       | `24`    | Idle session expiry                                     |
-| `SESSION_SECRET`          | (random)| 32-byte AES-GCM key for encrypting the per-session DEK at rest |
+| `SESSION_TTL_HOURS`       | `24`    | Idle session expiry (hours, cookie `Expires`/`MaxAge` 同步) |
+| `SESSION_SECRET`          | (random)| 32-byte AES-GCM key for encrypting the per-session DEK at rest (raw 32 chars / base64 44 chars / hex 64 chars) |
+| `COOKIE_SECURE`           | `true`  | Set `Secure` flag on `webmail_session` cookie (set `false` for plain HTTP dev) |
 | `DEFAULT_IMAP_HOST`       | —       | Pre-fill IMAP host for users with custom domains        |
 | `DEFAULT_IMAP_PORT`       | `993`   | Pre-fill IMAP port                                      |
 | `DEFAULT_SMTP_HOST`       | —       | Pre-fill SMTP host                                      |
 | `DEFAULT_SMTP_PORT`       | `587`   | Pre-fill SMTP port                                      |
 | `DEFAULT_ALLOW_INSECURE_TLS` | `false` | Pre-fill "allow self-signed" checkbox (off by default) |
+| `REQUIRE_2FA`             | `true`  | Enforce 2FA onboarding for new logins                   |
+| `REQUIRE_PGP`             | `true`  | Enforce PGP key setup onboarding for new logins         |
 
 The public endpoint `GET /api/server-config` exposes the defaults so the login
 page can pre-populate the advanced settings panel.

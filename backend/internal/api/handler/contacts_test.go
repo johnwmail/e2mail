@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"modern-webmail/backend/internal/api/middleware"
-	"modern-webmail/backend/internal/session"
-	"modern-webmail/backend/internal/storage"
+	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
+	"github.com/johnwmail/e2mail/backend/internal/session"
+	"github.com/johnwmail/e2mail/backend/internal/storage"
 )
 
 func newTestContactsHandler(t *testing.T) *ContactsHandler {

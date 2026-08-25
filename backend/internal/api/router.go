@@ -5,10 +5,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	"modern-webmail/backend/internal/api/handler"
-	"modern-webmail/backend/internal/api/middleware"
-	"modern-webmail/backend/internal/session"
-	"modern-webmail/backend/pkg/response"
+	"github.com/johnwmail/e2mail/backend/internal/api/handler"
+	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
+	"github.com/johnwmail/e2mail/backend/internal/session"
+	"github.com/johnwmail/e2mail/backend/pkg/response"
 )
 
 // NewRouter 建構並配置所有 HTTP 路由與中間件
@@ -34,7 +34,7 @@ func NewRouter(
 
 	// 健康檢查端點
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		response.Success(w, map[string]string{"status": "healthy", "service": "modern-webmail-backend"})
+		response.Success(w, map[string]string{"status": "healthy", "service": "e2mail-backend"})
 	})
 
 	// /api 路由群組

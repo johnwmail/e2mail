@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"modern-webmail/backend/internal/api/middleware"
-	"modern-webmail/backend/internal/crypto"
-	"modern-webmail/backend/internal/storage"
-	"modern-webmail/backend/pkg/response"
+	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
+	"github.com/johnwmail/e2mail/backend/internal/crypto"
+	"github.com/johnwmail/e2mail/backend/internal/storage"
+	"github.com/johnwmail/e2mail/backend/pkg/response"
 )
 
 // PGPHandler 處理個人 PGP 雲端金鑰包之備份與跨裝置同步（儲存於 SQLite）

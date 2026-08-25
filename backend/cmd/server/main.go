@@ -2,22 +2,25 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
-	"modern-webmail/backend/internal/api"
-	"modern-webmail/backend/internal/api/handler"
-	"modern-webmail/backend/internal/config"
-	"modern-webmail/backend/internal/imap"
-	"modern-webmail/backend/internal/session"
-	"modern-webmail/backend/internal/smtp"
-	"modern-webmail/backend/internal/storage"
+	"github.com/johnwmail/e2mail/backend/internal/api"
+	"github.com/johnwmail/e2mail/backend/internal/api/handler"
+	"github.com/johnwmail/e2mail/backend/internal/config"
+	"github.com/johnwmail/e2mail/backend/internal/imap"
+	"github.com/johnwmail/e2mail/backend/internal/session"
+	"github.com/johnwmail/e2mail/backend/internal/smtp"
+	"github.com/johnwmail/e2mail/backend/internal/storage"
 )
 
 var (
@@ -68,11 +71,27 @@ func main() {
 	}
 
 	sessionTTL := 24 * time.Hour
-	// Session 記憶體加密 key：永遠隨機生成（每-boot），唔用固定 server key。
-	// 咁做確保 RAM 內嘅敏感資料唔會被跨 restart 解密；restart 後舊 session 自然失效。
+	if v := strings.TrimSpace(os.Getenv("SESSION_TTL_HOURS")); v != "" {
+		if hours, err := strconv.Atoi(v); err == nil && hours > 0 {
+			sessionTTL = time.Duration(hours) * time.Hour
+		} else {
+			log.Printf("⚠️  Invalid SESSION_TTL_HOURS=%q, using default 24h", v)
+		}
+	}
+	// Session 記憶體加密 key：若 SESSION_SECRET 有設則用佢（多實例部署固定 key），
+	// 否則永遠隨機生成（每-boot），確保 RAM 內敏感資料唔會被跨 restart 解密。
 	var keyBytes []byte
+	if v := strings.TrimSpace(os.Getenv("SESSION_SECRET")); v != "" {
+		if kb, ok := parseSessionSecret(v); ok {
+			keyBytes = kb
+			log.Printf("🔑 Using SESSION_SECRET from env (32 bytes)")
+		} else {
+			log.Printf("⚠️  Invalid SESSION_SECRET (expected 32-byte raw, 44-char base64, or 64-char hex), generating random key")
+		}
+	}
 
 	printDefinedEnv()
+	log.Printf("⏰ Session TTL: %s", sessionTTL)
 
 	sessionStore, err := session.NewMemoryStore(sessionTTL, keyBytes)
 	if err != nil {
@@ -97,7 +116,7 @@ func main() {
 		log.Printf("📦 Migrated %d legacy keyring file(s) into SQLite", migrated)
 	}
 
-	authHandler := handler.NewAuthHandler(sessionStore, store, poolManager, idleManager)
+	authHandler := handler.NewAuthHandler(sessionStore, store, poolManager, idleManager, serverConfig, sessionTTL)
 	mailHandler := handler.NewMailHandler(poolManager, smtpSender)
 	eventsHandler := handler.NewEventsHandler(idleManager)
 	pgpHandler := handler.NewPGPHandler(store)
@@ -137,4 +156,30 @@ func main() {
 
 	poolManager.CloseAll()
 	log.Println("Server exited cleanly.")
+}
+
+// parseSessionSecret 解析 SESSION_SECRET 支援多種格式：
+// - 32-byte raw string
+// - base64 standard / raw / url (32 bytes after decode)
+// - hex 64 chars (32 bytes)
+func parseSessionSecret(v string) ([]byte, bool) {
+	if len(v) == 32 {
+		return []byte(v), true
+	}
+	if len(v) == 64 {
+		if decoded, err := hex.DecodeString(v); err == nil && len(decoded) == 32 {
+			return decoded, true
+		}
+	}
+	for _, dec := range []func(string) ([]byte, error){
+		base64.StdEncoding.DecodeString,
+		base64.RawStdEncoding.DecodeString,
+		base64.URLEncoding.DecodeString,
+		base64.RawURLEncoding.DecodeString,
+	} {
+		if decoded, err := dec(v); err == nil && len(decoded) == 32 {
+			return decoded, true
+		}
+	}
+	return nil, false
 }

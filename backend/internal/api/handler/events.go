@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"modern-webmail/backend/internal/api/middleware"
-	"modern-webmail/backend/internal/imap"
-	"modern-webmail/backend/internal/session"
+	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
+	"github.com/johnwmail/e2mail/backend/internal/imap"
+	"github.com/johnwmail/e2mail/backend/internal/session"
 )
 
 // EventsHandler 處理 SSE 即時連線

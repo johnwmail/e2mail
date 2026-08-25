@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"modern-webmail/backend/internal/storage"
+	"github.com/johnwmail/e2mail/backend/internal/storage"
 )
 
 var (

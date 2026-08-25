@@ -8,13 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"modern-webmail/backend/internal/api/middleware"
-	"modern-webmail/backend/internal/auth"
-	"modern-webmail/backend/internal/crypto"
-	"modern-webmail/backend/internal/imap"
-	"modern-webmail/backend/internal/session"
-	"modern-webmail/backend/internal/storage"
-	"modern-webmail/backend/pkg/response"
+	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
+	"github.com/johnwmail/e2mail/backend/internal/auth"
+	"github.com/johnwmail/e2mail/backend/internal/config"
+	"github.com/johnwmail/e2mail/backend/internal/crypto"
+	"github.com/johnwmail/e2mail/backend/internal/imap"
+	"github.com/johnwmail/e2mail/backend/internal/session"
+	"github.com/johnwmail/e2mail/backend/internal/storage"
+	"github.com/johnwmail/e2mail/backend/pkg/response"
 )
 
 // AuthHandler 處理登入、登出與身分校驗
@@ -24,17 +25,47 @@ type AuthHandler struct {
 	poolMgr       *imap.PoolManager
 	idleMgr       *imap.IdleManager
 	pendingLogin  *auth.PendingLoginStore
+	cfg           *config.ServerConfig
+	sessionTTL    time.Duration
 }
 
 // NewAuthHandler 初始化 AuthHandler
-func NewAuthHandler(store session.Store, storageStore storage.Store, poolMgr *imap.PoolManager, idleMgr *imap.IdleManager) *AuthHandler {
+func NewAuthHandler(store session.Store, storageStore storage.Store, poolMgr *imap.PoolManager, idleMgr *imap.IdleManager, cfg *config.ServerConfig, sessionTTL time.Duration) *AuthHandler {
+	if sessionTTL <= 0 {
+		sessionTTL = 24 * time.Hour
+	}
 	return &AuthHandler{
 		store:        store,
 		storage:      storageStore,
 		poolMgr:      poolMgr,
 		idleMgr:      idleMgr,
 		pendingLogin: auth.NewPendingLoginStore(3 * time.Minute),
+		cfg:          cfg,
+		sessionTTL:   sessionTTL,
 	}
+}
+
+// cookieSecure 根據 COOKIE_SECURE 設定決定 Secure flag（預設 true）
+// 若 cfg 為 nil 則 fallback 到 r.TLS 判斷，支援反向代理場景
+func (h *AuthHandler) cookieSecure(r *http.Request) bool {
+	if h.cfg != nil {
+		return h.cfg.CookieSecure
+	}
+	return r.TLS != nil
+}
+
+// setSessionCookie 統一設定 session cookie（TTL 與 Secure 由 env 控制）
+func (h *AuthHandler) setSessionCookie(w http.ResponseWriter, r *http.Request, sessionID string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "webmail_session",
+		Value:    sessionID,
+		Path:     "/",
+		Expires:  time.Now().Add(h.sessionTTL),
+		MaxAge:   int(h.sessionTTL.Seconds()),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   h.cookieSecure(r),
+	})
 }
 
 // LoginRequest 登入參數結構
@@ -212,16 +243,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// 5. 啟動背景 IDLE 監聽（所有帳號）
 	h.startIdleForAccounts(savedSess, dek, accounts)
 
-	// 6. 設定 HttpOnly Cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "webmail_session",
-		Value:    savedSess.ID,
-		Path:     "/",
-		Expires:  time.Now().Add(24 * time.Hour),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
-	})
+	// 6. 設定 HttpOnly Cookie（TTL 與 Secure 由 env 控制）
+	h.setSessionCookie(w, r, savedSess.ID)
 
 	log.Printf("[AUTH SUCCESS] Login successful for %s (Session ID: %s)", req.Email, savedSess.ID)
 
@@ -445,15 +468,7 @@ func (h *AuthHandler) completeLogin(w http.ResponseWriter, r *http.Request, pl *
 	h.startIdleForAccounts(savedSess, dek, accounts)
 	h.pendingLogin.Delete(challenge)
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "webmail_session",
-		Value:    savedSess.ID,
-		Path:     "/",
-		Expires:  time.Now().Add(24 * time.Hour),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
-	})
+	h.setSessionCookie(w, r, savedSess.ID)
 
 	log.Printf("[AUTH SUCCESS] Login successful for %s (Session ID: %s, via 2FA)", pl.Email, savedSess.ID)
 	response.Success(w, LoginResponse{
@@ -481,7 +496,10 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
 		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   h.cookieSecure(r),
 	})
 
 	response.Success(w, map[string]string{"message": "logged out successfully"})
