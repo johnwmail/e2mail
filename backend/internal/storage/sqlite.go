@@ -114,6 +114,10 @@ type Store interface {
 	ListFolderPrefs(userEmail, accountID string) (map[string]bool, error)
 	SetFolderPref(userEmail, accountID, folderName string, visible bool) error
 
+	// Folder order (top-level folder display order, per account)
+	GetFolderOrder(userEmail, accountID string) ([]string, error)
+	SetFolderOrder(userEmail, accountID string, orderedNames []string) error
+
 	// Lifecycle
 	MigrateLegacyKeyrings(dataDir string) (migrated int, err error)
 	Close() error
@@ -187,6 +191,14 @@ CREATE TABLE IF NOT EXISTS folder_prefs (
 	PRIMARY KEY (user_email, account_id, folder_name)
 );
 CREATE INDEX IF NOT EXISTS idx_folder_prefs_account ON folder_prefs(account_id);
+
+CREATE TABLE IF NOT EXISTS folder_order (
+	account_id   TEXT NOT NULL,
+	folder_name  TEXT NOT NULL,
+	sort_index   INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (account_id, folder_name)
+);
+CREATE INDEX IF NOT EXISTS idx_folder_order_account ON folder_order(account_id);
 `
 
 // SQLiteStore SQLite 儲存實作
@@ -573,6 +585,51 @@ func (s *SQLiteStore) SetFolderPref(userEmail, accountID, folderName string, vis
 		return fmt.Errorf("failed to set folder pref: %w", err)
 	}
 	return nil
+}
+
+// GetFolderOrder 返回帳號頂層 folder 顯示次序（按 sort_index 排序）；無記錄則空
+func (s *SQLiteStore) GetFolderOrder(userEmail, accountID string) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT folder_name FROM folder_order
+		 WHERE account_id = ? ORDER BY sort_index ASC`,
+		accountID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get folder order: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+// SetFolderOrder 重寫帳號頂層 folder 顯示次序（先刪後插）
+func (s *SQLiteStore) SetFolderOrder(userEmail, accountID string, orderedNames []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM folder_order WHERE account_id = ?`, accountID); err != nil {
+		return err
+	}
+	for i, name := range orderedNames {
+		if _, err := tx.Exec(
+			`INSERT INTO folder_order (account_id, folder_name, sort_index) VALUES (?, ?, ?)`,
+			accountID, name, i,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // ===== Accounts =====

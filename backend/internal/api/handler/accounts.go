@@ -185,6 +185,47 @@ func (h *AccountsHandler) SetFolderPref(w http.ResponseWriter, r *http.Request) 
 	response.Success(w, map[string]bool{"visible": req.Visible})
 }
 
+// GetFolderOrder 取得帳號頂層 folder 顯示次序
+func (h *AccountsHandler) GetFolderOrder(w http.ResponseWriter, r *http.Request) {
+	authCtx := middleware.GetAccountContext(r.Context())
+	if authCtx == nil || authCtx.Session == nil {
+		response.Unauthorized(w, "unauthorized")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	order, err := h.storage.GetFolderOrder(authCtx.Session.Email, id)
+	if err != nil {
+		response.InternalServerError(w, "failed to read folder order")
+		return
+	}
+	if order == nil {
+		order = []string{}
+	}
+	response.Success(w, order)
+}
+
+// SetFolderOrder 覆寫帳號頂層 folder 顯示次序
+func (h *AccountsHandler) SetFolderOrder(w http.ResponseWriter, r *http.Request) {
+	authCtx := middleware.GetAccountContext(r.Context())
+	if authCtx == nil || authCtx.Session == nil {
+		response.Unauthorized(w, "unauthorized")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Order []string `json:"order"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.BadRequest(w, "invalid json payload")
+		return
+	}
+	if err := h.storage.SetFolderOrder(authCtx.Session.Email, id, req.Order); err != nil {
+		response.InternalServerError(w, "failed to save folder order")
+		return
+	}
+	response.Success(w, map[string]bool{"saved": true})
+}
+
 // ListAccounts 列出所有帳號（不含密碼）
 func (h *AccountsHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	authCtx := middleware.GetAccountContext(r.Context())
