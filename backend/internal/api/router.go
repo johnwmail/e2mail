@@ -86,7 +86,6 @@ func NewRouter(
 			// 郵件與資料夾管理
 			protected.Route("/mail", func(mail chi.Router) {
 				mail.Get("/folders", mailH.ListFolders)
-				mail.Post("/folders/subscribe", mailH.SetFolderSubscription)
 				mail.Get("/messages", mailH.ListMessages)
 				mail.Get("/messages/{uid}", mailH.GetMessageDetail)
 				mail.Get("/messages/{uid}/attachments/{attId}", mailH.DownloadAttachment)

@@ -11,6 +11,7 @@ import { ViewerPane } from './components/layout/ViewerPane';
 import { Composer } from './components/mail/Composer';
 import { AccountsPage } from './components/accounts/AccountsPage';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
+import { Toast } from './components/ui/Toast';
 import { connectEvents } from './api/sse';
 import { pgpService } from './api/pgp';
 import { refreshPgp } from './stores/usePgpStore';
@@ -124,6 +125,8 @@ export const App: React.FC = () => {
           }}
         />
       )}
+
+      <Toast />
     </div>
   );
 };

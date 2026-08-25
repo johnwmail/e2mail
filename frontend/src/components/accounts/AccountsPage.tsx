@@ -16,6 +16,7 @@ import { accountsApi, AccountInput } from '../../api/accounts';
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { Account } from '../../types/api';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 const emptyForm: AccountInput = {
   label: '',
@@ -203,6 +204,7 @@ export const AccountsPage: React.FC = () => {
   const activeAccount = useActiveAccount();
   const [editing, setEditing] = useState<Account | null>(null);
   const [creating, setCreating] = useState(false);
+  const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const { data: accounts, isLoading } = useQuery({
@@ -222,12 +224,12 @@ export const AccountsPage: React.FC = () => {
   });
 
   const handleDelete = async (acc: Account) => {
-    if (!window.confirm(`確定要刪除帳號「${acc.label || acc.email}」嗎？此操作無法復原。`)) return;
     setDeletingId(acc.id);
     try {
       await deleteMutation.mutateAsync(acc.id);
     } finally {
       setDeletingId(null);
+      setAccountToDelete(null);
     }
   };
 
@@ -312,7 +314,7 @@ export const AccountsPage: React.FC = () => {
                       <Pencil className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleDelete(acc)}
+                      onClick={() => setAccountToDelete(acc)}
                       disabled={deletingId === acc.id || accounts?.length === 1}
                       className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg disabled:opacity-30 transition"
                       title={accounts?.length === 1 ? '不能刪除最後一個帳號' : '刪除'}
@@ -326,6 +328,17 @@ export const AccountsPage: React.FC = () => {
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={!!accountToDelete}
+        title="刪除帳號"
+        message={`確定要刪除帳號「${accountToDelete?.label || accountToDelete?.email}」嗎？此操作無法復原。`}
+        confirmText="刪除"
+        danger
+        loading={!!deletingId}
+        onConfirm={() => accountToDelete && handleDelete(accountToDelete)}
+        onCancel={() => setAccountToDelete(null)}
+      />
     </main>
   );
 };

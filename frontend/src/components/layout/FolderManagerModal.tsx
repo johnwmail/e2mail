@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { accountsApi } from '../../api/accounts';
+import { toast } from '../../stores/useToastStore';
 import { Account, FolderInfo } from '../../types/api';
 
 const getFolderIcon = (specialUse?: string, name?: string) => {
@@ -108,7 +109,7 @@ const FolderManagerModal: React.FC<{
       await accountsApi.setFolderOrder(account.id, order);
       await refetchOrder();
     } catch (e: any) {
-      window.alert('儲存排序失敗: ' + (e?.message || e));
+      toast('儲存排序失敗: ' + (e?.message || e));
     }
   };
 

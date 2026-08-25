@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Shield,
   Key,
@@ -8,10 +8,11 @@ import {
   AlertCircle,
   Copy,
   RefreshCw,
+  Upload,
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { twoFApi } from '../../api/2fa';
-import { pgpService } from '../../api/pgp';
+import { pgpService, fileToPrivateKeyArmor } from '../../api/pgp';
 import { refreshPgp } from '../../stores/usePgpStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useMailStore } from '../../stores/useMailStore';
@@ -43,6 +44,22 @@ export const OnboardingWizard: React.FC<{
   const [pgpPassphrase, setPgpPassphrase] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [importedArmored, setImportedArmored] = useState('');
+  const [importPassphrase, setImportPassphrase] = useState('');
+  const importFileRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImportFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const armored = await fileToPrivateKeyArmor(file);
+      setImportedArmored(armored);
+      setMsg(null);
+    } catch (err: any) {
+      setMsg({ type: 'error', text: '讀取檔案失敗: ' + (err?.message || err) });
+    } finally {
+      e.target.value = '';
+    }
+  };
 
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -120,7 +137,7 @@ export const OnboardingWizard: React.FC<{
     setLoading(true);
     setMsg(null);
     try {
-      await pgpService.importPersonalKey(importedArmored.trim());
+      await pgpService.importPersonalKey(importedArmored.trim(), undefined, importPassphrase);
       refreshPgp();
       finishOnboarding();
     } catch (e: any) {
@@ -296,12 +313,36 @@ export const OnboardingWizard: React.FC<{
                   </form>
                 ) : (
                   <form onSubmit={handleImportPgp} className="space-y-3">
+                    <div className="flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => importFileRef.current?.click()}
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:underline font-semibold"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        選擇 .asc 檔案
+                      </button>
+                      <input
+                        ref={importFileRef}
+                        type="file"
+                        accept=".asc,.pub,.gpg,.key,.txt"
+                        onChange={handleImportFileUpload}
+                        className="hidden"
+                      />
+                    </div>
                     <textarea
                       value={importedArmored}
                       onChange={(e) => setImportedArmored(e.target.value)}
                       rows={6}
                       placeholder="-----BEGIN PGP PRIVATE KEY BLOCK-----"
                       className="w-full px-3 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-sky-400"
+                    />
+                    <input
+                      type="password"
+                      value={importPassphrase}
+                      onChange={(e) => setImportPassphrase(e.target.value)}
+                      placeholder="私鑰 Passphrase（若私鑰已加密需輸入；留空=未加密）"
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-sky-400"
                     />
                     {msg && (
                       <div className={`p-3 rounded-lg text-xs flex items-center gap-2 ${msg.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800'}`}>

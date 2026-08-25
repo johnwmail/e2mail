@@ -21,6 +21,7 @@ import { pgpService, PgpKeyPair, PgpContactKey, ParsedKeyInfo, fileToPublicKeyAr
 import { useAuthStore } from '../../stores/useAuthStore';
 import { refreshPgp } from '../../stores/usePgpStore';
 import { SecurityTab } from './SecurityTab';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { ShieldAlert } from 'lucide-react';
 
 interface PgpKeyModalProps {
@@ -34,6 +35,8 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
   const [keyPair, setKeyPair] = useState<PgpKeyPair | null>(null);
   const [contacts, setContacts] = useState<PgpContactKey[]>([]);
   const [removingEmail, setRemovingEmail] = useState<string | null>(null);
+  const [contactToRemove, setContactToRemove] = useState<string | null>(null);
+  const [confirmRemoveKey, setConfirmRemoveKey] = useState(false);
 
   // 產生金鑰表單狀態
   const [name, setName] = useState('');
@@ -43,6 +46,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
   // 匯入個人金鑰狀態
   const [showImportPersonal, setShowImportPersonal] = useState(false);
   const [personalKeyInput, setPersonalKeyInput] = useState('');
+  const [importPassphrase, setImportPassphrase] = useState('');
 
   // 聯絡人公鑰匯入與 Keyserver 搜尋
   const [contactEmail, setContactEmail] = useState('');
@@ -54,6 +58,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
 
   const [copied, setCopied] = useState(false);
+  const [copiedPriv, setCopiedPriv] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -186,14 +191,15 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
     if (!personalKeyInput.trim()) return;
 
     try {
-      const imported = await pgpService.importPersonalKey(personalKeyInput);
+      const imported = await pgpService.importPersonalKey(personalKeyInput, undefined, importPassphrase);
       setKeyPair(imported);
       refreshPgp();
       setShowImportPersonal(false);
       setPersonalKeyInput('');
+      setImportPassphrase('');
       setMsg({ type: 'success', text: `已成功匯入個人金鑰 (${imported.userId}) 並同步備份至雲端！` });
     } catch (err: any) {
-      setMsg({ type: 'error', text: '匯入私鑰失敗，請確認是否包含有效的 PGP PRIVATE KEY 區塊: ' + err.message });
+      setMsg({ type: 'error', text: '匯入私鑰失敗: ' + err.message });
     }
   };
 
@@ -263,7 +269,26 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${session?.email || 'publickey'}.asc`;
+    a.download = `${session?.email || 'publickey'}.public.asc`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyPrivateKey = () => {
+    if (keyPair?.privateKeyArmored) {
+      navigator.clipboard.writeText(keyPair.privateKeyArmored);
+      setCopiedPriv(true);
+      setTimeout(() => setCopiedPriv(false), 2000);
+    }
+  };
+
+  const handleDownloadPrivateKey = () => {
+    if (!keyPair?.privateKeyArmored) return;
+    const blob = new Blob([keyPair.privateKeyArmored], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${session?.email || 'privatekey'}.private.asc`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -320,7 +345,6 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
   };
 
   const handleRemoveContact = async (email: string) => {
-    if (!window.confirm(`確定要刪除 ${email} 的聯絡人公鑰嗎？`)) return;
     setRemovingEmail(email);
     try {
       await pgpService.removeContactKey(email);
@@ -330,7 +354,17 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
       setMsg({ type: 'error', text: '刪除失敗: ' + (err?.message || String(err)) });
     } finally {
       setRemovingEmail(null);
+      setContactToRemove(null);
     }
+  };
+
+  // 移除現有金鑰對（local + cloud）。注意：刪除後舊加密郵件將無法解密，請先下載/複製備份。
+  const handleRemoveKey = async () => {
+    setConfirmRemoveKey(false);
+    pgpService.clearKey();
+    pgpService.deleteKeyringFromCloud().catch(() => {});
+    setKeyPair(null);
+    refreshPgp();
   };
 
   return (
@@ -495,18 +529,46 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                         下載 .asc 檔案
                       </button>
                       <button
-                        onClick={() => {
-                          if (confirm('確定要自瀏覽器與雲端移除此金鑰對嗎？')) {
-                            pgpService.clearKey();
-                            pgpService.deleteKeyringFromCloud().catch(() => {});
-                            setKeyPair(null);
-                            refreshPgp();
-                          }
-                        }}
+                        onClick={() => setConfirmRemoveKey(true)}
                         className="flex items-center gap-1 px-3 py-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg text-xs font-semibold transition ml-auto"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         移除金鑰對
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 私鑰匯出（已用 PGP passphrase 加密，唔係明文） */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                      我的私鑰 (Private Key) — 已用 Passphrase 加密，請小心保管
+                    </label>
+                    <div className="flex items-start gap-2 p-2.5 mb-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-lg">
+                      <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-amber-800 dark:text-amber-200 leading-relaxed">
+                        呢個係你嘅私鑰（已由 PGP Passphrase 加密）。請妥善保管，匯出檔案可喺另一部機 import；任何人攞到都要配合你嘅 Passphrase 先用得。
+                      </p>
+                    </div>
+                    <textarea
+                      readOnly
+                      value={keyPair.privateKeyArmored}
+                      rows={6}
+                      className="w-full p-2.5 text-xs font-mono bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none resize-none"
+                    />
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                      <button
+                        onClick={handleCopyPrivateKey}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold transition border border-slate-200 dark:border-slate-700"
+                      >
+                        {copiedPriv ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copiedPriv ? '已複製' : '複製私鑰'}
+                      </button>
+                      <button
+                        onClick={handleDownloadPrivateKey}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold transition border border-slate-200 dark:border-slate-700"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        下載 .asc 檔案
                       </button>
                     </div>
                   </div>
@@ -580,6 +642,13 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                           placeholder="-----BEGIN PGP PRIVATE KEY BLOCK----- ..."
                           rows={6}
                           className="w-full p-2.5 text-xs font-mono bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
+                        />
+                        <input
+                          type="password"
+                          value={importPassphrase}
+                          onChange={(e) => setImportPassphrase(e.target.value)}
+                          placeholder="私鑰 Passphrase（若私鑰已加密需輸入；留空=未加密）"
+                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                         />
                       </div>
 
@@ -792,7 +861,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                           </div>
                         </div>
                         <button
-                          onClick={() => handleRemoveContact(c.email)}
+                          onClick={() => setContactToRemove(c.email)}
                           disabled={removingEmail !== null}
                           className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                           title={removingEmail === c.email ? '刪除中...' : '刪除此公鑰'}
@@ -812,6 +881,27 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={!!contactToRemove}
+        title="刪除聯絡人公鑰"
+        message={`確定要刪除 ${contactToRemove ?? ''} 的聯絡人公鑰嗎？`}
+        confirmText="刪除"
+        danger
+        loading={!!removingEmail}
+        onConfirm={() => contactToRemove && handleRemoveContact(contactToRemove)}
+        onCancel={() => setContactToRemove(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={confirmRemoveKey}
+        title="移除 PGP 金鑰對"
+        message="確定要自瀏覽器與雲端移除此金鑰對嗎？此操作無法復原。"
+        confirmText="移除"
+        danger
+        onConfirm={handleRemoveKey}
+        onCancel={() => setConfirmRemoveKey(false)}
+      />
     </div>
   );
 };

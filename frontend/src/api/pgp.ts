@@ -238,12 +238,23 @@ export const pgpService = {
     );
   },
 
-  // 3. 匯入既有的個人私鑰/金鑰對
+  // 3. 匯入既有的個人私鑰/金鑰對（可選 passphrase 驗證；若 key 有 passphrase 則必填）
   importPersonalKey: async (
     privateKeyArmored: string,
-    publicKeyArmored?: string
+    publicKeyArmored?: string,
+    passphrase?: string
   ): Promise<PgpKeyPair> => {
     const privKey = await openpgp.readPrivateKey({ armoredKey: privateKeyArmored });
+
+    // 若私鑰有 passphrase 保護，立即驗證（確保 key 用得到）
+    if (!privKey.isDecrypted()) {
+      try {
+        await openpgp.decryptKey({ privateKey: privKey, passphrase: passphrase || '' });
+      } catch {
+        throw new Error('私鑰密碼 (Passphrase) 錯誤，無法匯入。請輸入匯入時設定嘅護照密碼。');
+      }
+    }
+
     const userIDs = await privKey.getUserIDs();
     const primaryUser = userIDs[0] || 'Imported Key';
 

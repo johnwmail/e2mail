@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { accountsApi } from '../../api/accounts';
+import { toast } from '../../stores/useToastStore';
 import { useMailStore } from '../../stores/useMailStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { usePgpStore } from '../../stores/usePgpStore';
@@ -32,6 +33,7 @@ import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { FolderInfo, Account } from '../../types/api';
 import { PgpKeyModal } from '../mail/PgpKeyModal';
 import FolderManagerModal from './FolderManagerModal';
+import ConfirmDialog from '../ui/ConfirmDialog';
 import { buildInfo } from '../../buildInfo';
 
 const getFolderIcon = (specialUse?: string, name?: string) => {
@@ -116,17 +118,18 @@ const FolderBranch: React.FC<{
   const unread = node.folder?.unreadCount ?? 0;
   const isTrash = node.folder?.specialUse === 'trash' || /trash|bin|垃圾/i.test(node.path);
   const [emptying, setEmptying] = useState(false);
+  const [confirmEmpty, setConfirmEmpty] = useState(false);
   const queryClient = useQueryClient();
 
   const handleEmptyTrash = async () => {
-    if (!window.confirm(`確定要清空「${node.displayName}」全部郵件嗎？此操作無法復原。`)) return;
+    setConfirmEmpty(false);
     setEmptying(true);
     try {
       await mailApi.emptyFolder(node.path, accountId);
       queryClient.invalidateQueries({ queryKey: ['messages', accountId, node.path] });
       queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
     } catch (e: any) {
-      window.alert('清空失敗: ' + (e?.message || e));
+      toast('清空失敗: ' + (e?.message || e));
     } finally {
       setEmptying(false);
     }
@@ -170,7 +173,7 @@ const FolderBranch: React.FC<{
         </button>
         {isTrash && (
           <button
-            onClick={handleEmptyTrash}
+            onClick={() => setConfirmEmpty(true)}
             disabled={emptying}
             className="flex items-center justify-center w-6 h-6 mr-1 shrink-0 text-slate-400 hover:text-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 transition disabled:opacity-40"
             title="清空垃圾桶 (Empty Trash)"
@@ -199,6 +202,17 @@ const FolderBranch: React.FC<{
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmEmpty}
+        title="清空垃圾桶"
+        message={`確定要清空「${node.displayName}」全部郵件嗎？此操作無法復原。`}
+        confirmText="清空"
+        danger
+        loading={emptying}
+        onConfirm={handleEmptyTrash}
+        onCancel={() => setConfirmEmpty(false)}
+      />
     </div>
   );
 };
