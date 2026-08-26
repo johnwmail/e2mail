@@ -4,16 +4,16 @@ go 1.25.0
 
 require (
 	github.com/ProtonMail/go-crypto v1.4.1
-	github.com/emersion/go-imap/v2 v2.0.0-beta.4
+	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
-	github.com/go-chi/chi/v5 v5.2.1
-	github.com/go-chi/cors v1.2.1
+	github.com/go-chi/chi/v5 v5.3.2
+	github.com/go-chi/cors v1.2.2
 	github.com/google/uuid v1.6.0
-	github.com/pquerna/otp v1.4.0
+	github.com/pquerna/otp v1.5.0
 	golang.org/x/crypto v0.55.0
-	golang.org/x/net v0.57.0
+	golang.org/x/net v0.58.0
 	golang.org/x/text v0.41.0
-	modernc.org/sqlite v1.56.0
+	modernc.org/sqlite v1.57.0
 )
 
 require (
