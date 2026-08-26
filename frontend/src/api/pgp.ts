@@ -44,6 +44,35 @@ function setMemoryKeyPair(kp: PgpKeyPair | null) {
   memoryKeyPair = kp;
 }
 
+// 從解密後嘅完整 MIME（multipart/mixed + protected-headers="v1"）抽取 text/plain 內文
+// 對齊 Thunderbird RNP / Roundcube rcube_mime 解密後重建 MIME tree 嘅行為
+export const extractTextFromMime = (mimeText: string): string | null => {
+  if (!/Content-Type:\s*multipart\//i.test(mimeText) || !/boundary=/i.test(mimeText)) return null;
+  const boundaryMatch = mimeText.match(/boundary="([^"]+)"/i) || mimeText.match(/boundary=([^\s;]+)/i);
+  if (!boundaryMatch) return null;
+  const boundary = boundaryMatch[1].replace(/^["']|["']$/g, '').trim();
+  if (!boundary) return null;
+  const headerRegex = /Content-Type:\s*text\/plain[^\r\n]*\r?\n/gi;
+  let match: RegExpExecArray | null;
+  while ((match = headerRegex.exec(mimeText)) !== null) {
+    const headerStart = match.index;
+    let bodyStart = mimeText.indexOf('\r\n\r\n', headerStart);
+    let sepLen = 4;
+    if (bodyStart === -1) {
+      bodyStart = mimeText.indexOf('\n\n', headerStart);
+      sepLen = 2;
+    }
+    if (bodyStart === -1) continue;
+    bodyStart += sepLen;
+    let bodyEnd = mimeText.indexOf(`\r\n--${boundary}`, bodyStart);
+    if (bodyEnd === -1) bodyEnd = mimeText.indexOf(`\n--${boundary}`, bodyStart);
+    if (bodyEnd === -1) bodyEnd = mimeText.length;
+    const body = mimeText.substring(bodyStart, bodyEnd).trim();
+    if (body) return body;
+  }
+  return null;
+};
+
 export const isAsciiText = (bytes: Uint8Array): boolean => {
   const checkLen = Math.min(bytes.length, 256);
   for (let i = 0; i < checkLen; i++) {
@@ -547,6 +576,15 @@ export const pgpService = {
       .replace(/\r?\n?-----END PGP (?:UNVERIFIED |SIGNED )?MESSAGE-----[\s\S]*$/i, '')
       .trim();
 
+    // 若解密後係完整 MIME（Thunderbird protected-headers="v1" / Roundcube Enigma 同款：解密後係 multipart/mixed），抽取 text/plain 內文
+    // 對齊 RFC 3156 §4：解密後內層 MIME 需重建，再解析（Thunderbird RNP / Roundcube rcube_mime 都係咁做）
+    if (/^Content-Type:\s*multipart\//im.test(cleanText) && /boundary=/i.test(cleanText)) {
+      const extracted = extractTextFromMime(cleanText);
+      if (extracted) {
+        cleanText = extracted;
+      }
+    }
+
     // 檢查是否為巢狀/雙重加密郵件，自動遞迴解密
     if (pgpService.isPgpEncrypted(cleanText)) {
       try {
@@ -570,6 +608,10 @@ export const pgpService = {
   isPgpEncrypted: (content: string): boolean => {
     return /-----BEGIN PGP MESSAGE-----/i.test(content);
   },
+
+  // 輔助：從解密後嘅完整 MIME（multipart/mixed + protected-headers="v1"）抽取 text/plain 內文
+  // 對齊 Thunderbird / Roundcube Enigma 解密後重建 MIME tree 嘅行為
+  extractTextFromMime,
 
   isPgpSigned: (content: string): boolean => {
     return /-----BEGIN PGP SIGNED MESSAGE-----/i.test(content);
