@@ -105,6 +105,12 @@ export const ViewerPane: React.FC = () => {
   const [showRaw, setShowRaw] = useState(false);
   const [rawContent, setRawContent] = useState<string | null>(null);
   const [rawLoading, setRawLoading] = useState(false);
+  // 切換郵件時重置解密內容，避免 reply/forward 用到上一封嘅明文
+  useEffect(() => {
+    setDecryptedContent(null);
+    setRawContent(null);
+    setShowRaw(false);
+  }, [selectedUID]);
   const replyBodyText = decryptedContent ?? message?.textBody ?? '';
 
   const handleShowRaw = async () => {
