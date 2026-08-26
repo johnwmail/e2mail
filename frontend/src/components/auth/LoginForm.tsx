@@ -437,7 +437,6 @@ export const LoginForm: React.FC = () => {
         {/* 版本資訊 */}
         <div className="text-center mt-6 text-[11px] text-slate-400">
           Version: {import.meta.env.VITE_APP_VERSION || 'vdev'}
-          {import.meta.env.VITE_APP_COMMIT_HASH && import.meta.env.VITE_APP_COMMIT_HASH !== 'sha-unknown' ? ` · ${String(import.meta.env.VITE_APP_COMMIT_HASH).slice(0, 7)}` : ''}
         </div>
       </div>
     </div>

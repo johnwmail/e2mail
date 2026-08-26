@@ -92,14 +92,15 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
     if (decryptedContent !== null) {
       const looksLikeHtml = /<\s*(html|body|div|p|img|a|h[1-6]|ul|ol|table|br)[^>]*>/i.test(decryptedContent);
       if (looksLikeHtml) {
-        const clean = DOMPurify.sanitize(decryptedContent, {
+        let htmlForSanitize = decryptedContent.replace(/<img[^>]*Template_Bilingual[^>]*>/gi, '');
+        const clean = DOMPurify.sanitize(htmlForSanitize, {
           WHOLE_DOCUMENT: false,
           ADD_TAGS: ['style', 'iframe'],
           ADD_ATTR: ['target', 'data-blocked-src'],
           FORBID_TAGS: ['script', 'object', 'embed', 'applet'],
           FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover'],
         });
-        return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:break-word}img{max-width:100%;height:auto}a{color:#2563eb}</style></head><body>${clean}</body></html>`;
+        return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;overflow-x:auto}table{max-width:100%;border-collapse:collapse}td,th{word-break:normal;white-space:normal}img{max-width:100%;height:auto}img[src*="Template_Bilingual"]{display:none !important}a{color:#2563eb}</style></head><body>${clean}</body></html>`;
       }
       const escaped = decryptedContent
         .replace(/&/g, '&amp;')
@@ -156,8 +157,9 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
     });
 
     // 隱藏 Word 匯出嘅相對路徑 1×1 佔位圖（Template_Bilingual...png，無實際附件，顯示為破圖）
+    // 直接移除所有含 Template_Bilingual 嘅 <img>，無論 src 格式（應對 quoted-printable 後嘅 src=3D 情況）
+    content = content.replace(/<img[^>]*Template_Bilingual[^>]*>/gi, '');
     content = content.replace(/<img[^>]*src=["'](?!data:|https?:|cid:)[^"']+["'][^>]*>/gi, (match) => {
-      if (/Template_Bilingual/i.test(match)) return '';
       if (/width=["']?1["']?/i.test(match) && /height=["']?1["']?/i.test(match)) return '';
       return match;
     });
@@ -193,9 +195,14 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
               color: #1e293b;
               margin: 0;
               padding: 16px;
-              word-break: break-word;
+              word-break: normal;
+              overflow-wrap: break-word;
+              overflow-x: auto;
             }
+            table { max-width: 100%; border-collapse: collapse; }
+            td, th { word-break: normal; white-space: normal; }
             img { max-width: 100%; height: auto; }
+            img[src*="Template_Bilingual"] { display: none !important; }
             a { color: #2563eb; text-decoration: underline; }
             blockquote {
               border-left: 3px solid #cbd5e1;
