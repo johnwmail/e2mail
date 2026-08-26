@@ -22,6 +22,9 @@ type ConnectionConfig struct {
 	AllowInsecureTLS bool
 	Username         string
 	Password         string
+	// OnMailboxUpdate 係可選 callback，喺 IMAP unilateral mailbox 更新
+	// （例如新郵件到達，NumMessages 變化）時被呼叫。IDLE 監聽用。
+	OnMailboxUpdate func(numMessages *uint32)
 }
 
 // FolderInfo 資料夾結構
@@ -68,25 +71,32 @@ func NewClient(config ConnectionConfig) (*Client, error) {
 		ServerName:         config.Host,
 		InsecureSkipVerify: config.AllowInsecureTLS,
 	}
+	dialOptions := func() *imapclient.Options {
+		opts := &imapclient.Options{TLSConfig: tlsConfig}
+		if config.OnMailboxUpdate != nil {
+			opts.UnilateralDataHandler = &imapclient.UnilateralDataHandler{
+				Mailbox: func(data *imapclient.UnilateralDataMailbox) {
+					config.OnMailboxUpdate(data.NumMessages)
+				},
+			}
+		}
+		return opts
+	}
 
 	var raw *imapclient.Client
 	var err error
 
 	if config.UseTLS || config.Port == 993 {
-		raw, err = imapclient.DialTLS(addr, &imapclient.Options{
-			TLSConfig: tlsConfig,
-		})
+		raw, err = imapclient.DialTLS(addr, dialOptions())
 	} else if config.Port == 143 {
 		// 嘗試 STARTTLS 協商
-		raw, err = imapclient.DialStartTLS(addr, &imapclient.Options{
-			TLSConfig: tlsConfig,
-		})
+		raw, err = imapclient.DialStartTLS(addr, dialOptions())
 		if err != nil {
 			// 若 STARTTLS 失敗，嘗試非加密直連
-			raw, err = imapclient.DialInsecure(addr, nil)
+			raw, err = imapclient.DialInsecure(addr, dialOptions())
 		}
 	} else {
-		raw, err = imapclient.DialInsecure(addr, nil)
+		raw, err = imapclient.DialInsecure(addr, dialOptions())
 	}
 
 	if err != nil {
@@ -101,9 +111,9 @@ func NewClient(config ConnectionConfig) (*Client, error) {
 		prefixUser := strings.Split(config.Username, "@")[0]
 
 		if config.UseTLS || config.Port == 993 {
-			raw, err = imapclient.DialTLS(addr, &imapclient.Options{TLSConfig: tlsConfig})
+			raw, err = imapclient.DialTLS(addr, dialOptions())
 		} else {
-			raw, err = imapclient.DialInsecure(addr, nil)
+			raw, err = imapclient.DialInsecure(addr, dialOptions())
 		}
 
 		if err == nil {

@@ -104,6 +104,18 @@ func (l *IdleListener) Start() {
 func (l *IdleListener) runIdleLoop() error {
 	config := l.config
 
+	// 當 IMAP 回報 mailbox 更新（EXISTS / NumMessages 變化）即廣播新郵件事件
+	config.OnMailboxUpdate = func(numMessages *uint32) {
+		if numMessages != nil {
+			l.Broadcast(MailboxEvent{
+				Type:       "NEW_MESSAGE",
+				Mailbox:    l.mailbox,
+				TotalCount: *numMessages,
+				Timestamp:  time.Now(),
+			})
+		}
+	}
+
 	client, err := NewClient(config)
 	if err != nil {
 		return err
