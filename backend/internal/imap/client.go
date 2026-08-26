@@ -502,11 +502,13 @@ func (c *Client) FetchMessageSummaries(ctx context.Context, folder string, page,
 		return nil, fmt.Errorf("failed to fetch message summaries: %w", err)
 	}
 
-	// 依照原本的分頁順序排序回傳
-	seqMap := make(map[uint32]MessageSummary)
-	for _, s := range summaries {
-		seqMap[s.UID] = s
-	}
+	// 確保最新郵件在最前（按 UID 降序，UID 隨新郵件遞增）
+	sort.Slice(summaries, func(i, j int) bool {
+		if summaries[i].UID != summaries[j].UID {
+			return summaries[i].UID > summaries[j].UID
+		}
+		return summaries[i].Date.After(summaries[j].Date)
+	})
 
 	return &MessageListResult{
 		Folder:     folder,
