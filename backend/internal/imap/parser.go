@@ -200,6 +200,31 @@ func handleInlinePart(msg *ParsedMessage, h *gomail.InlineHeader, part *gomail.P
 		msg.TextBody = utf8Body
 	} else if strings.HasPrefix(contentType, "text/html") && msg.HTMLBody == "" {
 		msg.HTMLBody = utf8Body
+	} else {
+		// Non-text inline content (e.g. PGP/MIME application/octet-stream with Content-Disposition: inline)
+		// 保留為附件，令 handlePgpMime 可以抽取 PGP 訊息
+		var filename string
+		if _, dispParams, _ := h.ContentDisposition(); dispParams != nil {
+			filename = dispParams["filename"]
+		}
+		if filename == "" {
+			filename = params["name"]
+		}
+		if filename == "" {
+			filename = fmt.Sprintf("inline_%d", len(msg.Attachments)+1)
+		}
+		filename = charsetutil.DecodeHeader(filename)
+		contentID := strings.Trim(h.Get("Content-Id"), "<>")
+		att := AttachmentInfo{
+			ID:          fmt.Sprintf("%d", len(msg.Attachments)+1),
+			Filename:    filename,
+			ContentType: contentType,
+			Size:        int64(len(bodyBytes)),
+			ContentID:   contentID,
+			IsInline:    true,
+			Data:        bodyBytes,
+		}
+		msg.Attachments = append(msg.Attachments, att)
 	}
 }
 
