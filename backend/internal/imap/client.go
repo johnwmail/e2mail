@@ -779,7 +779,7 @@ func (c *Client) EmptyFolder(ctx context.Context, folder string) error {
 		Flags:  []imap.Flag{imap.FlagDeleted},
 		Silent: true,
 	}
-	seqSet := &imap.SeqSet{}
+	var seqSet imap.SeqSet
 	seqSet.AddRange(1, 0) // 1:* = 全部
 	storeCmd := c.rawClient.Store(seqSet, storeOpts, nil)
 	if err := storeCmd.Close(); err != nil {
