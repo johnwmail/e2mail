@@ -155,6 +155,13 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       }
     });
 
+    // 隱藏 Word 匯出嘅相對路徑 1×1 佔位圖（Template_Bilingual...png，無實際附件，顯示為破圖）
+    content = content.replace(/<img[^>]*src=["'](?!data:|https?:|cid:)[^"']+["'][^>]*>/gi, (match) => {
+      if (/Template_Bilingual/i.test(match)) return '';
+      if (/width=["']?1["']?/i.test(match) && /height=["']?1["']?/i.test(match)) return '';
+      return match;
+    });
+
     // 偵測是否含有外部 http/https 圖片
     const hasExternal = /<img[^>]+src=["']https?:\/\//i.test(content);
     setHasRemoteImages(hasExternal);
