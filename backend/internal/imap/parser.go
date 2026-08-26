@@ -207,6 +207,14 @@ func handleInlinePart(msg *ParsedMessage, h *gomail.InlineHeader, part *gomail.P
 		if _, dispParams, _ := h.ContentDisposition(); dispParams != nil {
 			filename = dispParams["filename"]
 		}
+		// 丟棄 Word 匯出嘅版面佔位圖（Template_Bilingual / 1×1 透明 spacer）：以相對路徑引用、
+		// 無實際附件數據，喺任何客戶端都顯示為破圖。Thunderbird/Roundcube 都唔會顯示呢啲。
+		if strings.Contains(filename, "Template_Bilingual") {
+			return
+		}
+		if strings.Contains(strings.ToLower(h.Get("Content-Location")), "template_bilingual") {
+			return
+		}
 		if filename == "" {
 			filename = params["name"]
 		}
