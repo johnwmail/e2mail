@@ -93,6 +93,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       const looksLikeHtml = /<\s*(html|body|div|p|img|a|h[1-6]|ul|ol|table|br)[^>]*>/i.test(decryptedContent);
       if (looksLikeHtml) {
         let htmlForSanitize = decryptedContent.replace(/<img[^>]*Template_Bilingual[^>]*>/gi, '');
+        htmlForSanitize = htmlForSanitize.replace(/<img[^>]*width=["']?1["']?[^>]*height=["']?1["']?[^>]*>/gi, '');
         const clean = DOMPurify.sanitize(htmlForSanitize, {
           WHOLE_DOCUMENT: false,
           ADD_TAGS: ['style', 'iframe'],
@@ -100,7 +101,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
           FORBID_TAGS: ['script', 'object', 'embed', 'applet'],
           FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover'],
         });
-        return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;overflow-x:auto}table{max-width:100%;border-collapse:collapse}td,th{word-break:normal;white-space:normal}img{max-width:100%;height:auto}img[src*="Template_Bilingual"]{display:none !important}a{color:#2563eb}</style></head><body>${clean}</body></html>`;
+        return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;overflow-x:auto;width:100%;box-sizing:border-box}table{width:100% !important;max-width:100% !important;border-collapse:collapse;table-layout:auto}td,th{word-break:normal;white-space:normal}img{max-width:100%;height:auto}img[src*="Template_Bilingual"],img[width="1"][height="1"]{display:none !important}a{color:#2563eb}</style></head><body>${clean}</body></html>`;
       }
       const escaped = decryptedContent
         .replace(/&/g, '&amp;')
@@ -198,11 +199,13 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
               word-break: normal;
               overflow-wrap: break-word;
               overflow-x: auto;
+              width: 100%;
+              box-sizing: border-box;
             }
-            table { max-width: 100%; border-collapse: collapse; }
+            table { width: 100% !important; max-width: 100% !important; border-collapse: collapse; table-layout: auto; }
             td, th { word-break: normal; white-space: normal; }
             img { max-width: 100%; height: auto; }
-            img[src*="Template_Bilingual"] { display: none !important; }
+            img[src*="Template_Bilingual"], img[width="1"][height="1"] { display: none !important; }
             a { color: #2563eb; text-decoration: underline; }
             blockquote {
               border-left: 3px solid #cbd5e1;
