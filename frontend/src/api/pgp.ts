@@ -46,13 +46,14 @@ function setMemoryKeyPair(kp: PgpKeyPair | null) {
 
 // 從解密後嘅完整 MIME（multipart/mixed + protected-headers="v1"）抽取內文
 // 對齊 Thunderbird RNP / Roundcube rcube_mime 解密後重建 MIME tree 嘅行為
-// 優先抽 text/html（保留 inline image 用），否則 text/plain，會處理 base64 / quoted-printable
+// 會處理 base64 / quoted-printable，並將 cid: 轉為 data: URL 令 inline 圖片直接顯示
 export const extractTextFromMime = (mimeText: string): string | null => {
   if (!/Content-Type:\s*multipart\//i.test(mimeText) || !/boundary=/i.test(mimeText)) return null;
   const boundaryMatch = mimeText.match(/boundary="([^"]+)"/i) || mimeText.match(/boundary=([^\s;]+)/i);
   if (!boundaryMatch) return null;
   const boundary = boundaryMatch[1].replace(/^["']|["']$/g, '').trim();
   if (!boundary) return null;
+
   const decodeBody = (body: string, encoding: string | null): string => {
     if (!encoding) return body;
     const enc = encoding.toLowerCase().trim();
@@ -77,6 +78,65 @@ export const extractTextFromMime = (mimeText: string): string | null => {
     }
     return body;
   };
+
+  // 先收集所有 parts，抽 html/plain 及 inline 圖片
+  const imageMap = new Map<string, string>(); // cid -> data URL
+  let htmlBody: string | null = null;
+  let plainBody: string | null = null;
+
+  // 以 boundary 分割
+  const rawParts = mimeText.split(`--${boundary}`);
+  for (const rawPart of rawParts) {
+    const part = rawPart.trim();
+    if (!part || part === '--' || part.startsWith('This is an OpenPGP')) continue;
+    const headerEnd = part.search(/\r?\n\r?\n/);
+    if (headerEnd === -1) continue;
+    const headerBlock = part.substring(0, headerEnd);
+    const bodyRaw = part.substring(headerEnd).replace(/^\r?\n\r?\n/, '').trim();
+    if (!bodyRaw) continue;
+
+    const ctMatch = headerBlock.match(/Content-Type:\s*([^\r\n;]+)(?:;[^\r\n]*)?/i);
+    const contentType = ctMatch ? ctMatch[1].trim().toLowerCase() : '';
+    const encMatch = headerBlock.match(/Content-Transfer-Encoding:\s*([^\r\n]+)/i);
+    const encoding = encMatch ? encMatch[1].trim() : null;
+    const cidMatch = headerBlock.match(/Content-ID:\s*<?([^>\r\n]+)>?/i);
+    const cid = cidMatch ? cidMatch[1].trim().replace(/^<|>$/g, '') : null;
+    const dispMatch = headerBlock.match(/Content-Disposition:\s*([^\r\n;]+)/i);
+    const isInline = dispMatch ? /inline/i.test(dispMatch[1]) : false;
+
+    if (contentType.startsWith('image/')) {
+      // inline 圖片：轉 data URL
+      const b64 = bodyRaw.replace(/\s/g, '');
+      const dataUrl = `data:${contentType};base64,${b64}`;
+      if (cid) {
+        imageMap.set(cid, dataUrl);
+        // 同時支援帶 <> 嘅 cid
+        imageMap.set(`<${cid}>`, dataUrl);
+      }
+      // 亦用 Content-Location 或 filename 作 fallback（少見）
+      continue;
+    }
+
+    if (contentType === 'text/html' && !htmlBody) {
+      htmlBody = decodeBody(bodyRaw, encoding);
+    } else if (contentType === 'text/plain' && !plainBody) {
+      plainBody = decodeBody(bodyRaw, encoding);
+    }
+  }
+
+  // 若有 html，替換 cid: 為 data: 並回傳 html
+  if (htmlBody) {
+    let html = htmlBody;
+    for (const [cid, dataUrl] of imageMap) {
+      const cleanCid = cid.replace(/^<|>$/g, '');
+      html = html.replace(new RegExp(`cid:${cleanCid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), dataUrl);
+      html = html.replace(new RegExp(`cid:<${cleanCid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}>`, 'gi'), dataUrl);
+    }
+    return html;
+  }
+  if (plainBody) return plainBody;
+
+  // Fallback：舊邏輯逐個 type 搜尋（兼容非標準分割）
   const tryExtract = (type: string): string | null => {
     const headerRegex = new RegExp(`Content-Type:\\s*${type}[^\\r\\n]*\\r?\\n`, 'gi');
     let m: RegExpExecArray | null;
@@ -103,7 +163,6 @@ export const extractTextFromMime = (mimeText: string): string | null => {
     }
     return null;
   };
-  // 優先 html（保留 inline <img src="cid:...">），否則 plain
   return tryExtract('text\\/html') || tryExtract('text\\/plain');
 };
 
