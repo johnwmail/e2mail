@@ -44,33 +44,38 @@ function setMemoryKeyPair(kp: PgpKeyPair | null) {
   memoryKeyPair = kp;
 }
 
-// 從解密後嘅完整 MIME（multipart/mixed + protected-headers="v1"）抽取 text/plain 內文
+// 從解密後嘅完整 MIME（multipart/mixed + protected-headers="v1"）抽取內文
 // 對齊 Thunderbird RNP / Roundcube rcube_mime 解密後重建 MIME tree 嘅行為
+// 優先抽 text/html（保留 inline image 用），否則 text/plain
 export const extractTextFromMime = (mimeText: string): string | null => {
   if (!/Content-Type:\s*multipart\//i.test(mimeText) || !/boundary=/i.test(mimeText)) return null;
   const boundaryMatch = mimeText.match(/boundary="([^"]+)"/i) || mimeText.match(/boundary=([^\s;]+)/i);
   if (!boundaryMatch) return null;
   const boundary = boundaryMatch[1].replace(/^["']|["']$/g, '').trim();
   if (!boundary) return null;
-  const headerRegex = /Content-Type:\s*text\/plain[^\r\n]*\r?\n/gi;
-  let match: RegExpExecArray | null;
-  while ((match = headerRegex.exec(mimeText)) !== null) {
-    const headerStart = match.index;
-    let bodyStart = mimeText.indexOf('\r\n\r\n', headerStart);
-    let sepLen = 4;
-    if (bodyStart === -1) {
-      bodyStart = mimeText.indexOf('\n\n', headerStart);
-      sepLen = 2;
+  const tryExtract = (type: string): string | null => {
+    const headerRegex = new RegExp(`Content-Type:\\s*${type}[^\\r\\n]*\\r?\\n`, 'gi');
+    let m: RegExpExecArray | null;
+    while ((m = headerRegex.exec(mimeText)) !== null) {
+      const headerStart = m.index;
+      let bodyStart = mimeText.indexOf('\r\n\r\n', headerStart);
+      let sepLen = 4;
+      if (bodyStart === -1) {
+        bodyStart = mimeText.indexOf('\n\n', headerStart);
+        sepLen = 2;
+      }
+      if (bodyStart === -1) continue;
+      bodyStart += sepLen;
+      let bodyEnd = mimeText.indexOf(`\r\n--${boundary}`, bodyStart);
+      if (bodyEnd === -1) bodyEnd = mimeText.indexOf(`\n--${boundary}`, bodyStart);
+      if (bodyEnd === -1) bodyEnd = mimeText.length;
+      const body = mimeText.substring(bodyStart, bodyEnd).trim();
+      if (body) return body;
     }
-    if (bodyStart === -1) continue;
-    bodyStart += sepLen;
-    let bodyEnd = mimeText.indexOf(`\r\n--${boundary}`, bodyStart);
-    if (bodyEnd === -1) bodyEnd = mimeText.indexOf(`\n--${boundary}`, bodyStart);
-    if (bodyEnd === -1) bodyEnd = mimeText.length;
-    const body = mimeText.substring(bodyStart, bodyEnd).trim();
-    if (body) return body;
-  }
-  return null;
+    return null;
+  };
+  // 優先 html（保留 inline <img src="cid:...">），否則 plain
+  return tryExtract('text\\/html') || tryExtract('text\\/plain');
 };
 
 export const isAsciiText = (bytes: Uint8Array): boolean => {

@@ -13,6 +13,9 @@ import {
   Calendar,
   ArrowLeft,
   AlertOctagon,
+  Code,
+  Copy,
+  X,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { useMailStore } from '../../stores/useMailStore';
@@ -99,7 +102,24 @@ export const ViewerPane: React.FC = () => {
 
   // PGP 解密後嘅明文（reply/forward 用）；未解密就用原始 body
   const [decryptedContent, setDecryptedContent] = useState<string | null>(null);
+  const [showRaw, setShowRaw] = useState(false);
+  const [rawContent, setRawContent] = useState<string | null>(null);
+  const [rawLoading, setRawLoading] = useState(false);
   const replyBodyText = decryptedContent ?? message?.textBody ?? '';
+
+  const handleShowRaw = async () => {
+    if (!message) return;
+    setShowRaw(true);
+    setRawLoading(true);
+    try {
+      const raw = await mailApi.getRawMessage(message.uid, currentFolder, accountId);
+      setRawContent(raw);
+    } catch (e: any) {
+      setRawContent(`載入失敗: ${e?.message || String(e)}`);
+    } finally {
+      setRawLoading(false);
+    }
+  };
 
   if (!selectedUID) {
     return (
@@ -222,6 +242,14 @@ export const ViewerPane: React.FC = () => {
           >
             <Trash2 className="w-4 h-4" />
           </button>
+          <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
+          <button
+            onClick={handleShowRaw}
+            className="p-1.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg transition"
+            title="顯示原始碼"
+          >
+            <Code className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -271,6 +299,13 @@ export const ViewerPane: React.FC = () => {
               title="刪除"
             >
               <Trash2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleShowRaw}
+              className="p-1.5 text-slate-500 rounded-lg"
+              title="顯示原始碼"
+            >
+              <Code className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -376,6 +411,44 @@ export const ViewerPane: React.FC = () => {
           刪除
         </button>
       </div>
+
+      {/* Raw Source Modal */}
+      {showRaw && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="w-full max-w-4xl max-h-[85vh] bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
+              <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-white">
+                <Code className="w-4 h-4" />
+                <span>郵件原始碼 (Raw Source)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (rawContent) navigator.clipboard.writeText(rawContent);
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded-lg"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  複製
+                </button>
+                <button
+                  onClick={() => setShowRaw(false)}
+                  className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4 bg-slate-50 dark:bg-slate-950">
+              {rawLoading ? (
+                <div className="text-xs text-slate-500">載入中...</div>
+              ) : (
+                <pre className="text-xs font-mono whitespace-pre-wrap break-all text-slate-800 dark:text-slate-200">{rawContent}</pre>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 };

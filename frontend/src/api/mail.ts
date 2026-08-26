@@ -61,6 +61,19 @@ export const mailApi = {
     return `/api/mail/messages/${uid}/attachments/${encodeURIComponent(attId)}?folder=${encodeURIComponent(folder)}&token=${encodeURIComponent(token)}${accountQS}`;
   },
 
+  getRawMessage: async (uid: number, folder = 'INBOX', account?: string): Promise<string> => {
+    const token = localStorage.getItem('webmail_token') || '';
+    const accountQS = account ? `&account=${encodeURIComponent(account)}` : '';
+    const url = `/api/mail/messages/${uid}/raw?folder=${encodeURIComponent(folder)}${accountQS}`;
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!res.ok) {
+      throw new Error(`取得原始郵件失敗: HTTP ${res.status}`);
+    }
+    return res.text();
+  },
+
   setFlags: async (
     folder: string,
     uids: number[],

@@ -90,6 +90,17 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
   const processedHtml = useMemo(() => {
     // 若已解密，直接以解密後的純淨文字渲染，絕不顯示原始密文
     if (decryptedContent !== null) {
+      const looksLikeHtml = /<\s*(html|body|div|p|img|a|h[1-6]|ul|ol|table|br)[^>]*>/i.test(decryptedContent);
+      if (looksLikeHtml) {
+        const clean = DOMPurify.sanitize(decryptedContent, {
+          WHOLE_DOCUMENT: false,
+          ADD_TAGS: ['style', 'iframe'],
+          ADD_ATTR: ['target', 'data-blocked-src'],
+          FORBID_TAGS: ['script', 'object', 'embed', 'applet'],
+          FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover'],
+        });
+        return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:break-word}img{max-width:100%;height:auto}a{color:#2563eb}</style></head><body>${clean}</body></html>`;
+      }
       const escaped = decryptedContent
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')

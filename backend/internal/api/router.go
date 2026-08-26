@@ -88,6 +88,7 @@ func NewRouter(
 				mail.Get("/folders", mailH.ListFolders)
 				mail.Get("/messages", mailH.ListMessages)
 				mail.Get("/messages/{uid}", mailH.GetMessageDetail)
+				mail.Get("/messages/{uid}/raw", mailH.GetRawMessage)
 				mail.Get("/messages/{uid}/attachments/{attId}", mailH.DownloadAttachment)
 				mail.Post("/messages/flags", mailH.SetFlags)
 				mail.Post("/messages/move", mailH.MoveMessages)

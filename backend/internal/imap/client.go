@@ -644,6 +644,49 @@ func (c *Client) FetchMessageDetail(ctx context.Context, folder string, uid uint
 	return &parsed, nil
 }
 
+// FetchRawMessage 取得指定 UID 郵件嘅原始 RFC822 來源
+func (c *Client) FetchRawMessage(ctx context.Context, folder string, uid uint32) ([]byte, error) {
+	c.lastUsed = time.Now()
+
+	if _, err := c.rawClient.Select(folder, nil).Wait(); err != nil {
+		return nil, fmt.Errorf("failed to select folder %s: %w", folder, err)
+	}
+
+	var uidSet imap.UIDSet
+	uidSet.AddNum(imap.UID(uid))
+
+	var bodySection imap.FetchItemBodySection
+	fetchOpts := &imap.FetchOptions{
+		BodySection: []*imap.FetchItemBodySection{&bodySection},
+	}
+
+	fetchCmd := c.rawClient.Fetch(uidSet, fetchOpts)
+	msgData := fetchCmd.Next()
+	if msgData == nil {
+		_ = fetchCmd.Close()
+		return nil, fmt.Errorf("message with UID %d not found", uid)
+	}
+
+	var raw []byte
+	for {
+		item := msgData.Next()
+		if item == nil {
+			break
+		}
+		if it, ok := item.(imapclient.FetchItemDataBodySection); ok {
+			buf, err := io.ReadAll(it.Literal)
+			if err == nil {
+				raw = buf
+			}
+		}
+	}
+	_ = fetchCmd.Close()
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("empty message body for UID %d", uid)
+	}
+	return raw, nil
+}
+
 // SetFlags 批次修改 Flag
 func (c *Client) SetFlags(ctx context.Context, folder string, uids []uint32, flags []string, op string) error {
 	c.lastUsed = time.Now()

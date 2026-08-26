@@ -198,6 +198,36 @@ func (h *MailHandler) GetMessageDetail(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, msg)
 }
 
+// GetRawMessage 取得指定郵件嘅原始 RFC822 來源（View Source 用）
+func (h *MailHandler) GetRawMessage(w http.ResponseWriter, r *http.Request) {
+	uidStr := chi.URLParam(r, "uid")
+	uid64, err := strconv.ParseUint(uidStr, 10, 32)
+	if err != nil {
+		response.BadRequest(w, "invalid message UID")
+		return
+	}
+	folder := r.URL.Query().Get("folder")
+	if folder == "" {
+		folder = "INBOX"
+	}
+	client, release, _, _, err := h.acquireClient(r.Context(), r)
+	if err != nil {
+		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
+		return
+	}
+	defer release()
+
+	raw, err := client.FetchRawMessage(r.Context(), folder, uint32(uid64))
+	if err != nil {
+		response.NotFound(w, "message not found: "+err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%d.eml\"", uid64))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(raw)
+}
+
 // DownloadAttachment 下載或預覽指定郵件中的附件檔案
 func (h *MailHandler) DownloadAttachment(w http.ResponseWriter, r *http.Request) {
 	uidStr := chi.URLParam(r, "uid")
