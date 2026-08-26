@@ -461,8 +461,9 @@ export const Sidebar: React.FC = () => {
 
       {/* Build 資訊 */}
       <div className="pt-2 text-[10px] font-mono text-slate-400 dark:text-slate-500 leading-relaxed select-none">
-        <p>{buildInfo.version} · {buildInfo.commitHash}</p>
-        <p>built {buildInfo.buildTime}</p>
+        <p>Version: {buildInfo.version}</p>
+        <p>CommitHash: {buildInfo.commitHash.slice(0, 7)}</p>
+        <p>BuildTime: {buildInfo.buildTime}</p>
       </div>
 
       <PgpKeyModal isOpen={isPgpModalOpen} onClose={() => setIsPgpModalOpen(false)} />
