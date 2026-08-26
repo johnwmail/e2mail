@@ -46,13 +46,37 @@ function setMemoryKeyPair(kp: PgpKeyPair | null) {
 
 // 從解密後嘅完整 MIME（multipart/mixed + protected-headers="v1"）抽取內文
 // 對齊 Thunderbird RNP / Roundcube rcube_mime 解密後重建 MIME tree 嘅行為
-// 優先抽 text/html（保留 inline image 用），否則 text/plain
+// 優先抽 text/html（保留 inline image 用），否則 text/plain，會處理 base64 / quoted-printable
 export const extractTextFromMime = (mimeText: string): string | null => {
   if (!/Content-Type:\s*multipart\//i.test(mimeText) || !/boundary=/i.test(mimeText)) return null;
   const boundaryMatch = mimeText.match(/boundary="([^"]+)"/i) || mimeText.match(/boundary=([^\s;]+)/i);
   if (!boundaryMatch) return null;
   const boundary = boundaryMatch[1].replace(/^["']|["']$/g, '').trim();
   if (!boundary) return null;
+  const decodeBody = (body: string, encoding: string | null): string => {
+    if (!encoding) return body;
+    const enc = encoding.toLowerCase().trim();
+    if (enc === 'base64') {
+      try {
+        const cleaned = body.replace(/\s/g, '');
+        const binary = atob(cleaned);
+        const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+        return new TextDecoder('utf-8').decode(bytes);
+      } catch {
+        return body;
+      }
+    }
+    if (enc === 'quoted-printable' || enc === 'quotedprintable') {
+      try {
+        let decoded = body.replace(/=\r?\n/g, '');
+        decoded = decoded.replace(/=([0-9A-F]{2})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+        return decoded;
+      } catch {
+        return body;
+      }
+    }
+    return body;
+  };
   const tryExtract = (type: string): string | null => {
     const headerRegex = new RegExp(`Content-Type:\\s*${type}[^\\r\\n]*\\r?\\n`, 'gi');
     let m: RegExpExecArray | null;
@@ -69,7 +93,12 @@ export const extractTextFromMime = (mimeText: string): string | null => {
       let bodyEnd = mimeText.indexOf(`\r\n--${boundary}`, bodyStart);
       if (bodyEnd === -1) bodyEnd = mimeText.indexOf(`\n--${boundary}`, bodyStart);
       if (bodyEnd === -1) bodyEnd = mimeText.length;
-      const body = mimeText.substring(bodyStart, bodyEnd).trim();
+      let body = mimeText.substring(bodyStart, bodyEnd).trim();
+      if (!body) continue;
+      const headerBlock = mimeText.substring(headerStart, bodyStart);
+      const encMatch = headerBlock.match(/Content-Transfer-Encoding:\s*([^\r\n]+)/i);
+      const encoding = encMatch ? encMatch[1].trim() : null;
+      body = decodeBody(body, encoding);
       if (body) return body;
     }
     return null;
@@ -581,12 +610,25 @@ export const pgpService = {
       .replace(/\r?\n?-----END PGP (?:UNVERIFIED |SIGNED )?MESSAGE-----[\s\S]*$/i, '')
       .trim();
 
-    // 若解密後係完整 MIME（Thunderbird protected-headers="v1" / Roundcube Enigma 同款：解密後係 multipart/mixed），抽取 text/plain 內文
+    // 若解密後係完整 MIME（Thunderbird protected-headers="v1" / Roundcube Enigma 同款：解密後係 multipart/mixed），抽取內文
     // 對齊 RFC 3156 §4：解密後內層 MIME 需重建，再解析（Thunderbird RNP / Roundcube rcube_mime 都係咁做）
     if (/^Content-Type:\s*multipart\//im.test(cleanText) && /boundary=/i.test(cleanText)) {
       const extracted = extractTextFromMime(cleanText);
       if (extracted) {
         cleanText = extracted;
+      }
+    } else if (/^Content-Type:\s*text\//im.test(cleanText) && /Content-Transfer-Encoding:\s*base64/i.test(cleanText)) {
+      // 單一部分 base64（非 multipart）→ 解碼
+      const headerEnd = cleanText.search(/\r?\n\r?\n/);
+      if (headerEnd !== -1) {
+        let body = cleanText.substring(headerEnd).trim();
+        try {
+          const cleaned = body.replace(/\s/g, '');
+          const decoded = new TextDecoder('utf-8').decode(Uint8Array.from(atob(cleaned), (c) => c.charCodeAt(0)));
+          if (decoded && decoded.length > 10) {
+            cleanText = decoded;
+          }
+        } catch {}
       }
     }
 
