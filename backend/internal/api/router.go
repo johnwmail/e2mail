@@ -26,7 +26,7 @@ func NewRouter(
 
 	// 全域中間件
 	r.Use(chimiddleware.RequestID)
-	r.Use(chimiddleware.RealIP)
+	r.Use(chimiddleware.RealIP) //nolint:staticcheck // RealIP deprecated in chi v5.2.1+, but still needed for X-Forwarded-For behind OpenBSD httpd reverse proxy
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(middleware.CORS())
