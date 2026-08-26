@@ -79,48 +79,76 @@ export const extractTextFromMime = (mimeText: string): string | null => {
     return body;
   };
 
-  // 先收集所有 parts，抽 html/plain 及 inline 圖片
+  // 先收集所有 parts，抽 html/plain 及 inline 圖片（支援嵌套 multipart）
   const imageMap = new Map<string, string>(); // cid -> data URL
   let htmlBody: string | null = null;
   let plainBody: string | null = null;
 
-  // 以 boundary 分割
-  const rawParts = mimeText.split(`--${boundary}`);
-  for (const rawPart of rawParts) {
-    const part = rawPart.trim();
-    if (!part || part === '--' || part.startsWith('This is an OpenPGP')) continue;
-    const headerEnd = part.search(/\r?\n\r?\n/);
-    if (headerEnd === -1) continue;
-    const headerBlock = part.substring(0, headerEnd);
-    const bodyRaw = part.substring(headerEnd).replace(/^\r?\n\r?\n/, '').trim();
-    if (!bodyRaw) continue;
+  const processParts = (text: string, b: string) => {
+    const rawParts = text.split(`--${b}`);
+    for (const rawPart of rawParts) {
+      const part = rawPart.trim();
+      if (!part || part === '--' || part.startsWith('This is an OpenPGP')) continue;
+      const headerEnd = part.search(/\r?\n\r?\n/);
+      if (headerEnd === -1) continue;
+      const headerBlock = part.substring(0, headerEnd);
+      const bodyRaw = part.substring(headerEnd).replace(/^\r?\n\r?\n/, '').trim();
+      if (!bodyRaw) continue;
 
-    const ctMatch = headerBlock.match(/Content-Type:\s*([^\r\n;]+)(?:;[^\r\n]*)?/i);
-    const contentType = ctMatch ? ctMatch[1].trim().toLowerCase() : '';
-    const encMatch = headerBlock.match(/Content-Transfer-Encoding:\s*([^\r\n]+)/i);
-    const encoding = encMatch ? encMatch[1].trim() : null;
-    const cidMatch = headerBlock.match(/Content-ID:\s*<?([^>\r\n]+)>?/i);
-    const cid = cidMatch ? cidMatch[1].trim().replace(/^<|>$/g, '') : null;
-    const dispMatch = headerBlock.match(/Content-Disposition:\s*([^\r\n;]+)/i);
-    const isInline = dispMatch ? /inline/i.test(dispMatch[1]) : false;
+      const ctMatch = headerBlock.match(/Content-Type:\s*([^\r\n;]+)(?:;[^\r\n]*)?/i);
+      const contentType = ctMatch ? ctMatch[1].trim().toLowerCase() : '';
+      const encMatch = headerBlock.match(/Content-Transfer-Encoding:\s*([^\r\n]+)/i);
+      const encoding = encMatch ? encMatch[1].trim() : null;
+      const cidMatch = headerBlock.match(/Content-ID:\s*<?([^>\r\n]+)>?/i);
+      const cid = cidMatch ? cidMatch[1].trim().replace(/^<|>$/g, '') : null;
 
-    if (contentType.startsWith('image/')) {
-      // inline 圖片：轉 data URL
-      const b64 = bodyRaw.replace(/\s/g, '');
-      const dataUrl = `data:${contentType};base64,${b64}`;
-      if (cid) {
-        imageMap.set(cid, dataUrl);
-        // 同時支援帶 <> 嘅 cid
-        imageMap.set(`<${cid}>`, dataUrl);
+      // 若係嵌套 multipart，遞迴處理
+      if (contentType.startsWith('multipart/')) {
+        const innerBoundaryMatch = headerBlock.match(/boundary="([^"]+)"/i) || headerBlock.match(/boundary=([^\s;]+)/i);
+        if (innerBoundaryMatch) {
+          const innerBoundary = innerBoundaryMatch[1].replace(/^["']|["']$/g, '').trim();
+          if (innerBoundary) {
+            processParts(bodyRaw, innerBoundary);
+            continue;
+          }
+        }
       }
-      // 亦用 Content-Location 或 filename 作 fallback（少見）
-      continue;
-    }
 
-    if (contentType === 'text/html' && !htmlBody) {
-      htmlBody = decodeBody(bodyRaw, encoding);
-    } else if (contentType === 'text/plain' && !plainBody) {
-      plainBody = decodeBody(bodyRaw, encoding);
+      if (contentType.startsWith('image/')) {
+        // inline 圖片：轉 data URL
+        const b64 = bodyRaw.replace(/\s/g, '');
+        const dataUrl = `data:${contentType};base64,${b64}`;
+        if (cid) {
+          imageMap.set(cid, dataUrl);
+          imageMap.set(`<${cid}>`, dataUrl);
+        }
+        continue;
+      }
+
+      if (contentType === 'text/html' && !htmlBody) {
+        htmlBody = decodeBody(bodyRaw, encoding);
+        continue;
+      }
+      if (contentType === 'text/plain' && !plainBody) {
+        plainBody = decodeBody(bodyRaw, encoding);
+        continue;
+      }
+    }
+  };
+
+  processParts(mimeText, boundary);
+
+  // Fallback：若未搵到，嘗試直接喺成個 MIME 掃描 image/*（處理非標準嵌套）
+  if (imageMap.size === 0) {
+    const imgRegex = /Content-Type:\s*(image\/[^\r\n;]+)[\s\S]*?Content-ID:\s*<?([^>\r\n]+)>?[\s\S]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\n--|\Z)/gi;
+    let m: RegExpExecArray | null;
+    while ((m = imgRegex.exec(mimeText)) !== null) {
+      const ct = m[1].trim().toLowerCase();
+      const cid = m[2].trim().replace(/^<|>$/g, '');
+      const b64 = m[3].replace(/\s/g, '').trim();
+      if (cid && b64 && !imageMap.has(cid)) {
+        imageMap.set(cid, `data:${ct};base64,${b64}`);
+      }
     }
   }
 
