@@ -101,7 +101,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
           FORBID_TAGS: ['script', 'object', 'embed', 'applet'],
           FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover'],
         });
-        return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;box-sizing:border-box}table{table-layout:auto;width:auto !important;min-width:0;max-width:none !important;border-collapse:collapse}td,th{word-break:normal;white-space:normal}img{max-width:100%;height:auto}a{color:#2563eb}</style></head><body>${clean}</body></html>`;
+        return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;box-sizing:border-box}table{table-layout:auto;width:auto !important;min-width:0;max-width:none !important;border-collapse:collapse}td,th{word-break:normal;white-space:normal}img{max-width:100%;height:auto}img[data-blocked-src]{background:#f8fafc;color:#94a3b8;font-size:12px;box-sizing:border-box}img[src=""]{background:transparent}a{color:#2563eb}</style></head><body>${clean}</body></html>`;
       }
       let escaped = decryptedContent
         .replace(/&/g, '&amp;')
@@ -188,9 +188,28 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
     const hasExternal = /<img[^>]+src=["']https?:\/\//i.test(content);
     setHasRemoteImages(hasExternal);
 
-    // 若未允許外部圖片，將 src 暫時阻擋為佔位
+    // 若未允許外部圖片，將 src 暫時阻擋為佔位（保留原圖 width/height 避免版面塌縮成窄 column）
+    // 保留 width/height 令 email 原本嘅 602px 版面唔會因 header/footer 被 block 而塌縮
     if (!allowRemoteImages && hasExternal) {
-      content = content.replace(/<img([^>]+)src=(["'])(https?:\/\/[^"']+)["']/gi, '<img$1data-blocked-src=$2$3$2 src="" alt="[已阻擋外部圖片]" style="border: 1px dashed #cbd5e1; padding: 4px; background: #f8fafc; color: #94a3b8; font-size: 12px;"');
+      content = content.replace(
+        /<img([^>]+)src=(["'])(https?:\/\/[^"']+)["']/gi,
+        (match, attrs: string, quote: string, src: string) => {
+          let width = '';
+          let height = '';
+          const wm = attrs.match(/\swidth=["']?(\d+)["']?/i);
+          const hm = attrs.match(/\sheight=["']?(\d+)["']?/i);
+          if (wm) width = wm[1];
+          if (hm) height = hm[1];
+          const dimStyle = [
+            width ? `width:${width}px` : '',
+            height ? `height:${height}px` : '',
+          ].filter(Boolean).join(';');
+          const placeholder =
+            dimStyle ||
+            'border:1px dashed #cbd5e1;padding:4px;background:#f8fafc;color:#94a3b8;font-size:12px;';
+          return `<img${attrs}data-blocked-src=${quote}${src}${quote} src="" alt="[已阻擋外部圖片]" style="${placeholder};display:inline-block;vertical-align:middle;"${width ? ` width="${width}"` : ''}${height ? ` height="${height}"` : ''}>`;
+        }
+      );
     }
 
     // DOMPurify XSS 安全過濾
@@ -224,6 +243,8 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
             }
             table { table-layout: auto; width: auto !important; min-width: 0; max-width: none !important; border-collapse: collapse; }
             td, th { word-break: normal; white-space: normal; }
+            img[data-blocked-src] { background: #f8fafc; color: #94a3b8; font-size: 12px; box-sizing: border-box; }
+            img[src=""] { background: transparent; }
             img { max-width: 100%; height: auto; }
             a { color: #2563eb; text-decoration: underline; }
             blockquote {
