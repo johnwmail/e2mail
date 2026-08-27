@@ -11,7 +11,7 @@ name: deploy
 #   DEPLOY_USER     SSH 登入用戶
 #   DEPLOY_SSH_KEY  SSH 私鑰（用 OpenSSH 格式，整段貼上）
 #   DEPLOY_PORT     SSH port（預設 22）
-#   DEPLOY_CMD      要喺遠端執行嘅部署指令。可使用以下環境變數：
+#   DEPLOY_CMD      要喺遠端執行嘅部署指令。直接用環境變數引用：
 #                     $DEPLOY_TAG   tag 版本（例如 v0.1.17）
 #                     $DEPLOY_REPO  倉庫名（例如 e2mail）
 #
