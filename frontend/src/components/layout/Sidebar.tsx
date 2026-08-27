@@ -237,7 +237,7 @@ const AccountFolders: React.FC<{
   const { data: folders, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['folders', account.id],
     queryFn: () => mailApi.getFolders(account.id),
-    enabled: expanded,
+    enabled: isActiveAccount || expanded,
     staleTime: 30000,
   });
 
