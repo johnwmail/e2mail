@@ -244,7 +244,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
   }, [htmlBody, textBody, decryptedContent, attachments, uid, folder, allowRemoteImages]);
 
   return (
-    <div className="flex flex-col h-full w-full bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+    <div className="flex flex-col h-full w-full max-w-4xl mx-auto bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
       {/* PGP 加密提示列 (未解密時) */}
       {isPgpMessage && !isDecrypted && (
         <div className="flex items-center justify-between px-4 py-2.5 bg-indigo-50 dark:bg-indigo-950/60 border-b border-indigo-200 dark:border-indigo-800/80 text-indigo-950 dark:text-indigo-200 text-xs">
