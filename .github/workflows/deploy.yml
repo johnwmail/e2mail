@@ -11,16 +11,14 @@ name: deploy
 #   DEPLOY_USER     SSH 登入用戶
 #   DEPLOY_SSH_KEY  SSH 私鑰（用 OpenSSH 格式，整段貼上）
 #   DEPLOY_PORT     SSH port（預設 22）
-#   DEPLOY_CMD      要喺遠端執行嘅部署指令。可使用 $DEPLOY_TAG 環境變數引用 tag 版本。
+#   DEPLOY_CMD      要喺遠端執行嘅部署指令。可使用以下環境變數：
+#                     $DEPLOY_TAG   tag 版本（例如 v0.1.17）
+#                     $DEPLOY_REPO  倉庫名（例如 e2mail）
 #
-# 例子 DEPLOY_CMD（用 tag 版本 pull 鏡像 + 重啟）：
-#   cd /opt/e2mail && docker compose pull && docker compose up -d
+# 例子 DEPLOY_CMD（用「倉庫名 + tag 版本」pull 鏡像 + 重啟）：
+#   cd /opt/$DEPLOY_REPO && docker compose pull ghcr.io/johnwmail/$DEPLOY_REPO:$DEPLOY_TAG && docker compose up -d
 #
-# 若要用「而家 tag 版本」做 pull，可將 DEPLOY_CMD 設為：
-#   export IMAGE=ghcr.io/johnwmail/e2mail:$DEPLOY_TAG
-#   cd /opt/e2mail && docker compose pull ghcr.io/johnwmail/e2mail:$DEPLOY_TAG && docker compose up -d
-#
-# 注意：DEPLOY_CMD 係 secret，唔會被顯示；$DEPLOY_TAG 會經 envs 注入到 SSH 遠端環境。
+# 注意：DEPLOY_CMD 係 secret，唔會被顯示；$DEPLOY_TAG 同 $DEPLOY_REPO 會經 envs 注入到 SSH 遠端環境。
 
 on:
   workflow_run:
@@ -53,15 +51,16 @@ jobs:
         if: env.DEPLOY_HOST != ''
         env:
           DEPLOY_TAG: ${{ steps.tag.outputs.dep_tag }}
+          DEPLOY_REPO: ${{ github.event.repository.name }}
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
-          envs: DEPLOY_TAG
+          envs: DEPLOY_TAG, DEPLOY_REPO
           script: |
-            echo "Deploying e2mail tag: ${DEPLOY_TAG}"
+            echo "Deploying ${DEPLOY_REPO} tag: ${DEPLOY_TAG}"
             ${{ secrets.DEPLOY_CMD }}
 
       - name: Report deployment result
