@@ -6,7 +6,7 @@ import { PgpKeyModal } from '../mail/PgpKeyModal';
 
 export const Header: React.FC = () => {
   const { session, logout } = useAuthStore();
-  const { searchQuery, setSearchQuery, openComposer, toggleSidebar, selectedUID, currentFolder } = useMailStore();
+  const { searchQuery, setSearchQuery, openComposer, toggleSidebar, selectedUID, currentFolder, inboxUnread } = useMailStore();
   const [searchInput, setSearchInput] = useState(searchQuery);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isPgpModalOpen, setIsPgpModalOpen] = useState(false);
@@ -76,10 +76,15 @@ export const Header: React.FC = () => {
             <div className="flex items-center gap-2.5">
               <button
                 onClick={toggleSidebar}
-                className="lg:hidden p-2 -ml-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                className="lg:hidden relative p-2 -ml-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
                 title="開啟選單"
               >
                 <Menu className="w-5 h-5" />
+                {inboxUnread > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[9px] font-bold leading-none border-2 border-white dark:border-slate-900">
+                    {inboxUnread > 99 ? '99+' : inboxUnread}
+                  </span>
+                )}
               </button>
 
               <div className="flex items-center gap-2">

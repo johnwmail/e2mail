@@ -13,6 +13,7 @@ interface MailState {
   composerKey: number;
   isSidebarOpen: boolean;
   view: 'mail' | 'accounts';
+  inboxUnread: number;
 
   setCurrentFolder: (folder: string) => void;
   setActiveAccountId: (id: string | null) => void;
@@ -24,6 +25,7 @@ interface MailState {
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
   setView: (view: 'mail' | 'accounts') => void;
+  setInboxUnread: (n: number) => void;
 }
 
 export const useMailStore = create<MailState>((set) => ({
@@ -38,12 +40,13 @@ export const useMailStore = create<MailState>((set) => ({
   composerKey: 0,
   isSidebarOpen: false,
   view: 'mail',
+  inboxUnread: 0,
 
   setCurrentFolder: (folder) =>
     set({ currentFolder: folder, selectedUID: null, page: 1, isSidebarOpen: false }),
 
   setActiveAccountId: (id) =>
-    set({ activeAccountId: id, currentFolder: 'INBOX', selectedUID: null, page: 1 }),
+    set({ activeAccountId: id, currentFolder: 'INBOX', selectedUID: null, page: 1, inboxUnread: 0 }),
 
   setSelectedUID: (uid) => set({ selectedUID: uid }),
 
@@ -62,4 +65,6 @@ export const useMailStore = create<MailState>((set) => ({
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
 
   setView: (view) => set({ view }),
+
+  setInboxUnread: (n) => set({ inboxUnread: n }),
 }));

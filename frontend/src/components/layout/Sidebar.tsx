@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Inbox,
@@ -223,7 +223,7 @@ const AccountFolders: React.FC<{
   onToggleExpand: () => void;
   setSidebarOpen: (open: boolean) => void;
 }> = ({ account, expanded, onToggleExpand, setSidebarOpen }) => {
-  const { currentFolder, setCurrentFolder, setActiveAccountId } = useMailStore();
+  const { currentFolder, setCurrentFolder, setActiveAccountId, setInboxUnread } = useMailStore();
   const isActiveAccount = useActiveAccount()?.id === account.id;
   const [isManagerOpen, setIsManagerOpen] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(() => {
@@ -240,6 +240,13 @@ const AccountFolders: React.FC<{
     enabled: expanded,
     staleTime: 30000,
   });
+
+  // 同步 inbox 未讀數至全 app store（mobile header Menu badge 用）
+  useEffect(() => {
+    if (!isActiveAccount) return;
+    const inbox = folders?.find((f) => f.specialUse === 'inbox' || /^inbox$/i.test(f.name));
+    setInboxUnread(inbox?.unreadCount ?? 0);
+  }, [folders, isActiveAccount, setInboxUnread]);
 
   // WebMail-only folder 顯示偏好（唔影響 IMAP subscription）
   const { data: folderPrefs } = useQuery({
