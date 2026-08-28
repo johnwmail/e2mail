@@ -1,5 +1,20 @@
 name: container
 
+# Build & push container image（tag push 觸發）。build 成功後 deploy job 先會啟動。
+#
+# Deploy job 需要喺 GitHub repo Secrets 設定：
+#   DEPLOY_HOST     遠端主機 IP / hostname
+#   DEPLOY_USER     SSH 登入用戶
+#   DEPLOY_SSH_KEY  SSH 私鑰（OpenSSH 格式）
+#   DEPLOY_PORT     SSH port
+#   DEPLOY_CMD      遠端部署指令。可用環境變數：
+#                     $DEPLOY_TAG    tag 版本（例如 v0.1.17）
+#                     $DEPLOY_REPO   倉庫名（例如 e2mail）
+# 例子：cd /opt/$DEPLOY_REPO && docker compose pull ghcr.io/johnwmail/$DEPLOY_REPO:$DEPLOY_TAG && docker compose up -d
+#
+# 注意：workflow_run 觸發器唔可以經 tag push 觸發（只追蹤 default branch），
+# 所以 deploy 直接做成本 workflow 入面一個 job（needs: build）保證順序。
+
 on:
   push:
     tags:
@@ -72,3 +87,37 @@ jobs:
             VERSION=${{ github.ref_name }}
             BUILD_TIME=${{ steps.meta.outputs.build_time }}
             COMMIT_HASH=${{ github.sha }}
+
+  # Deploy 喺 build 成功後執行（同一個 workflow 檔案用 needs: build 保證順序）。
+  # 只喺 tag push（github.ref_name 係 tag 名）時部署；workflow_dispatch 手動跑唔部署。
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+
+    steps:
+      - name: Skip if no deploy host configured
+        if: env.DEPLOY_HOST == ''
+        run: |
+          echo "::notice::DEPLOY_HOST secret not set — skipping deployment."
+          echo "To enable deployment, add DEPLOY_HOST, DEPLOY_PORT, DEPLOY_USER, DEPLOY_SSH_KEY, and DEPLOY_CMD secrets."
+
+      - name: Deploy to remote host
+        if: env.DEPLOY_HOST != ''
+        env:
+          DEPLOY_TAG: ${{ github.ref_name }}
+          DEPLOY_REPO: ${{ github.event.repository.name }}
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          envs: DEPLOY_TAG, DEPLOY_REPO
+          script: |
+            echo "Deploying ${DEPLOY_REPO} tag: ${DEPLOY_TAG}"
+            ${{ secrets.DEPLOY_CMD }}
