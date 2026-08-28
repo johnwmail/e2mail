@@ -5,6 +5,7 @@ import { useAuthStore } from '../../stores/useAuthStore';
 import { useMailStore } from '../../stores/useMailStore';
 import { mailApi } from '../../api/mail';
 import { PgpKeyModal } from '../mail/PgpKeyModal';
+import { FolderInfo } from '../../types/api';
 
 export const Header: React.FC = () => {
   const { session, logout } = useAuthStore();
@@ -13,7 +14,7 @@ export const Header: React.FC = () => {
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isPgpModalOpen, setIsPgpModalOpen] = useState(false);
 
-  // Header 自己查所有帳號嘅 folders 計算總未讀（唔依賴 Sidebar drawer）
+  // 查所有帳號嘅 inbox folders 計算總未讀（唔依賴 Sidebar）
   const accounts = session?.accounts ?? [];
   const foldersQueries = useQueries({
     queries: accounts.map((acc) => ({
@@ -22,8 +23,13 @@ export const Header: React.FC = () => {
       staleTime: 30000,
     })),
   });
-  const inboxUnread = foldersQueries.reduce((sum, q) => {
-    const inbox = (q.data as any)?.find((f: any) => f.specialUse === 'inbox' || /^inbox$/i.test(f.name));
+
+  // debug log — 唔會顯示俾用戶，淨係 browser console
+  console.log('[Header] accounts:', accounts.length, 'queries:', foldersQueries.map((q) => ({ id: q.dataUpdatedAt, loading: q.isLoading, count: q.data?.length })));
+
+  const inboxUnread = foldersQueries.reduce((sum: number, q) => {
+    if (!Array.isArray(q.data)) return sum;
+    const inbox = q.data.find((f: FolderInfo) => f.specialUse === 'inbox' || /^inbox$/i.test(f.name));
     return sum + (inbox?.unreadCount ?? 0);
   }, 0);
 
@@ -96,11 +102,9 @@ export const Header: React.FC = () => {
                 title="開啟選單"
               >
                 <Menu className="w-5 h-5" />
-                {inboxUnread > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[9px] font-bold leading-none border-2 border-white dark:border-slate-900">
-                    {inboxUnread > 99 ? '99+' : inboxUnread}
-                  </span>
-                )}
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[9px] font-bold leading-none border-2 border-white dark:border-slate-900">
+                  {inboxUnread > 99 ? '99+' : inboxUnread || 0}
+                </span>
               </button>
 
               <div className="flex items-center gap-2">
