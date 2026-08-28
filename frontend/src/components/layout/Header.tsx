@@ -1,15 +1,30 @@
 import React, { useState } from 'react';
 import { Mail, Search, LogOut, PenSquare, X, Menu, Key } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useMailStore } from '../../stores/useMailStore';
+import { useActiveAccount } from '../../hooks/useActiveAccount';
+import { mailApi } from '../../api/mail';
 import { PgpKeyModal } from '../mail/PgpKeyModal';
 
 export const Header: React.FC = () => {
   const { session, logout } = useAuthStore();
-  const { searchQuery, setSearchQuery, openComposer, toggleSidebar, selectedUID, currentFolder, inboxUnread } = useMailStore();
+  const { searchQuery, setSearchQuery, openComposer, toggleSidebar, selectedUID, currentFolder } = useMailStore();
+  const activeAccount = useActiveAccount();
   const [searchInput, setSearchInput] = useState(searchQuery);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isPgpModalOpen, setIsPgpModalOpen] = useState(false);
+
+  // Header 自己查 folders 計算 inbox unread（唔依賴 Sidebar lifecycle）
+  const { data: folders } = useQuery({
+    queryKey: ['folders', activeAccount?.id],
+    queryFn: () => mailApi.getFolders(activeAccount?.id || ''),
+    enabled: !!activeAccount?.id,
+    staleTime: 30000,
+  });
+
+  const inboxFolder = folders?.find((f) => f.specialUse === 'inbox' || /^inbox$/i.test(f.name));
+  const inboxUnread = inboxFolder?.unreadCount ?? 0;
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
