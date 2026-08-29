@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Star,
@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
+import { contactsApi } from '../../api/addressBook';
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { MessageSummary, FolderInfo } from '../../types/api';
@@ -36,6 +37,30 @@ const getFolderDisplayName = (folder: FolderInfo) => {
     default:
       return folder.name;
   }
+};
+
+const ContactMiniAvatar: React.FC<{ contact: any }> = ({ contact }) => {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!contact?.hasAvatar) return;
+    let alive = true;
+    contactsApi.fetchAvatarBlob(contact.id).then((u) => {
+      if (alive) setUrl(u);
+    });
+    return () => {
+      alive = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [contact?.id, contact?.hasAvatar]);
+  if (url) {
+    return <img src={url} alt={contact.displayName} className="w-5 h-5 rounded-full object-cover shrink-0" />;
+  }
+  const initial = (contact.displayName?.[0] || contact.email?.[0] || '?').toUpperCase();
+  return (
+    <div className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+      {initial}
+    </div>
+  );
 };
 
 export const MessageList: React.FC = () => {
@@ -351,6 +376,22 @@ export const MessageList: React.FC = () => {
   const messages = data?.messages || [];
   const totalPages = data?.totalPages || 1;
 
+  // 通訊錄批量解析：寄件人是否已在地址簿（用於顯示頭像/名稱）
+  const senderEmails = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of messages) {
+      const e = m.from?.[0]?.address?.toLowerCase()?.trim();
+      if (e) set.add(e);
+    }
+    return Array.from(set).slice(0, 100);
+  }, [messages]);
+  const { data: contactMap } = useQuery({
+    queryKey: ['contact-resolve-list', senderEmails.join(',')],
+    queryFn: () => contactsApi.resolve(senderEmails),
+    enabled: senderEmails.length > 0,
+    staleTime: 30000,
+  });
+
   return (
     <section
       className={`w-full lg:w-[380px] xl:w-[420px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 overflow-hidden min-w-0 max-w-full ${
@@ -610,13 +651,24 @@ export const MessageList: React.FC = () => {
                 {/* 郵件主要摘要 (flex-1 min-w-0 防止水平溢出) */}
                 <div className="flex-1 min-w-0 overflow-hidden">
                   <div className="flex items-center justify-between mb-1 min-w-0">
-                    <span
-                      className={`truncate text-[13px] md:text-sm ${
-                        msg.unread ? 'font-bold text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      {fromName}
-                    </span>
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      {(() => {
+                        const email = msg.from?.[0]?.address?.toLowerCase();
+                        const c = email ? (contactMap as any)?.[email] : null;
+                        return c ? <ContactMiniAvatar contact={c} /> : null;
+                      })()}
+                      <span
+                        className={`truncate text-[13px] md:text-sm ${
+                          msg.unread ? 'font-bold text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {(() => {
+                          const email = msg.from?.[0]?.address?.toLowerCase();
+                          const c = email ? (contactMap as any)?.[email] : null;
+                          return c?.displayName || fromName;
+                        })()}
+                      </span>
+                    </div>
                     <span className="text-[11px] text-slate-400 shrink-0 ml-2 font-mono">
                       {formatDate(msg.date)}
                     </span>

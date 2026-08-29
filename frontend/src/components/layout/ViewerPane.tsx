@@ -18,10 +18,12 @@ import {
   X,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
+import { contactsApi } from '../../api/addressBook';
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { EmailFrame } from '../mail/EmailFrame';
 import { MessageListResult, MessageSummary } from '../../types/api';
+import { UserPlus, Check } from 'lucide-react';
 
 export const ViewerPane: React.FC = () => {
   const queryClient = useQueryClient();
@@ -99,6 +101,32 @@ export const ViewerPane: React.FC = () => {
     if (!junkFolder) return;
     moveToJunkMutation.mutate(message.uid);
   };
+
+  // 通訊錄：解析寄件人是否已在地址簿
+  const senderEmail = message?.from?.[0]?.address?.toLowerCase() ?? '';
+  const senderName = message?.from?.[0]?.name ?? '';
+  const { data: resolvedMap } = useQuery({
+    queryKey: ['contact-resolve', senderEmail],
+    queryFn: () => (senderEmail ? contactsApi.resolve([senderEmail]) : Promise.resolve({})),
+    enabled: !!senderEmail,
+    staleTime: 30000,
+  });
+  const senderContact = senderEmail ? (resolvedMap as any)?.[senderEmail] : null;
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (senderContact?.hasAvatar) {
+      contactsApi.fetchAvatarBlob(senderContact.id).then((url) => setAvatarUrl(url));
+    } else {
+      setAvatarUrl(null);
+    }
+  }, [senderContact]);
+  const addContactMutation = useMutation({
+    mutationFn: () => contactsApi.fromEmail(senderEmail, senderName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contact-resolve', senderEmail] });
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    },
+  });
 
   // PGP 解密後嘅明文（reply/forward 用）；未解密就用原始 body
   const [decryptedContent, setDecryptedContent] = useState<string | null>(null);
@@ -320,29 +348,48 @@ export const ViewerPane: React.FC = () => {
           {message.subject || '(無主旨)'}
         </h2>
 
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 min-w-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs md:text-sm shadow-sm shrink-0">
-              {message.from?.[0]?.name?.[0]?.toUpperCase() ||
-                message.from?.[0]?.address?.[0]?.toUpperCase() ||
-                'U'}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                <span className="font-semibold text-xs md:text-sm text-slate-900 dark:text-white truncate">
-                  {message.from?.[0]?.name || message.from?.[0]?.address}
-                </span>
-                {message.from?.[0]?.name && (
-                  <span className="text-[11px] text-slate-400 truncate">
-                    &lt;{message.from?.[0]?.address}&gt;
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="avatar" className="w-8 h-8 md:w-10 md:h-10 rounded-full object-cover shadow-sm shrink-0" />
+              ) : (
+                <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs md:text-sm shadow-sm shrink-0">
+                  {senderContact?.displayName?.[0]?.toUpperCase() ||
+                    message.from?.[0]?.name?.[0]?.toUpperCase() ||
+                    message.from?.[0]?.address?.[0]?.toUpperCase() ||
+                    'U'}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                  <span className="font-semibold text-xs md:text-sm text-slate-900 dark:text-white truncate">
+                    {senderContact?.displayName || message.from?.[0]?.name || message.from?.[0]?.address}
                   </span>
-                )}
-              </div>
-              <div className="text-[11px] text-slate-500 truncate">
-                收件人：{message.to?.map((t) => t.name || t.address).join(', ') || '無'}
+                  {message.from?.[0]?.name && (
+                    <span className="text-[11px] text-slate-400 truncate">
+                      &lt;{message.from?.[0]?.address}&gt;
+                    </span>
+                  )}
+                  {senderContact ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200">
+                      <Check className="w-3 h-3" /> 已在通訊錄
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => addContactMutation.mutate()}
+                      disabled={addContactMutation.isPending}
+                      className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-full border border-blue-200 transition disabled:opacity-50"
+                    >
+                      <UserPlus className="w-3 h-3" />
+                      {addContactMutation.isPending ? '加入中...' : '加入聯絡人'}
+                    </button>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-500 truncate">
+                  收件人：{message.to?.map((t) => t.name || t.address).join(', ') || '無'}
+                </div>
               </div>
             </div>
-          </div>
 
           <div className="flex items-center gap-1.5 text-[11px] text-slate-400 shrink-0 self-start sm:self-auto">
             <Calendar className="w-3.5 h-3.5" />

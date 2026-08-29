@@ -77,14 +77,40 @@ type UserCredential struct {
 	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
+// Contact 通訊錄聯絡人（通用地址簿，非 PGP 專用）
+type Contact struct {
+	ID          string    `json:"id"`
+	OwnerEmail  string    `json:"-"`
+	Email       string    `json:"email"`
+	DisplayName string    `json:"displayName"`
+	GivenName   string    `json:"givenName"`
+	FamilyName  string    `json:"familyName"`
+	AvatarPath  string    `json:"-"`
+	HasAvatar   bool      `json:"hasAvatar"`
+	Note        string    `json:"note"`
+	Source      string    `json:"source"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 // Store SQLite 儲存介面
 type Store interface {
-	// Contacts
+	// Contacts (PGP 公鑰)
 	ListContacts(ownerEmail string) ([]ContactKey, error)
 	GetContact(ownerEmail, contactEmail string) (*ContactKey, error)
 	UpsertContact(contact ContactKey) error
 	BulkUpsertContacts(ownerEmail string, contacts []ContactKey) (saved int, skipped []string, err error)
 	DeleteContact(ownerEmail, contactEmail string) (int64, error)
+
+	// Address book (通用通訊錄)
+	ListAddressContacts(ownerEmail string, query string, limit, offset int) ([]Contact, error)
+	GetAddressContact(ownerEmail, id string) (*Contact, error)
+	GetAddressContactByEmail(ownerEmail, email string) (*Contact, error)
+	CreateAddressContact(c *Contact) error
+	UpdateAddressContact(c *Contact) error
+	DeleteAddressContact(ownerEmail, id string) (int64, error)
+	CountAddressContacts(ownerEmail string) (int, error)
+	ResolveAddressContacts(ownerEmail string, emails []string) (map[string]*Contact, error)
 
 	// Personal keyring
 	GetKeyring(ownerEmail string) (*Keyring, error)
@@ -199,6 +225,23 @@ CREATE TABLE IF NOT EXISTS folder_order (
 	PRIMARY KEY (account_id, folder_name)
 );
 CREATE INDEX IF NOT EXISTS idx_folder_order_account ON folder_order(account_id);
+
+CREATE TABLE IF NOT EXISTS contacts (
+	id            TEXT NOT NULL PRIMARY KEY,
+	owner_email   TEXT NOT NULL,
+	email         TEXT NOT NULL,
+	display_name  TEXT NOT NULL DEFAULT '',
+	given_name    TEXT NOT NULL DEFAULT '',
+	family_name   TEXT NOT NULL DEFAULT '',
+	avatar_path   TEXT NOT NULL DEFAULT '',
+	note          TEXT NOT NULL DEFAULT '',
+	source        TEXT NOT NULL DEFAULT 'manual',
+	created_at    INTEGER NOT NULL,
+	updated_at    INTEGER NOT NULL,
+	UNIQUE(owner_email, email)
+);
+CREATE INDEX IF NOT EXISTS idx_contacts_owner ON contacts(owner_email);
+CREATE INDEX IF NOT EXISTS idx_contacts_owner_email ON contacts(owner_email, email);
 `
 
 // SQLiteStore SQLite 儲存實作
@@ -374,6 +417,199 @@ func (s *SQLiteStore) DeleteContact(ownerEmail, contactEmail string) (int64, err
 		return 0, fmt.Errorf("failed to delete contact: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+// ===== Address book (通用通訊錄) =====
+
+func scanContact(row interface{ Scan(...any) error }) (*Contact, error) {
+	var c Contact
+	var createdAt, updatedAt int64
+	err := row.Scan(&c.ID, &c.OwnerEmail, &c.Email, &c.DisplayName, &c.GivenName, &c.FamilyName, &c.AvatarPath, &c.Note, &c.Source, &createdAt, &updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	c.HasAvatar = c.AvatarPath != ""
+	c.CreatedAt = time.Unix(createdAt, 0).UTC()
+	c.UpdatedAt = time.Unix(updatedAt, 0).UTC()
+	return &c, nil
+}
+
+// ListAddressContacts 列出通訊錄（支援 q 關鍵字搜尋 email/displayName，limit/offset 分頁，0 表示不限）
+func (s *SQLiteStore) ListAddressContacts(ownerEmail string, query string, limit, offset int) ([]Contact, error) {
+	q := strings.TrimSpace(query)
+	var rows *sql.Rows
+	var err error
+	if q == "" {
+		if limit > 0 {
+			rows, err = s.db.Query(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? ORDER BY display_name ASC, email ASC LIMIT ? OFFSET ?`, ownerEmail, limit, offset)
+		} else {
+			rows, err = s.db.Query(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? ORDER BY display_name ASC, email ASC`, ownerEmail)
+		}
+	} else {
+		like := "%" + q + "%"
+		if limit > 0 {
+			rows, err = s.db.Query(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? AND (email LIKE ? OR display_name LIKE ? OR note LIKE ?) ORDER BY display_name ASC, email ASC LIMIT ? OFFSET ?`, ownerEmail, like, like, like, limit, offset)
+		} else {
+			rows, err = s.db.Query(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? AND (email LIKE ? OR display_name LIKE ? OR note LIKE ?) ORDER BY display_name ASC, email ASC`, ownerEmail, like, like, like)
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list contacts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make([]Contact, 0)
+	for rows.Next() {
+		c, err := scanContact(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *c)
+	}
+	return out, rows.Err()
+}
+
+// GetAddressContact 以 id 取得單一聯絡人
+func (s *SQLiteStore) GetAddressContact(ownerEmail, id string) (*Contact, error) {
+	row := s.db.QueryRow(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? AND id = ?`, ownerEmail, id)
+	c, err := scanContact(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get contact: %w", err)
+	}
+	return c, nil
+}
+
+// GetAddressContactByEmail 以 email 取得單一聯絡人
+func (s *SQLiteStore) GetAddressContactByEmail(ownerEmail, email string) (*Contact, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	row := s.db.QueryRow(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? AND email = ?`, ownerEmail, email)
+	c, err := scanContact(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get contact by email: %w", err)
+	}
+	return c, nil
+}
+
+// CreateAddressContact 新增聯絡人
+func (s *SQLiteStore) CreateAddressContact(c *Contact) error {
+	if c.OwnerEmail == "" || c.Email == "" {
+		return errors.New("owner_email and email are required")
+	}
+	c.Email = strings.ToLower(strings.TrimSpace(c.Email))
+	if c.ID == "" {
+		c.ID = uuid.New().String()
+	}
+	now := time.Now().UTC()
+	if c.CreatedAt.IsZero() {
+		c.CreatedAt = now
+	}
+	c.UpdatedAt = now
+	if c.Source == "" {
+		c.Source = "manual"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(`INSERT INTO contacts (id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, c.ID, c.OwnerEmail, c.Email, c.DisplayName, c.GivenName, c.FamilyName, c.AvatarPath, c.Note, c.Source, c.CreatedAt.Unix(), c.UpdatedAt.Unix())
+	if err != nil {
+		return fmt.Errorf("failed to create contact: %w", err)
+	}
+	c.HasAvatar = c.AvatarPath != ""
+	return nil
+}
+
+// UpdateAddressContact 更新聯絡人（以 id + owner 為鍵）
+func (s *SQLiteStore) UpdateAddressContact(c *Contact) error {
+	if c.ID == "" || c.OwnerEmail == "" {
+		return errors.New("id and owner_email are required")
+	}
+	c.Email = strings.ToLower(strings.TrimSpace(c.Email))
+	c.UpdatedAt = time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(`UPDATE contacts SET email = ?, display_name = ?, given_name = ?, family_name = ?, avatar_path = ?, note = ?, source = ?, updated_at = ? WHERE owner_email = ? AND id = ?`, c.Email, c.DisplayName, c.GivenName, c.FamilyName, c.AvatarPath, c.Note, c.Source, c.UpdatedAt.Unix(), c.OwnerEmail, c.ID)
+	if err != nil {
+		return fmt.Errorf("failed to update contact: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("contact not found")
+	}
+	c.HasAvatar = c.AvatarPath != ""
+	return nil
+}
+
+// DeleteAddressContact 刪除聯絡人
+func (s *SQLiteStore) DeleteAddressContact(ownerEmail, id string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(`DELETE FROM contacts WHERE owner_email = ? AND id = ?`, ownerEmail, id)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete contact: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// CountAddressContacts 計算聯絡人數
+func (s *SQLiteStore) CountAddressContacts(ownerEmail string) (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM contacts WHERE owner_email = ?`, ownerEmail).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count contacts: %w", err)
+	}
+	return n, nil
+}
+
+// ResolveAddressContacts 批量以 email 解析聯絡人（最多 100）
+func (s *SQLiteStore) ResolveAddressContacts(ownerEmail string, emails []string) (map[string]*Contact, error) {
+	if len(emails) == 0 {
+		return map[string]*Contact{}, nil
+	}
+	// 正規化並去重
+	uniq := make(map[string]struct{})
+	normed := make([]string, 0, len(emails))
+	for _, e := range emails {
+		ne := strings.ToLower(strings.TrimSpace(e))
+		if ne == "" {
+			continue
+		}
+		if _, ok := uniq[ne]; !ok {
+			uniq[ne] = struct{}{}
+			normed = append(normed, ne)
+		}
+		if len(normed) >= 100 {
+			break
+		}
+	}
+	if len(normed) == 0 {
+		return map[string]*Contact{}, nil
+	}
+	placeholders := strings.Repeat("?,", len(normed))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, 0, len(normed)+1)
+	args = append(args, ownerEmail)
+	for _, e := range normed {
+		args = append(args, e)
+	}
+	q := fmt.Sprintf(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? AND email IN (%s)`, placeholders)
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve contacts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make(map[string]*Contact)
+	for rows.Next() {
+		c, err := scanContact(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[c.Email] = c
+	}
+	return out, rows.Err()
 }
 
 // GetKeyring 取得使用者之個人金鑰包（無則回傳 nil）

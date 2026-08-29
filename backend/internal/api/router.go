@@ -18,6 +18,7 @@ func NewRouter(
 	eventsH *handler.EventsHandler,
 	pgpH *handler.PGPHandler,
 	contactsH *handler.ContactsHandler,
+	addressH *handler.AddressContactsHandler,
 	configH *handler.ServerConfigHandler,
 	accountsH *handler.AccountsHandler,
 	store session.Store,
@@ -109,6 +110,20 @@ func NewRouter(
 				pgp.Post("/contacts/bulk", contactsH.BulkUpsertContacts)
 				pgp.Post("/contacts/import", contactsH.ImportContacts)
 				pgp.Delete("/contacts/{email}", contactsH.DeleteContact)
+			})
+
+			// 通用通訊錄（地址簿，sqlite contacts 表，支援頭像）
+			protected.Route("/contacts", func(ab chi.Router) {
+				ab.Get("/", addressH.ListAddressContacts)
+				ab.Get("/resolve", addressH.Resolve)
+				ab.Post("/", addressH.CreateAddressContact)
+				ab.Post("/from-email", addressH.CreateFromEmail)
+				ab.Get("/{id}", addressH.GetAddressContact)
+				ab.Put("/{id}", addressH.UpdateAddressContact)
+				ab.Delete("/{id}", addressH.DeleteAddressContact)
+				ab.Get("/{id}/avatar", addressH.GetAvatar)
+				ab.Put("/{id}/avatar", addressH.PutAvatar)
+				ab.Delete("/{id}/avatar", addressH.DeleteAvatar)
 			})
 		})
 	})
