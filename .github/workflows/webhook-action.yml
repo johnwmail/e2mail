@@ -1,0 +1,61 @@
+name: webhook-action
+
+# Send a signed HTTPS request to a remote webhook-action server, which then runs
+# the deploy script. Copy this workflow into the repo you want to deploy.
+#
+# The signing secret lives in GitHub repo secrets:
+#   WEBHOOK_HOST      Full URL of the webhook-action endpoint (e.g. behind nginx/Cloudflare)
+#                     Example: https://deploy.example.com/action/webhook
+#   WEBHOOK_SECRET    The same secret configured in webhook-action's WEBHOOK_SECRET env
+#
+# Every payload field is forwarded by webhook-action to the deploy script as a
+# WEBHOOK_PARAM_* environment variable (e.g. WEBHOOK_PARAM_TAG, WEBHOOK_PARAM_REPOSITORY).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Trigger remote webhook-action
+    runs-on: ubuntu-latest
+
+    env:
+      WEBHOOK_HOST: ${{ secrets.WEBHOOK_HOST }}
+
+    steps:
+      - name: Skip if no webhook host configured
+        if: env.WEBHOOK_HOST == ''
+        run: |
+          echo "::notice::WEBHOOK_HOST secret not set — skipping deployment."
+          echo "To enable deployment, add WEBHOOK_HOST and WEBHOOK_SECRET secrets."
+
+      - name: Send signed HTTPS trigger
+        if: env.WEBHOOK_HOST != ''
+        env:
+          WEBHOOK_TAG: ${{ github.ref_name }}
+          WEBHOOK_REPO: ${{ github.event.repository.name }}
+          ENV_TYPE: "production"
+          DEBUG_MODE: "false"
+        run: |
+          # Build the JSON payload; any additional parameters go here and become
+          # WEBHOOK_PARAM_* env vars in the deploy script.
+          PAYLOAD=$(cat <<EOF
+          {
+            "repository": "$WEBHOOK_REPO",
+            "tag": "$WEBHOOK_TAG",
+            "env_type": "$ENV_TYPE",
+            "debug_mode": "$DEBUG_MODE"
+          }
+          EOF
+          )
+
+          # Sign the exact payload bytes with HMAC-SHA256 using WEBHOOK_SECRET.
+          SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "${{ secrets.WEBHOOK_SECRET }}" | awk '{print $2}')
+
+          # Deliver with the signature in X-Hub-Signature-256 as webhook-action expects.
+          curl -X POST \
+            --fail \
+            -H "Content-Type: application/json" \
+            -H "X-Hub-Signature-256: sha256=$SIGNATURE" \
+            -d "$PAYLOAD" \
+            "${{ secrets.WEBHOOK_HOST }}"
