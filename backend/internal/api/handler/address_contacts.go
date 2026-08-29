@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -412,11 +414,6 @@ func (h *AddressContactsHandler) PutAvatar(w http.ResponseWriter, r *http.Reques
 	}
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		// 嘗試 raw body
-		file = nil
-		if r.Body != nil {
-			// 已 ParseMultipartForm 失敗，嘗試直接讀
-		}
 		response.BadRequest(w, "file field 'file' is required")
 		return
 	}
@@ -437,7 +434,7 @@ func (h *AddressContactsHandler) PutAvatar(w http.ResponseWriter, r *http.Reques
 	}
 	// 魔術字節驗證
 	ct := http.DetectContentType(data)
-	if !(strings.HasPrefix(ct, "image/jpeg") || strings.HasPrefix(ct, "image/png") || strings.HasPrefix(ct, "image/webp") || strings.HasPrefix(ct, "image/gif")) {
+	if !strings.HasPrefix(ct, "image/jpeg") && !strings.HasPrefix(ct, "image/png") && !strings.HasPrefix(ct, "image/webp") && !strings.HasPrefix(ct, "image/gif") {
 		response.BadRequest(w, "only jpg/png/webp/gif allowed, got "+ct)
 		return
 	}
@@ -499,4 +496,431 @@ func (h *AddressContactsHandler) DeleteAvatar(w http.ResponseWriter, r *http.Req
 		_ = h.store.UpdateAddressContact(c)
 	}
 	response.Success(w, map[string]string{"message": "avatar deleted"})
+}
+
+// Export GET /api/contacts/export?format=csv|vcf
+func (h *AddressContactsHandler) Export(w http.ResponseWriter, r *http.Request) {
+	owner, ok := h.ownerFromCtx(r)
+	if !ok {
+		response.Unauthorized(w, "unauthorized session")
+		return
+	}
+	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	if format == "" {
+		format = "csv"
+	}
+	list, err := h.store.ListAddressContacts(owner, "", 0, 0)
+	if err != nil {
+		response.InternalServerError(w, "failed to list contacts: "+err.Error())
+		return
+	}
+	if format == "vcf" || format == "vcard" {
+		var buf bytes.Buffer
+		for _, c := range list {
+			buf.WriteString("BEGIN:VCARD\r\n")
+			buf.WriteString("VERSION:3.0\r\n")
+			fn := c.DisplayName
+			if fn == "" {
+				fn = c.Email
+			}
+			buf.WriteString("FN:" + escapeVCard(fn) + "\r\n")
+			// N: Family;Given;;;
+			fmt.Fprintf(&buf, "N:%s;%s;;;\r\n", escapeVCard(c.FamilyName), escapeVCard(c.GivenName))
+			fmt.Fprintf(&buf, "EMAIL;TYPE=INTERNET:%s\r\n", c.Email)
+			if c.Note != "" {
+				buf.WriteString("NOTE:" + escapeVCard(c.Note) + "\r\n")
+			}
+			buf.WriteString("END:VCARD\r\n")
+		}
+		w.Header().Set("Content-Type", "text/vcard; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="contacts.vcf"`)
+		w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+		_, _ = w.Write(buf.Bytes())
+		return
+	}
+	// default csv
+	var buf bytes.Buffer
+	cw := csv.NewWriter(&buf)
+	_ = cw.Write([]string{"email", "display_name", "given_name", "family_name", "note"})
+	for _, c := range list {
+		// 防公式注入：= + - @ 開頭加 '
+		safe := func(s string) string {
+			if s != "" && strings.Contains("=+-@", string(s[0])) {
+				return "'" + s
+			}
+			return s
+		}
+		_ = cw.Write([]string{safe(c.Email), safe(c.DisplayName), safe(c.GivenName), safe(c.FamilyName), safe(c.Note)})
+	}
+	cw.Flush()
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="contacts.csv"`)
+	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	_, _ = w.Write(buf.Bytes())
+}
+
+func escapeVCard(s string) string {
+	r := strings.ReplaceAll(s, "\\", "\\\\")
+	r = strings.ReplaceAll(r, "\r\n", "\\n")
+	r = strings.ReplaceAll(r, "\n", "\\n")
+	r = strings.ReplaceAll(r, ";", "\\;")
+	r = strings.ReplaceAll(r, ",", "\\,")
+	return r
+}
+
+// Import POST /api/contacts/import multipart file + ?mode=skip|overwrite
+//nolint:gocyclo // 匯入邏輯分支多，拆分會降低可讀性
+func (h *AddressContactsHandler) Import(w http.ResponseWriter, r *http.Request) {
+	owner, ok := h.ownerFromCtx(r)
+	if !ok {
+		response.Unauthorized(w, "unauthorized session")
+		return
+	}
+	mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
+	if mode == "" {
+		mode = strings.ToLower(strings.TrimSpace(r.FormValue("mode")))
+	}
+	if mode != "overwrite" {
+		mode = "skip"
+	}
+	// 限 5MB
+	r.Body = http.MaxBytesReader(w, r.Body, 5<<20)
+	if err := r.ParseMultipartForm(5 << 20); err != nil {
+		response.BadRequest(w, "file too large (max 5MB) or invalid multipart: "+err.Error())
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		response.BadRequest(w, "file field 'file' is required")
+		return
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		response.BadRequest(w, "failed to read file: "+err.Error())
+		return
+	}
+	if len(data) == 0 {
+		response.BadRequest(w, "empty file")
+		return
+	}
+	filename := ""
+	if header != nil {
+		filename = strings.ToLower(header.Filename)
+	}
+	// 偵測格式：副檔名或內容
+	isVCard := strings.HasSuffix(filename, ".vcf") || strings.HasSuffix(filename, ".vcard")
+	if !isVCard && bytes.Contains(bytes.ToUpper(data[:min(1024, len(data))]), []byte("BEGIN:VCARD")) {
+		isVCard = true
+	}
+	type impItem struct {
+		Email       string
+		DisplayName string
+		GivenName   string
+		FamilyName  string
+		Note        string
+	}
+	var items []impItem
+	if isVCard {
+		vc, _ := parseVCard(data)
+		for _, v := range vc {
+			items = append(items, impItem(v))
+		}
+	} else {
+		csvItems, err2 := parseCSV(data)
+		if err2 != nil {
+			response.BadRequest(w, "failed to parse csv: "+err2.Error())
+			return
+		}
+		for _, v := range csvItems {
+			items = append(items, impItem(v))
+		}
+	}
+	if len(items) == 0 {
+		response.Success(w, map[string]any{"saved": 0, "skipped": []string{}, "invalid": 0, "message": "no valid contacts found"})
+		return
+	}
+	// 上限檢查
+	cnt, _ := h.store.CountAddressContacts(owner)
+	remaining := 2000 - cnt
+	if remaining <= 0 {
+		response.BadRequest(w, "contact limit reached (2000)")
+		return
+	}
+	saved := 0
+	skipped := []string{}
+	invalid := 0
+	var overwriteIDs []string // for overwrite mode
+	for _, it := range items {
+		email := strings.ToLower(strings.TrimSpace(it.Email))
+		if email == "" {
+			invalid++
+			continue
+		}
+		if _, err := mail.ParseAddress(email); err != nil {
+			invalid++
+			continue
+		}
+		exist, _ := h.store.GetAddressContactByEmail(owner, email)
+		if exist != nil {
+			if mode == "skip" {
+				skipped = append(skipped, email)
+				continue
+			}
+			// overwrite
+			exist.DisplayName = it.DisplayName
+			if it.GivenName != "" {
+				exist.GivenName = it.GivenName
+			}
+			if it.FamilyName != "" {
+				exist.FamilyName = it.FamilyName
+			}
+			if it.Note != "" {
+				exist.Note = it.Note
+			}
+			if err := h.store.UpdateAddressContact(exist); err == nil {
+				saved++
+			} else {
+				skipped = append(skipped, email)
+			}
+			_ = overwriteIDs
+			continue
+		}
+		if remaining != 0 && saved >= remaining {
+			skipped = append(skipped, email)
+			continue
+		}
+		c := &storage.Contact{
+			ID:          uuid.New().String(),
+			OwnerEmail:  owner,
+			Email:       email,
+			DisplayName: strings.TrimSpace(it.DisplayName),
+			GivenName:   strings.TrimSpace(it.GivenName),
+			FamilyName:  strings.TrimSpace(it.FamilyName),
+			Note:        strings.TrimSpace(it.Note),
+			Source:      "import",
+		}
+		if c.DisplayName == "" {
+			c.DisplayName = email
+		}
+		if err := h.store.CreateAddressContact(c); err != nil {
+			if strings.Contains(err.Error(), "UNIQUE") {
+				skipped = append(skipped, email)
+			} else {
+				invalid++
+			}
+			continue
+		}
+		saved++
+	}
+	response.Success(w, map[string]any{"saved": saved, "skipped": skipped, "invalid": invalid})
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func parseCSV(data []byte) ([]struct {
+	Email       string
+	DisplayName string
+	GivenName   string
+	FamilyName  string
+	Note        string
+}, error) {
+	r := csv.NewReader(bytes.NewReader(data))
+	r.TrimLeadingSpace = true
+	r.LazyQuotes = true
+	records, err := r.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(records) == 0 {
+		return nil, nil
+	}
+	// 偵測表頭
+	header := records[0]
+	hasHeader := false
+	for _, h := range header {
+		lh := strings.ToLower(strings.TrimSpace(h))
+		if lh == "email" || lh == "display_name" || lh == "displayname" || lh == "given_name" || lh == "family_name" || lh == "note" {
+			hasHeader = true
+			break
+		}
+	}
+	start := 0
+	idxEmail, idxDisplay, idxGiven, idxFamily, idxNote := 0, 1, 2, 3, 4
+	if hasHeader {
+		start = 1
+		m := map[string]int{}
+		for i, h := range header {
+			lh := strings.ToLower(strings.TrimSpace(h))
+			lh = strings.ReplaceAll(lh, " ", "_")
+			m[lh] = i
+		}
+		if v, ok := m["email"]; ok {
+			idxEmail = v
+		} else {
+			idxEmail = -1
+		}
+		if v, ok := m["display_name"]; ok {
+			idxDisplay = v
+		} else if v, ok := m["displayname"]; ok {
+			idxDisplay = v
+		} else {
+			idxDisplay = -1
+		}
+		if v, ok := m["given_name"]; ok {
+			idxGiven = v
+		} else {
+			idxGiven = -1
+		}
+		if v, ok := m["family_name"]; ok {
+			idxFamily = v
+		} else {
+			idxFamily = -1
+		}
+		if v, ok := m["note"]; ok {
+			idxNote = v
+		} else {
+			idxNote = -1
+		}
+	}
+	var out []struct {
+		Email       string
+		DisplayName string
+		GivenName   string
+		FamilyName  string
+		Note        string
+	}
+	for _, rec := range records[start:] {
+		get := func(idx int) string {
+			if idx < 0 || idx >= len(rec) {
+				return ""
+			}
+			return strings.TrimSpace(rec[idx])
+		}
+		// 若無表頭，依序 email, display_name...
+		if !hasHeader {
+			// 至少1欄時，第一欄為 email
+			if len(rec) == 0 {
+				continue
+			}
+		}
+		email := get(idxEmail)
+		// 若 email 欄為空，嘗試第一欄
+		if email == "" && !hasHeader && len(rec) > 0 {
+			email = strings.TrimSpace(rec[0])
+		}
+		email = strings.TrimPrefix(email, "'")
+		if email == "" {
+			continue
+		}
+		out = append(out, struct {
+			Email       string
+			DisplayName string
+			GivenName   string
+			FamilyName  string
+			Note        string
+		}{
+			Email:       email,
+			DisplayName: get(idxDisplay),
+			GivenName:   get(idxGiven),
+			FamilyName:  get(idxFamily),
+			Note:        get(idxNote),
+		})
+	}
+	return out, nil
+}
+
+func parseVCard(data []byte) ([]struct {
+	Email       string
+	DisplayName string
+	GivenName   string
+	FamilyName  string
+	Note        string
+}, error) {
+	// 展開折行（處理 vCard 折行）
+	text := string(data)
+	text = strings.ReplaceAll(text, "\r\n ", "")
+	text = strings.ReplaceAll(text, "\r\n\t", "")
+	text = strings.ReplaceAll(text, "\n ", "")
+	text = strings.ReplaceAll(text, "\n\t", "")
+	_ = text // 保留展開後文本供後續如需
+	var out []struct {
+		Email       string
+		DisplayName string
+		GivenName   string
+		FamilyName  string
+		Note        string
+	}
+	// 用原始大小寫解析，但先按 BEGIN 切
+	rawCards := bytes.Split(data, []byte("BEGIN:VCARD"))
+	for _, rc := range rawCards {
+		if len(bytes.TrimSpace(rc)) == 0 {
+			continue
+		}
+		block := string(rc)
+		// block 含 BEGIN:VCARD 後內容，需補回
+		lines := strings.Split(block, "\n")
+		var email, fn, n, note string
+		for _, line := range lines {
+			line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+			if line == "" || strings.HasPrefix(strings.ToUpper(line), "BEGIN:") || strings.HasPrefix(strings.ToUpper(line), "END:") || strings.HasPrefix(strings.ToUpper(line), "VERSION:") {
+				continue
+			}
+			// 去掉參數
+			upper := strings.ToUpper(line)
+			if strings.HasPrefix(upper, "EMAIL") {
+				// EMAIL;TYPE=...:addr
+				if idx := strings.Index(line, ":"); idx != -1 {
+					email = strings.TrimSpace(line[idx+1:])
+					// 可能有逗號多值，取第一個
+					if comma := strings.Index(email, ","); comma != -1 {
+						email = email[:comma]
+					}
+				}
+			} else if strings.HasPrefix(upper, "FN:") {
+				fn = strings.TrimSpace(line[3:])
+				fn = strings.ReplaceAll(fn, "\\,", ",")
+				fn = strings.ReplaceAll(fn, "\\;", ";")
+				fn = strings.ReplaceAll(fn, "\\n", "\n")
+				fn = strings.ReplaceAll(fn, "\\\\", "\\")
+			} else if strings.HasPrefix(upper, "N:") {
+				n = strings.TrimSpace(line[2:])
+			} else if strings.HasPrefix(upper, "NOTE:") {
+				note = strings.TrimSpace(line[5:])
+				note = strings.ReplaceAll(note, "\\n", "\n")
+				note = strings.ReplaceAll(note, "\\,", ",")
+				note = strings.ReplaceAll(note, "\\\\", "\\")
+			}
+		}
+		if email == "" {
+			continue
+		}
+		email = strings.ToLower(strings.TrimSpace(email))
+		var given, family string
+		if n != "" {
+			parts := strings.Split(n, ";")
+			if len(parts) > 0 {
+				family = strings.TrimSpace(parts[0])
+			}
+			if len(parts) > 1 {
+				given = strings.TrimSpace(parts[1])
+			}
+		}
+		if fn == "" {
+			fn = email
+		}
+		out = append(out, struct {
+			Email       string
+			DisplayName string
+			GivenName   string
+			FamilyName  string
+			Note        string
+		}{Email: email, DisplayName: fn, GivenName: given, FamilyName: family, Note: note})
+	}
+	return out, nil
 }
