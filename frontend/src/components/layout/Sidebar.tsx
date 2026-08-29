@@ -70,6 +70,14 @@ const getFolderDisplayName = (folder: FolderInfo) => {
 const isVisibleFolder = (f: FolderInfo, prefs: Record<string, boolean> | undefined) =>
   f.specialUse === 'inbox' || f.name.toUpperCase() === 'INBOX' || (prefs?.[f.name] ?? true);
 
+// 計數用：是否垃圾桶 / Virtual（排除於頂層合計）
+const isTrashFolder = (f: FolderInfo) => f.specialUse === 'trash' || /trash|bin|垃圾/i.test(f.name);
+const isVirtualFolder = (f: FolderInfo) => /^virtual(\/|$)/i.test(f.name);
+const isTopLevelFolder = (f: FolderInfo) => {
+  const delim = f.delimiter || '/';
+  return !f.name.includes(delim);
+};
+
 // 樹狀節點：將 flat folder list 依 delimiter + name path 組成樹
 interface FolderNode {
   path: string;        // 完整資料夾名（name）
@@ -265,7 +273,11 @@ const AccountFolders: React.FC<{
   });
 
   const visibleFolders = folders?.filter((f) => isVisibleFolder(f, folderPrefs)) ?? [];
-  const accountUnread = visibleFolders.reduce((sum, f) => sum + f.unreadCount, 0) ?? 0;
+  // 頂層合計：只計頂層 folder，不包括垃圾桶及 Virtual
+  const accountUnread =
+    visibleFolders
+      .filter((f) => isTopLevelFolder(f) && !isTrashFolder(f) && !isVirtualFolder(f))
+      .reduce((sum, f) => sum + f.unreadCount, 0) ?? 0;
 
   return (
     <div>

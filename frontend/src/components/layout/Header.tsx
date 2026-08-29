@@ -14,7 +14,7 @@ export const Header: React.FC = () => {
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isPgpModalOpen, setIsPgpModalOpen] = useState(false);
 
-  // 查所有帳號嘅 inbox folders 計算總未讀（唔依賴 Sidebar）
+  // 頂層合計：所有帳號嘅頂層 folder 未讀總和，不包括垃圾桶及 Virtual
   const accounts = session?.accounts ?? [];
   const foldersQueries = useQueries({
     queries: accounts.map((acc) => ({
@@ -24,13 +24,17 @@ export const Header: React.FC = () => {
     })),
   });
 
-  // debug log — 唔會顯示俾用戶，淨係 browser console
-  console.log('[Header] accounts:', accounts.length, 'queries:', foldersQueries.map((q) => ({ id: q.dataUpdatedAt, loading: q.isLoading, count: q.data?.length })));
-
-  const inboxUnread = foldersQueries.reduce((sum: number, q) => {
+  const totalUnread = foldersQueries.reduce((sum: number, q) => {
     if (!Array.isArray(q.data)) return sum;
-    const inbox = q.data.find((f: FolderInfo) => f.specialUse === 'inbox' || /^inbox$/i.test(f.name));
-    return sum + (inbox?.unreadCount ?? 0);
+    for (const f of q.data as FolderInfo[]) {
+      const isTrash = f.specialUse === 'trash' || /trash|bin|垃圾/i.test(f.name);
+      const isVirtual = /^virtual(\/|$)/i.test(f.name);
+      const delim = f.delimiter || '/';
+      const isTopLevel = !f.name.includes(delim);
+      if (!isTopLevel || isTrash || isVirtual) continue;
+      sum += f.unreadCount ?? 0;
+    }
+    return sum;
   }, 0);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -103,7 +107,7 @@ export const Header: React.FC = () => {
               >
                 <Menu className="w-5 h-5" />
                 <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[9px] font-bold leading-none border-2 border-white dark:border-slate-900">
-                  {inboxUnread > 99 ? '99+' : inboxUnread || 0}
+                  {totalUnread > 99 ? '99+' : totalUnread}
                 </span>
               </button>
 
