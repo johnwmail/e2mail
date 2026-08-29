@@ -116,6 +116,8 @@ func NewRouter(
 			protected.Route("/contacts", func(ab chi.Router) {
 				ab.Get("/", addressH.ListAddressContacts)
 				ab.Get("/resolve", addressH.Resolve)
+				ab.Get("/export", addressH.Export)
+				ab.Post("/import", addressH.Import)
 				ab.Post("/", addressH.CreateAddressContact)
 				ab.Post("/from-email", addressH.CreateFromEmail)
 				ab.Get("/{id}", addressH.GetAddressContact)

@@ -12,7 +12,7 @@ interface MailState {
   composerDraft: Partial<OutgoingMessage> | null;
   composerKey: number;
   isSidebarOpen: boolean;
-  view: 'mail' | 'accounts';
+  view: 'mail' | 'accounts' | 'contacts';
   inboxUnread: number;
 
   setCurrentFolder: (folder: string) => void;
@@ -24,7 +24,7 @@ interface MailState {
   closeComposer: () => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
-  setView: (view: 'mail' | 'accounts') => void;
+  setView: (view: 'mail' | 'accounts' | 'contacts') => void;
   setInboxUnread: (n: number) => void;
 }
 

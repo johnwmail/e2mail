@@ -90,4 +90,36 @@ export const contactsApi = {
   deleteAvatar: async (id: string): Promise<void> => {
     await request<void>(`/contacts/${encodeURIComponent(id)}/avatar`, { method: 'DELETE' });
   },
+
+  importContacts: async (file: File, mode: 'skip' | 'overwrite' = 'skip'): Promise<{ saved: number; skipped: string[]; invalid: number }> => {
+    const token = localStorage.getItem('webmail_token');
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`/api/contacts/import?mode=${mode}`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `import failed: ${res.status}`);
+    }
+    const json = await res.json();
+    return json.data as { saved: number; skipped: string[]; invalid: number };
+  },
+
+  exportContacts: async (format: 'csv' | 'vcf' = 'csv'): Promise<void> => {
+    const token = localStorage.getItem('webmail_token');
+    const res = await fetch(`/api/contacts/export?format=${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error(`export failed: ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = format === 'vcf' ? 'contacts.vcf' : 'contacts.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };
