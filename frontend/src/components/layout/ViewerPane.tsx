@@ -430,6 +430,7 @@ export const ViewerPane: React.FC = () => {
           textBody={message.textBody}
           attachments={message.attachments}
           onDecryptedChange={setDecryptedContent}
+          trustedSender={!!senderContact}
         />
       </div>
 

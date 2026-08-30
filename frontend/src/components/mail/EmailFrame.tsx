@@ -12,6 +12,7 @@ interface EmailFrameProps {
   textBody: string;
   attachments: AttachmentInfo[];
   onDecryptedChange?: (text: string) => void;
+  trustedSender?: boolean;
 }
 
 export const EmailFrame: React.FC<EmailFrameProps> = ({
@@ -21,9 +22,15 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
   textBody,
   attachments,
   onDecryptedChange,
+  trustedSender = false,
 }) => {
-  const [allowRemoteImages, setAllowRemoteImages] = useState(false);
+  const [allowRemoteImages, setAllowRemoteImages] = useState(trustedSender);
   const [hasRemoteImages, setHasRemoteImages] = useState(false);
+
+  // 若寄件人已在通訊錄，自動放行外部圖片
+  useEffect(() => {
+    if (trustedSender) setAllowRemoteImages(true);
+  }, [trustedSender]);
 
   // PGP 解密狀態
   const [decryptedContent, setDecryptedContent] = useState<string | null>(null);
