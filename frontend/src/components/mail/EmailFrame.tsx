@@ -24,13 +24,10 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
   onDecryptedChange,
   trustedSender = false,
 }) => {
-  const [allowRemoteImages, setAllowRemoteImages] = useState(trustedSender);
+  const [userAllowed, setUserAllowed] = useState(false);
   const [hasRemoteImages, setHasRemoteImages] = useState(false);
-
-  // 若寄件人已在通訊錄，自動放行外部圖片
-  useEffect(() => {
-    if (trustedSender) setAllowRemoteImages(true);
-  }, [trustedSender]);
+  // 可信寄件人（已在通訊錄）自動放行，無需 relogin
+  const allowRemoteImages = trustedSender || userAllowed;
 
   // PGP 解密狀態
   const [decryptedContent, setDecryptedContent] = useState<string | null>(null);
@@ -47,7 +44,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
   }, [textBody, htmlBody]);
 
   useEffect(() => {
-    setAllowRemoteImages(false);
+    setUserAllowed(false);
     setDecryptedContent(null);
     setIsDecrypted(false);
     setIsSignatureVerified(null);
@@ -322,7 +319,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
             <span>已攔截外部圖片連結以防追蹤像素。</span>
           </div>
           <button
-            onClick={() => setAllowRemoteImages(true)}
+            onClick={() => setUserAllowed(true)}
             className="flex items-center gap-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium transition"
           >
             <Image className="w-3.5 h-3.5" />
