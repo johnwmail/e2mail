@@ -3,14 +3,10 @@ name: container
 # Build & push container image（tag push 觸發）。build 成功後 deploy job 先會啟動。
 #
 # Deploy job 需要喺 GitHub repo Secrets 設定：
-#   DEPLOY_HOST     遠端主機 IP / hostname
-#   DEPLOY_USER     SSH 登入用戶
-#   DEPLOY_SSH_KEY  SSH 私鑰（OpenSSH 格式）
-#   DEPLOY_PORT     SSH port
-#   DEPLOY_CMD      遠端部署指令。可用環境變數：
-#                     $DEPLOY_TAG    tag 版本（例如 v0.1.17）
-#                     $DEPLOY_REPO   倉庫名（例如 e2mail）
-# 例子：cd /opt/$DEPLOY_REPO && docker compose pull ghcr.io/johnwmail/$DEPLOY_REPO:$DEPLOY_TAG && docker compose up -d
+#   WEBHOOK_HOST    webhook-action 嘅 HTTPS URL（必須 https:// 開頭）
+#   WEBHOOK_SECRET  用於 HMAC-SHA256 簽名嘅密鑰（與對端 WEBHOOK_SECRET 一致）
+#
+# workflow_dispatch 可手動觸發：輸入 tag / env_type / debug_mode 覆蓋預設。
 #
 # 注意：workflow_run 觸發器唔可以經 tag push 觸發（只追蹤 default branch），
 # 所以 deploy 直接做成本 workflow 入面一個 job（needs: build）保證順序。
@@ -20,11 +16,32 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build/deploy（例如 v0.1.21，留空則用當前 ref）'
+        required: false
+        type: string
+      env_type:
+        description: 'env_type（production / staging）'
+        required: false
+        default: 'production'
+        type: string
+      debug_mode:
+        description: 'debug_mode（true / false）'
+        required: false
+        default: 'false'
+        type: string
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
     name: Build & push container image
     runs-on: ubuntu-latest
+    # push 只喺 tag 先跑；workflow_dispatch 允許手動指定 tag
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
@@ -36,7 +53,15 @@ jobs:
 
       - name: Resolve build metadata
         id: meta
-        run: echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          # workflow_dispatch 喺 branch 上觸發但未填 tag 時，github.ref_name 係 branch 名，必須攔截
+          if [[ "$TAG" == "main" || "$TAG" == "master" ]]; then
+            echo "::error::workflow_dispatch 需填寫 tag（例如 v0.1.21）"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU (for multi-arch codegen)
         uses: docker/setup-qemu-action@v3
@@ -60,12 +85,14 @@ jobs:
 
       - name: Compose push tags
         id: tags
+        env:
+          TAG_NAME: ${{ steps.meta.outputs.tag }}
         run: |
-          TAGS="ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          TAGS="ghcr.io/${{ github.repository }}:${TAG_NAME}
           ghcr.io/${{ github.repository }}:latest"
           if [ "$DOCKER_HUB_ENABLED" = "true" ]; then
             TAGS="$TAGS
-          docker.io/${{ secrets.DOCKER_USERNAME }}/e2mail:${{ github.ref_name }}
+          docker.io/${{ secrets.DOCKER_USERNAME }}/e2mail:${TAG_NAME}
           docker.io/${{ secrets.DOCKER_USERNAME }}/e2mail:latest"
           fi
           # GITHUB_OUTPUT is single-line per assignment; use a heredoc delimiter
@@ -84,40 +111,71 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ steps.meta.outputs.tag }}
             BUILD_TIME=${{ steps.meta.outputs.build_time }}
             COMMIT_HASH=${{ github.sha }}
 
-  # Deploy 喺 build 成功後執行（同一個 workflow 檔案用 needs: build 保證順序）。
-  # 只喺 tag push（github.ref_name 係 tag 名）時部署；workflow_dispatch 手動跑唔部署。
   deploy:
-    name: Deploy
+    name: Trigger remote webhook-action
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # 只喺 tag 推送或手動指定 tag 時先部署
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 2
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: false
+    environment: production
 
     env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      WEBHOOK_HOST: ${{ secrets.WEBHOOK_HOST }}
 
     steps:
-      - name: Skip if no deploy host configured
-        if: env.DEPLOY_HOST == ''
+      - name: Skip if no webhook host configured
+        if: env.WEBHOOK_HOST == ''
         run: |
-          echo "::notice::DEPLOY_HOST secret not set — skipping deployment."
-          echo "To enable deployment, add DEPLOY_HOST, DEPLOY_PORT, DEPLOY_USER, DEPLOY_SSH_KEY, and DEPLOY_CMD secrets."
+          echo "::notice::WEBHOOK_HOST secret not set — skipping deployment."
+          echo "To enable deployment, add WEBHOOK_HOST and WEBHOOK_SECRET secrets."
 
-      - name: Deploy to remote host
-        if: env.DEPLOY_HOST != ''
+      - name: Validate webhook host is https
+        if: env.WEBHOOK_HOST != ''
+        run: |
+          case "${{ secrets.WEBHOOK_HOST }}" in
+            https://*) echo "WEBHOOK_HOST is https — ok" ;;
+            *) echo "::error::WEBHOOK_HOST must start with https:// (got ${WEBHOOK_HOST:0:20}…)" ; exit 1 ;;
+          esac
+
+      - name: Send signed HTTPS trigger
+        if: env.WEBHOOK_HOST != ''
         env:
-          DEPLOY_TAG: ${{ github.ref_name }}
-          DEPLOY_REPO: ${{ github.event.repository.name }}
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          envs: DEPLOY_TAG, DEPLOY_REPO
-          script: |
-            echo "Deploying ${DEPLOY_REPO} tag: ${DEPLOY_TAG}"
-            ${{ secrets.DEPLOY_CMD }}
+          WEBHOOK_TAG: ${{ inputs.tag || github.ref_name }}
+          WEBHOOK_REPO: ${{ github.event.repository.name }}
+          ENV_TYPE: ${{ inputs.env_type || 'production' }}
+          DEBUG_MODE: ${{ inputs.debug_mode || 'false' }}
+        run: |
+          # Build the JSON payload; any additional parameters go here and become
+          # WEBHOOK_PARAM_* env vars in the deploy script.
+          PAYLOAD=$(cat <<EOF
+          {
+            "repository": "$WEBHOOK_REPO",
+            "tag": "$WEBHOOK_TAG",
+            "env_type": "$ENV_TYPE",
+            "debug_mode": "$DEBUG_MODE"
+          }
+          EOF
+          )
+
+          # Sign the exact payload bytes with HMAC-SHA256 using WEBHOOK_SECRET.
+          SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "${{ secrets.WEBHOOK_SECRET }}" | awk '{print $2}')
+
+          # Deliver with the signature in X-Hub-Signature-256 as webhook-action expects.
+          # --max-time 15 避免掛起；--retry 2 容忍瞬間網絡抖動。
+          curl -X POST \
+            --fail \
+            --max-time 15 \
+            --retry 2 \
+            --retry-delay 2 \
+            -H "Content-Type: application/json" \
+            -H "X-Hub-Signature-256: sha256=$SIGNATURE" \
+            -d "$PAYLOAD" \
+            "${{ secrets.WEBHOOK_HOST }}"
