@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"encoding/base32"
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
 	"github.com/johnwmail/e2mail/backend/internal/auth"
@@ -15,6 +17,11 @@ import (
 // TwoFAStatusResponse 2FA 狀態回應
 type TwoFAStatusResponse struct {
 	Enabled bool `json:"enabled"`
+}
+
+// TwoFASetupRequest 自訂 secret（選填，用於沿用舊 2FA）
+type TwoFASetupRequest struct {
+	Secret string `json:"secret,omitempty"`
 }
 
 // TwoFASetupResponse setup 回應（包含 secret 與 otpauth URI）
@@ -59,6 +66,7 @@ func (h *AuthHandler) TwoFAStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // TwoFASetup 生成新的 TOTP secret 與 otpauth URI（尚未啟用，等待 verify）
+// 支援自訂 secret（用於沿用舊 MYOLD2FA...），若提供則沿用，否則隨機產生
 func (h *AuthHandler) TwoFASetup(w http.ResponseWriter, r *http.Request) {
 	sess, ok := middleware.GetSessionFromContext(r.Context())
 	if !ok || sess == nil {
@@ -77,7 +85,19 @@ func (h *AuthHandler) TwoFASetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secret := auth.GenerateSecret()
+	// 支援自訂 secret（沿用舊 2FA）
+	var setupReq TwoFASetupRequest
+	_ = json.NewDecoder(r.Body).Decode(&setupReq) // body 可為空，忽略錯誤以兼容舊客戶端
+	secret := ""
+	if s := normalizeSecret(setupReq.Secret); s != "" {
+		if err := validateSecret(s); err != nil {
+			response.BadRequest(w, err.Error())
+			return
+		}
+		secret = s
+	} else {
+		secret = auth.GenerateSecret()
+	}
 	key, err := auth.GenerateKey(sess.Email, secret)
 	if err != nil {
 		response.InternalServerError(w, "failed to generate TOTP key")
@@ -236,4 +256,29 @@ func (h *AuthHandler) TwoFARegenerateBackupCodes(w http.ResponseWriter, r *http.
 
 	log.Printf("[2FA] Regenerated backup codes for %s", sess.Email)
 	response.Success(w, TwoFARegenerateResponse{BackupCodes: plainCodes})
+}
+
+func normalizeSecret(s string) string {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	s = strings.ReplaceAll(s, " ", "")
+	s = strings.ReplaceAll(s, "-", "")
+	return strings.TrimRight(s, "=")
+}
+
+func validateSecret(s string) error {
+	if len(s) < 16 {
+		return validationError("secret 太短，至少 16 個 base32 字元（A-Z2-7）")
+	}
+	if len(s) > 64 {
+		return validationError("secret 太長，最多 64 個字元")
+	}
+	for _, c := range s {
+		if (c < 'A' || c > 'Z') && (c < '2' || c > '7') {
+			return validationError("secret 只能包含 A-Z2-7（base32）")
+		}
+	}
+	if _, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(s); err != nil {
+		return validationError("無效的 base32 secret: " + err.Error())
+	}
+	return nil
 }
