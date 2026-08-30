@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/base32"
 	"encoding/json"
 	"errors"
 	"log"
@@ -227,7 +228,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		accounts = append(accounts, *acc)
 	}
 
-	// 4. 建立 Session（自帶 accounts + 加密 DEK）
+	// 4. 一次性遷移：若 2FA secret 仍明文，立即用 DEK 加密（手動塞明文後下次登入自動轉密文）
+	h.maybeMigrateTwoFA(ownerEmail, dek)
+
+	// 5. 建立 Session（自帶 accounts + 加密 DEK）
 	newSess := &session.Session{
 		Email:    ownerEmail,
 		Username: username,
@@ -240,7 +244,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5. 啟動背景 IDLE 監聽（所有帳號）
+	// 6. 啟動背景 IDLE 監聽（所有帳號）
 	h.startIdleForAccounts(savedSess, dek, accounts)
 
 	// 6. 設定 HttpOnly Cookie（TTL 與 Secure 由 env 控制）
@@ -414,6 +418,7 @@ func (h *AuthHandler) completeLogin(w http.ResponseWriter, r *http.Request, pl *
 		response.Unauthorized(w, err.Error())
 		return
 	}
+	h.maybeMigrateTwoFA(ownerEmail, dek)
 
 	accounts, err := h.accountsWithPassword(ownerEmail, cred, dek)
 	if err != nil {
@@ -479,6 +484,44 @@ func (h *AuthHandler) completeLogin(w http.ResponseWriter, r *http.Request, pl *
 
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// maybeMigrateTwoFA 若 two_fa.secret 仍明文（能 base32 decode 且 Decrypt 失敗），即用 DEK 加密並回寫
+// 用於手動塞明文後下次登入自動轉密文（值不變，只加密）
+func (h *AuthHandler) maybeMigrateTwoFA(ownerEmail string, dek []byte) {
+	if len(dek) == 0 {
+		return
+	}
+	twoFA, err := h.storage.GetTwoFA(ownerEmail)
+	if err != nil || twoFA == nil {
+		return
+	}
+	// 已加密則 Decrypt 成功，無需遷移
+	if _, err := crypto.Decrypt(dek, twoFA.Secret); err == nil {
+		return
+	}
+	// 嘗試當明文 base32 驗證（需符合 TOTP secret 格式）
+	trimmed := strings.ToUpper(strings.TrimSpace(twoFA.Secret))
+	trimmed = strings.ReplaceAll(trimmed, " ", "")
+	trimmed = strings.ReplaceAll(trimmed, "-", "")
+	trimmed = strings.TrimRight(trimmed, "=")
+	if len(trimmed) < 16 {
+		return
+	}
+	if _, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(trimmed); err != nil {
+		return
+	}
+	enc, err := crypto.Encrypt(dek, []byte(twoFA.Secret))
+	if err != nil {
+		log.Printf("[2FA MIGRATE] encrypt failed for %s: %v", ownerEmail, err)
+		return
+	}
+	twoFA.Secret = enc
+	if err := h.storage.SaveTwoFA(twoFA); err != nil {
+		log.Printf("[2FA MIGRATE] save failed for %s: %v", ownerEmail, err)
+		return
+	}
+	log.Printf("[2FA MIGRATE] migrated plaintext 2FA secret to encrypted for %s", ownerEmail)
 }
 
 // Logout 登出並清理連線池與 IDLE

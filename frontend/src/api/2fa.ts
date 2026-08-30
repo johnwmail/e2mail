@@ -11,9 +11,10 @@ export const twoFApi = {
     return request<TwoFAStatusResponse>('/2fa/status');
   },
 
-  setup: async (): Promise<TwoFASetupResponse> => {
+  setup: async (secret?: string): Promise<TwoFASetupResponse> => {
     return request<TwoFASetupResponse>('/2fa/setup', {
       method: 'POST',
+      body: secret ? JSON.stringify({ secret }) : undefined,
     });
   },
 

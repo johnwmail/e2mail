@@ -38,6 +38,10 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
   const [regenerateMode, setRegenerateMode] = useState(false);
   const [showActionCode, setShowActionCode] = useState(false);
 
+  // 沿用舊 2FA（手動輸入 MYOLD2FA...）
+  const [useCustom, setUseCustom] = useState(false);
+  const [customSecret, setCustomSecret] = useState('');
+
   const loadStatus = useCallback(async () => {
     try {
       const res = await twoFApi.getStatus();
@@ -55,7 +59,13 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
     setLoading(true);
     setMsg(null);
     try {
-      const res = await twoFApi.setup();
+      const secretToUse = useCustom ? customSecret.trim().toUpperCase() : undefined;
+      if (useCustom && !secretToUse) {
+        setMsg({ type: 'error', text: '請輸入舊 2FA secret（MYOLD2FA...）' });
+        setLoading(false);
+        return;
+      }
+      const res = await twoFApi.setup(secretToUse);
       setSetup(res);
       setBackupCodes(null);
       setVerifyCode('');
@@ -271,26 +281,42 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
             </form>
           </div>
         ) : (
-          /* 未啟用，顯示啟用按鈕 */
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+          /* 未啟用，顯示啟用按鈕 + 舊 2FA 手動輸入 */
+          <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
             <div className="flex items-start gap-2.5 min-w-0">
               <ShieldOff className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold text-slate-900 dark:text-white">
                   兩步驟驗證未啟用
                 </div>
                 <div className="text-[11px] text-slate-500 leading-relaxed mt-0.5">
                   啟用後，每次登入除咗密碼仲需要 Authenticator App 嘅驗證碼，大幅提升帳號安全性。
                 </div>
+                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
+                  <input type="checkbox" checked={useCustom} onChange={(e) => setUseCustom(e.target.checked)} className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600" />
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">沿用舊 2FA（手動輸入 MYOLD2FA secret）</span>
+                </label>
+                {useCustom && (
+                  <div className="mt-2">
+                    <input
+                      type="text"
+                      value={customSecret}
+                      onChange={(e) => setCustomSecret(e.target.value.toUpperCase())}
+                      placeholder="MYOLD2FA...（A-Z2-7，至少16字元）"
+                      className="w-full px-3 py-2 text-xs font-mono tracking-widest bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <div className="text-[10px] text-slate-400 mt-1">需為有效 base32，提交後仍需用 App 嘅 6 位碼驗證先會寫入 DB。</div>
+                  </div>
+                )}
               </div>
             </div>
             <button
               onClick={handleSetup}
               disabled={loading}
-              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50 shrink-0 w-full sm:w-auto"
+              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50 shrink-0 w-full"
             >
               {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-              啟用兩步驟驗證
+              {useCustom ? '使用舊 secret 產生 QR' : '啟用兩步驟驗證'}
             </button>
           </div>
         )
