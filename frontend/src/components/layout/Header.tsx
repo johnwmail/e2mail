@@ -106,9 +106,11 @@ export const Header: React.FC = () => {
                 title="開啟選單"
               >
                 <Menu className="w-5 h-5" />
-                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[9px] font-bold leading-none border-2 border-white dark:border-slate-900">
-                  {totalUnread > 99 ? '99+' : totalUnread}
-                </span>
+                {totalUnread > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[9px] font-bold leading-none border-2 border-white dark:border-slate-900">
+                    {totalUnread > 99 ? '99+' : totalUnread}
+                  </span>
+                )}
               </button>
 
               <div className="flex items-center gap-2">
