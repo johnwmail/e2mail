@@ -14,7 +14,9 @@ import {
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { mailApi } from '../../api/mail';
+import { contactsApi } from '../../api/addressBook';
 import { pgpService } from '../../api/pgp';
+import { useQuery } from '@tanstack/react-query';
 
 export const Composer: React.FC = () => {
   const { isComposerOpen, composerDraft, closeComposer } = useMailStore();
@@ -40,6 +42,47 @@ export const Composer: React.FC = () => {
   // PGP 簽名 Passphrase 彈窗
   const [showSignPassModal, setShowSignPassModal] = useState(false);
   const [signingPassphrase, setSigningPassphrase] = useState('');
+
+  // 通訊錄自動完成（To/Cc/Bcc 共用）
+  const getLastToken = (val: string) => {
+    const parts = val.split(',');
+    return parts[parts.length - 1].trim();
+  };
+  const [toSuggestOpen, setToSuggestOpen] = useState(false);
+  const [ccSuggestOpen, setCcSuggestOpen] = useState(false);
+  const [bccSuggestOpen, setBccSuggestOpen] = useState(false);
+  const toLastToken = getLastToken(to);
+  const ccLastToken = getLastToken(cc);
+  const bccLastToken = getLastToken(bcc);
+  const { data: toSuggest } = useQuery({
+    queryKey: ['contacts-suggest', toLastToken],
+    queryFn: () => contactsApi.list(toLastToken, 8),
+    enabled: toSuggestOpen && toLastToken.length >= 1,
+    staleTime: 10000,
+  });
+  const { data: ccSuggest } = useQuery({
+    queryKey: ['contacts-suggest', ccLastToken],
+    queryFn: () => contactsApi.list(ccLastToken, 8),
+    enabled: ccSuggestOpen && ccLastToken.length >= 1,
+    staleTime: 10000,
+  });
+  const { data: bccSuggest } = useQuery({
+    queryKey: ['contacts-suggest', bccLastToken],
+    queryFn: () => contactsApi.list(bccLastToken, 8),
+    enabled: bccSuggestOpen && bccLastToken.length >= 1,
+    staleTime: 10000,
+  });
+  const applySuggest = (field: 'to' | 'cc' | 'bcc', email: string) => {
+    const setter = field === 'to' ? setTo : field === 'cc' ? setCc : setBcc;
+    const cur = field === 'to' ? to : field === 'cc' ? cc : bcc;
+    const parts = cur.split(',');
+    parts[parts.length - 1] = ` ${email} `;
+    const next = parts.join(',').replace(/^,\s*/, '').replace(/,\s*,/g, ',').trim();
+    setter(next + (next.endsWith(',') ? ' ' : ', '));
+    if (field === 'to') setToSuggestOpen(false);
+    if (field === 'cc') setCcSuggestOpen(false);
+    if (field === 'bcc') setBccSuggestOpen(false);
+  };
 
   // composerDraft 改變時（openComposer reply/forward 等）重新 sync 表單 state
   useEffect(() => {
@@ -237,12 +280,17 @@ export const Composer: React.FC = () => {
           )}
 
           {/* 收件人 */}
-          <div className="flex items-center border-b border-slate-200 dark:border-slate-800 py-2">
+          <div className="relative flex items-center border-b border-slate-200 dark:border-slate-800 py-2">
             <span className="text-xs text-slate-500 w-16 shrink-0 font-medium">收件人：</span>
             <input
               type="text"
               value={to}
-              onChange={(e) => setTo(e.target.value)}
+              onChange={(e) => {
+                setTo(e.target.value);
+                setToSuggestOpen(true);
+              }}
+              onFocus={() => setToSuggestOpen(true)}
+              onBlur={() => setTimeout(() => setToSuggestOpen(false), 150)}
               placeholder="recipient@example.com"
               className="flex-1 text-sm outline-none bg-transparent min-w-0"
               autoFocus
@@ -267,33 +315,82 @@ export const Composer: React.FC = () => {
                 </button>
               )}
             </div>
+            {toSuggestOpen && toSuggest && toSuggest.length > 0 && (
+              <div className="absolute left-16 right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
+                {toSuggest.map((c) => (
+                  <button key={c.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applySuggest('to', c.email)} className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-700 text-left">
+                    <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">{(c.displayName || c.email)[0].toUpperCase()}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-medium truncate">{c.displayName}</div>
+                      <div className="text-[11px] text-slate-500 truncate">{c.email}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 副本 (Cc) */}
           {showCc && (
-            <div className="flex items-center border-b border-slate-200 dark:border-slate-800 py-2">
+            <div className="relative flex items-center border-b border-slate-200 dark:border-slate-800 py-2">
               <span className="text-xs text-slate-500 w-16 shrink-0 font-medium">副本：</span>
               <input
                 type="text"
                 value={cc}
-                onChange={(e) => setCc(e.target.value)}
+                onChange={(e) => {
+                  setCc(e.target.value);
+                  setCcSuggestOpen(true);
+                }}
+                onFocus={() => setCcSuggestOpen(true)}
+                onBlur={() => setTimeout(() => setCcSuggestOpen(false), 150)}
                 placeholder="cc@example.com"
                 className="flex-1 text-sm outline-none bg-transparent min-w-0"
               />
+              {ccSuggestOpen && ccSuggest && ccSuggest.length > 0 && (
+                <div className="absolute left-16 right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
+                  {ccSuggest.map((c) => (
+                    <button key={c.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applySuggest('cc', c.email)} className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-700 text-left">
+                      <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">{(c.displayName || c.email)[0].toUpperCase()}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-medium truncate">{c.displayName}</div>
+                        <div className="text-[11px] text-slate-500 truncate">{c.email}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           {/* 密件副本 (Bcc) */}
           {showBcc && (
-            <div className="flex items-center border-b border-slate-200 dark:border-slate-800 py-2">
+            <div className="relative flex items-center border-b border-slate-200 dark:border-slate-800 py-2">
               <span className="text-xs text-slate-500 w-16 shrink-0 font-medium">密件副本：</span>
               <input
                 type="text"
                 value={bcc}
-                onChange={(e) => setBcc(e.target.value)}
+                onChange={(e) => {
+                  setBcc(e.target.value);
+                  setBccSuggestOpen(true);
+                }}
+                onFocus={() => setBccSuggestOpen(true)}
+                onBlur={() => setTimeout(() => setBccSuggestOpen(false), 150)}
                 placeholder="bcc@example.com"
                 className="flex-1 text-sm outline-none bg-transparent min-w-0"
               />
+              {bccSuggestOpen && bccSuggest && bccSuggest.length > 0 && (
+                <div className="absolute left-16 right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
+                  {bccSuggest.map((c) => (
+                    <button key={c.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applySuggest('bcc', c.email)} className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-700 text-left">
+                      <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">{(c.displayName || c.email)[0].toUpperCase()}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-medium truncate">{c.displayName}</div>
+                        <div className="text-[11px] text-slate-500 truncate">{c.email}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
