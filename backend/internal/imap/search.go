@@ -1,6 +1,8 @@
 package imap
 
 import (
+	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -264,6 +266,37 @@ func buildSearchCriteria(query string) (*imap.SearchCriteria, bool) {
 	}
 	c, usesAttachment := pq.BuildCriteria()
 	return c, usesAttachment
+}
+
+// matchedSeqNums 依 query 回傳符合嘅 sequence numbers 同總數；query 空或無條件時回傳全部。
+func (c *Client) matchedSeqNums(ctx context.Context, query string, numMessages uint32) ([]uint32, int, error) {
+	all := func() []uint32 {
+		nums := make([]uint32, 0, int(numMessages))
+		for i := uint32(1); i <= numMessages; i++ {
+			nums = append(nums, i)
+		}
+		return nums
+	}
+	if query == "" {
+		return all(), int(numMessages), nil
+	}
+	criteria, usesAttachment := buildSearchCriteria(query)
+	if criteria == nil {
+		// 查詢只有無意義 operator → 當作無過濾
+		return all(), int(numMessages), nil
+	}
+	searchData, err := c.rawClient.Search(criteria, nil).Wait()
+	if err != nil && usesAttachment {
+		// 某些伺服器唔支援 \HasAttachment keyword → 撤回重試
+		if c2, _ := buildSearchCriteriaNoAttachment(query); c2 != nil {
+			searchData, err = c.rawClient.Search(c2, nil).Wait()
+		}
+	}
+	if err != nil {
+		return nil, 0, fmt.Errorf("search failed: %w", err)
+	}
+	nums := searchData.AllSeqNums()
+	return nums, len(nums), nil
 }
 
 // buildSearchCriteriaNoAttachment 構建撇除 has:attachment 嘅 criteria（唔會因 keyword 報錯）
