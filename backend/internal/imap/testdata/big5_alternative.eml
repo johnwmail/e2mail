@@ -1,0 +1,244 @@
+Return-Path: <>
+Delivered-To: wongkwokkay@wonghome.net
+Received: from mail.wonghome.net
+	by wonghome.net with LMTP
+	id QGa2EYfslWp7JQAAK/E4zQ
+	(envelope-from <>)
+	for <wongkwokkay@wonghome.net>; Tue, 01 Sep 2026 05:05:11 +0800
+Received: from fortimail1.osc.empf.org.hk (fortimail1.osc.empf.org.hk [202.128.248.3])
+	(using TLSv1.3 with cipher TLS_AES_256_GCM_SHA384 (256/256 bits)
+	 key-exchange x25519 server-signature RSA-PSS (4096 bits) server-digest SHA256)
+	(No client certificate requested)
+	by mail.wonghome.net (Postfix) with ESMTPS id 0A5B81699C2
+	for <wongkwokkay@wonghome.net>; Tue, 01 Sep 2026 05:05:09 +0800 (HKT)
+From: enquiry <enquiry@support.empf.org.hk>
+To: "wongkwokkay@wonghome.net" <wongkwokkay@wonghome.net>
+Subject: =?big5?B?QXV0b21hdGljIHJlcGx5OiBFbnF1aXJ5IENhdGVnb3J5IDogptu5taRIpGiqQbDI?=
+ =?big5?Q?_Ref_ID_:_UMD0009385009252590?=
+Thread-Topic: =?big5?B?RW5xdWlyeSBDYXRlZ29yeSA6IKbbubWkSKRoqkGwyCBSZWYgSUQgOiBVTUQwMDA5?=
+ =?big5?Q?385009252590?=
+Thread-Index: AQHdOYxmofLweESJgEqAxeo/GrtFVra4pbWr
+Date: Mon, 31 Aug 2026 21:05:07 +0000
+Message-ID: <4582a97717d04be4a6e7b6c455a7755c@p1va2egatw0012.prod.empf.hk>
+References: 023HEW3AFF26V9F0@empf-cp.hk,<20260831210505.7185D120043@outguard3.hkbn.net>
+In-Reply-To: <20260831210505.7185D120043@outguard3.hkbn.net>
+X-MS-Has-Attach:
+X-Auto-Response-Suppress: All
+X-MS-Exchange-Inbox-Rules-Loop: enquiry@support.empf.org.hk
+X-MS-TNEF-Correlator:
+x-ms-exchange-parent-message-id: <20260831210505.7185D120043@outguard3.hkbn.net>
+auto-submitted: auto-generated
+x-ms-exchange-generated-message-source: Mailbox Rules Agent
+Content-Type: multipart/alternative;
+	boundary="_000_4582a97717d04be4a6e7b6c455a7755cp1va2egatw0012prodempfh_"
+MIME-Version: 1.0
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; d=support.empf.org.hk; s=dkim1; c=relaxed/relaxed;
+ h=from:to:subject:date:message-id:references:content-type:mime-version;
+ bh=P+CXXFGE5IZhfaOebsUOuvGDWeP5HHiBFxIhwJEfJwA=;
+ b=bya5GcoplsP2PmJ+nbZe0GXfE3v7S5KnMTXX8SJzhKQ7WhL/zYzQ9CQ6FP6EHqBhO/dnqr34ZwLX
+	URvMolEvloOj/4nl4keNjvUoWlzJae2Be6tcrSZrtr7c7JAZxJjMApii76GeaR7MBGNh1OZntlKG
+	brSGFPQxfc+UL/Q5QymIX31TxTBkdNdCX6T+CzEF24HToN6MFWvTXGiPEJzXxAwpCxiJOyiyJd3Z
+	RcaiFXKVPuOM2vmrKHJjczWd8NqxlyeVe52sBjEtX9qwXCIUNzZTOGjzNP0+B6K2GUL6C5jMd3+O
+	asUqsJh8Aoi5TP67OkuWNwKI1a6eLeKcNkp6Kg==
+
+--_000_4582a97717d04be4a6e7b6c455a7755cp1va2egatw0012prodempfh_
+Content-Type: text/plain; charset="big5"
+Content-Transfer-Encoding: base64
+
+p0Gqurlxtmykd7hntse5Rqbcv26q96n2pa2leKFDpnCr5rvdqPOnVaazw/asZLjfqMapeaFBvdCt
+ULlxv26q96n2pa2leLz2vXUgMTgzIDI2MjKhQw0KDQqtq61utKOl3CA6DQoNCqywwdenS7NCsnqm
+5qxGq/yl3KnOqNG02qq6qbW7fqFBvdCkxbFOsWq/bqr3puasRqrtruahXaZwILm1pUSlSbTatbK6
+4q7RoUKlSbTarNvD9sPSqfqk5aXzpM6l9Kbzw/6rrKq6sPKq98LgtKuq7a7moV61b7Blptymublx
+pGy2bKXzpmGnfaFDDQoNCqZwp0Gkd7VvsGWq7a7mptymublxtmyhQb3Qvqin1rFOqu2u5q2rt3O1
+b7BlptylSKRVpb+9VKq6qu2u5qastrC5caRstmyl86Zhp32hQ7dxvdCqYLdOoUMNCg0KDQogICog
+ICC5caRstmyl86FHZm9ybXNAc3VwcG9ydC5lbXBmLm9yZy5oaw0KDQqhXaa5rLCm27DKpl7C0LV7
+pqGp0rVvpVikp7BUrqehXg0KDQoNCllvdXIgZW1haWwgaGFzIGJlZW4gcmVjZWl2ZWQuIElmIHlv
+dSByZXF1aXJlIHVyZ2VudCBhc3Npc3RhbmNlIG9uIGVucXVpcmllcywgcGxlYXNlIGNhbGwgZU1Q
+RiBob3RsaW5lIGF0IDE4MyAyNjIyLg0KDQpJbXBvcnRhbnQgTm90ZSA6DQoNClRvIGF2b2lkIGFu
+eSBkZWxheXMgb2YgcHJvY2Vzc2luZyBvZiBpbnN0cnVjdGlvbiBvciBkZWZhdWx0IGNvbnRyaWJ1
+dGlvbnMsIHBsZWFzZSBETyBOT1Qgc2VuZCBNUEYgYWRtaW5pc3RyYXRpb24gZm9ybXMsIHN1Y2gg
+YXMgRW1wbG95ZXIgUmVtaXR0YW5jZSBTdGF0ZW1lbnQsIFBheW1lbnQgcmVsYXRlZCBzdXBwb3J0
+aW5nIGRvY3VtZW50LCBhbmQgYW55IHR5cGUgb2YgRnVuZCBTd2l0Y2hpbmcgRm9ybXMsIHRvIHRo
+aXMgZW1haWwgYWRkcmVzcy4NCg0KSWYgeW91IGhhdmUgZG9uZSBzbywgcGxlYXNlIGFycmFuZ2Ug
+dG8gcmVzZW5kIHlvdXIgZm9ybXMgdG8gdGhlIGJlbG93IG9mZmljaWFsIGZvcm1zIGNvbGxlY3Rp
+b24gZW1haWwgYWRkcmVzcyBhcyBzb29uIGFzIHBvc3NpYmxlLiBUaGFuayB5b3UgZm9yIHlvdXIg
+YXR0ZW50aW9uLg0KDQoNCiAgICogICBFbWFpbDogZm9ybXNAc3VwcG9ydC5lbXBmLm9yZy5oaw0K
+DQooVGhpcyBtZXNzYWdlIGlzIGdlbmVyYXRlZCBieSBhbiBhdXRvLXJlcGx5IHByb2dyYW0pDQoN
+Cg0K
+
+--_000_4582a97717d04be4a6e7b6c455a7755cp1va2egatw0012prodempfh_
+Content-Type: text/html; charset="big5"
+Content-Transfer-Encoding: quoted-printable
+
+<html>
+<head>
+<meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Dbig5">
+<style type=3D"text/css" style=3D"display:none">
+<!--
+p
+	{margin-top:0;
+	margin-bottom:0}
+-->
+</style>
+</head>
+<body dir=3D"ltr">
+<div id=3D"divtagdefaultwrapper" dir=3D"ltr" style=3D"font-size:12pt; color=
+:#000000; font-family:Calibri,Helvetica,sans-serif">
+<p></p>
+<p class=3D"MsoNormal"><span lang=3D"EN-US"></span></p>
+<p class=3D"MsoNormal" style=3D"font-family:Calibri,Helvetica,sans-serif; f=
+ont-size:16px">
+<span lang=3D"EN-US"></span></p>
+<div></div>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; line-height:normal; back=
+ground:white">
+<span lang=3D"ZH-TW" style=3D"font-size:12.0pt; font-family:&quot;PMingLiU&=
+quot;,serif; color:black"></span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span lang=3D"ZH-TW" style=3D"font-size:12pt; font-family:PMingLiU,serif"><=
+/span></p>
+<span id=3D"ms-rterangepaste-start"></span>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span lang=3D"ZH-TW" style=3D"font-size:12pt; font-family:PMingLiU,serif">=
+=A7A=AA=BA=B9q=B6l=A4w=B8g=B6=C7=B9F=A6=DC=BFn=AA=F7=A9=F6=A5=AD=A5x=A1C=A6=
+p=AB=E6=BB=DD=A8=F3=A7U=A6=B3=C3=F6=ACd=B8=DF=A8=C6=A9y=A1A=BD=D0=ADP=B9q=
+=BFn=AA=F7=A9=F6=A5=AD=A5x=BC=F6=BDu</span><span style=3D"font-size:12pt">&=
+nbsp;183 2622</span><span lang=3D"ZH-TW" style=3D"font-size:12pt; font-fami=
+ly:PMingLiU,serif">=A1C</span><span style=3D"font-size:12pt"></span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt">&nbsp;</span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span lang=3D"ZH-TW" style=3D"font-size:12pt; font-family:&quot;Microsoft J=
+hengHei&quot;,sans-serif; color:rgb(255,0,0)"><u>=AD=AB=ADn=B4=A3=A5=DC</u>=
+<span style=3D"color:rgb(0,0,0)">&nbsp;:</span></span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt">&nbsp;</span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span lang=3D"ZH-TW" style=3D"font-size:12pt; font-family:PMingLiU,serif"><=
+/span></p>
+<p class=3D"MsoNormal" style=3D"font-family:Calibri,Helvetica,sans-serif; f=
+ont-size:16px">
+<span lang=3D"ZH-TW" style=3D"font-family:PMingLiU,serif">=AC=B0=C1=D7=A7K=
+=B3B=B2z=A6=E6=ACF=AB=FC=A5=DC=A9=CE=A8=D1=B4=DA=AA=BA=A9=B5=BB~=A1A=BD=D0=
+=A4=C5=B1N=B1j=BFn=AA=F7=A6=E6=ACF=AA=ED=AE=E6=A1]=A6p</span><span lang=3D"=
+ZH-TW">&nbsp;</span><span lang=3D"ZH-TW" style=3D"font-family:PMingLiU,seri=
+f">=B9=B5=A5D=A5I=B4=DA=B5=B2=BA=E2=AE=D1=A1B=A5I=B4=DA=AC=DB=C3=F6=C3=D2=
+=A9=FA=A4=E5=A5=F3=A4=CE=A5=F4=A6=F3=C3=FE=AB=AC=AA=BA=B0=F2=AA=F7=C2=E0=B4=
+=AB=AA=ED=AE=E6=A1^=B5o=B0e=A6=DC=A6=B9=B9q=A4l=B6l=A5=F3=A6a=A7}=A1C</span=
+><span lang=3D"ZH-TW">&nbsp;</span></p>
+<p class=3D"MsoNormal" style=3D"font-family:Calibri,Helvetica,sans-serif; f=
+ont-size:16px">
+<span lang=3D"ZH-TW" style=3D"font-family:PMingLiU,serif"><br>
+</span></p>
+<p class=3D"MsoNormal" style=3D"font-family:Calibri,Helvetica,sans-serif; f=
+ont-size:16px">
+<span lang=3D"ZH-TW"></span><span lang=3D"ZH-TW" style=3D"font-family:PMing=
+LiU,serif">=A6p=A7A=A4w=B5o=B0e=AA=ED=AE=E6=A6=DC=A6=B9=B9q=B6l=A1A=BD=D0=
+=BE=A8=A7=D6=B1N=AA=ED=AE=E6=AD=AB=B7s=B5o=B0e=A6=DC=A5H=A4U=A5=BF=BDT=AA=
+=BA=AA=ED=AE=E6=A6=AC=B6=B0=B9q=A4l=B6l=A5=F3=A6a=A7}=A1C=B7q=BD=D0=AA`=B7N=
+=A1C</span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span lang=3D"ZH-TW" style=3D"font-size:12pt; font-family:PMingLiU,serif"><=
+/span><span style=3D"font-size:12pt"></span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt">&nbsp;</span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+</p>
+<ul style=3D"font-family:Calibri,Helvetica,sans-serif; font-size:16px; marg=
+in-bottom:0px; margin-top:0px">
+<li><span lang=3D"ZH-TW" style=3D"font-size:12pt; font-family:PMingLiU,seri=
+f">=B9q=A4l=B6l=A5=F3=A1G</span><span style=3D"font-size:12pt; color:rgb(0,=
+111,201)">forms@support.empf.org.hk</span></li></ul>
+<p style=3D"font-family:Calibri,Helvetica,sans-serif; font-size:16px"></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt">&nbsp;</span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span lang=3D"ZH-TW" style=3D"font-size:12pt; font-family:PMingLiU,serif">=
+=A1]=A6=B9=AC=B0=A6=DB=B0=CA=A6^=C2=D0=B5{=A6=A1=A9=D2=B5o=A5X=A4=A7=B0T=AE=
+=A7=A1^</span><span style=3D"font-size:12pt"></span></p>
+<p class=3D"MsoNormal" style=3D"font-family:Calibri,Helvetica,sans-serif; f=
+ont-size:16px">
+&nbsp;</p>
+<p class=3D"MsoNormal" style=3D"font-family:Calibri,Helvetica,sans-serif; f=
+ont-size:16px">
+&nbsp;</p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt">Your email has been received. If you require=
+ urgent assistance on enquiries, please call eMPF hotline at 183 2622.</spa=
+n></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt">&nbsp;</span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt; color:red"><u>Important Note</u><span style=
+=3D"font-family:&quot;Microsoft JhengHei&quot;,sans-serif">&nbsp;<span styl=
+e=3D"color:rgb(0,0,0)">:</span></span><u></u><u></u></span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt">&nbsp;</span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt"><span id=3D"ms-rterangepaste-start"></span><=
+/span></p>
+<p class=3D"MsoNormal">To avoid any delays of processing of instruction or =
+default contributions, please DO NOT send MPF administration forms, such as=
+ Employer Remittance Statement, Payment related supporting document, and an=
+y type of Fund Switching Forms, to
+ this email address.</p>
+<span id=3D"ms-rterangepaste-end"></span>
+<p></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt">&nbsp;</span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt">If you have done so, please arrange to resen=
+d your forms to the below official forms collection email address as soon a=
+s possible. Thank you for your attention.</span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt">&nbsp;</span></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+</p>
+<ul style=3D"font-family:Calibri,Helvetica,sans-serif; font-size:16px; marg=
+in-bottom:0px; margin-top:0px">
+<li><span style=3D"font-size:12pt">Email:<span style=3D"color:rgb(0,111,201=
+)">&nbsp;forms@support.empf.org.hk</span></span></li></ul>
+<p style=3D"font-family:Calibri,Helvetica,sans-serif; font-size:16px"></p>
+<p class=3D"MsoNormal" style=3D"margin-bottom:0cm; font-family:Calibri,Helv=
+etica,sans-serif; font-size:16px; line-height:normal">
+<span style=3D"font-size:12pt">&nbsp;</span></p>
+<p class=3D"MsoNormal" style=3D"font-family:Calibri,Helvetica,sans-serif; f=
+ont-size:16px">
+<span style=3D"font-size:12pt; line-height:17.12px">(This message is genera=
+ted by an auto-reply program)</span></p>
+<div><span style=3D"font-size:12pt; line-height:17.12px"><br>
+</span></div>
+<p class=3D"MsoNormal" style=3D"font-family:Calibri,Helvetica,sans-serif; f=
+ont-size:16px">
+</p>
+<div style=3D"font-family:Calibri,Helvetica,sans-serif; font-size:16px"></d=
+iv>
+<span id=3D"ms-rterangepaste-end"></span><br>
+<p></p>
+<br>
+<p></p>
+</div>
+</body>
+</html>
+
+--_000_4582a97717d04be4a6e7b6c455a7755cp1va2egatw0012prodempfh_--

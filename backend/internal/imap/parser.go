@@ -7,9 +7,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emersion/go-message"
 	gomail "github.com/emersion/go-message/mail"
 	"github.com/johnwmail/e2mail/backend/pkg/charsetutil"
 )
+
+// init 將本專案嘅 charsetutil 註冊為 go-message 嘅 CharsetReader。
+// 否則 go-message 遇到非 utf-8/us-ascii（如 Big5/GBK）嘅 part 會回傳
+// "unhandled charset"，導致程式直接忽略成個 body（NextPart 出錯）。
+func init() {
+	message.CharsetReader = func(charset string, input io.Reader) (io.Reader, error) {
+		return charsetutil.NewReader(input, charset)
+	}
+}
 
 // EmailAddress 封裝電子郵件地址與顯示名稱
 type EmailAddress struct {
@@ -51,19 +61,19 @@ type ParsedMessage struct {
 
 // MessageSummary 郵件列表摘要結構
 type MessageSummary struct {
-	UID         uint32         `json:"uid"`
-	MessageID   string         `json:"messageId"`
-	Subject     string         `json:"subject"`
-	Date        time.Time      `json:"date"`
-	From        []EmailAddress `json:"from"`
-	To          []EmailAddress `json:"to"`
-	Flags       []string       `json:"flags"`
-	Unread      bool           `json:"unread"`
-	Starred     bool           `json:"starred"`
-	HasAttachment bool         `json:"hasAttachment"`
-	Size        uint32         `json:"size"`
-	Snippet     string         `json:"snippet"`
-	ThreadID    string         `json:"threadId,omitempty"` // thread 模式先有值；flat 模式不受影響
+	UID           uint32         `json:"uid"`
+	MessageID     string         `json:"messageId"`
+	Subject       string         `json:"subject"`
+	Date          time.Time      `json:"date"`
+	From          []EmailAddress `json:"from"`
+	To            []EmailAddress `json:"to"`
+	Flags         []string       `json:"flags"`
+	Unread        bool           `json:"unread"`
+	Starred       bool           `json:"starred"`
+	HasAttachment bool           `json:"hasAttachment"`
+	Size          uint32         `json:"size"`
+	Snippet       string         `json:"snippet"`
+	ThreadID      string         `json:"threadId,omitempty"` // thread 模式先有值；flat 模式不受影響
 }
 
 // ParseAddressList 解析郵件地址清單並解碼 RFC 2047 字元
