@@ -13,12 +13,14 @@ import {
   FolderInput,
   AlertOctagon,
   X,
+  MessagesSquare,
+  ChevronDown,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { contactsApi } from '../../api/addressBook';
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
-import { MessageSummary, FolderInfo } from '../../types/api';
+import { MessageSummary, FolderInfo, ThreadSummary } from '../../types/api';
 
 const getFolderDisplayName = (folder: FolderInfo) => {
   switch (folder.specialUse) {
@@ -63,6 +65,127 @@ const ContactMiniAvatar: React.FC<{ contact: any }> = ({ contact }) => {
   );
 };
 
+interface ThreadRowProps {
+  thread: ThreadSummary;
+  contactMap: Record<string, any> | undefined;
+  expanded: boolean;
+  onToggle: () => void;
+  selectedUIDs: number[];
+  onToggleSelect: (uids: number[], checked: boolean) => void;
+  activeUID: number | null;
+  onOpen: (uid: number) => void;
+}
+
+const formatDateShort = (dateStr: string) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+};
+
+const ThreadRow: React.FC<ThreadRowProps> = ({
+  thread, contactMap, expanded, onToggle, selectedUIDs, onToggleSelect, activeUID, onOpen,
+}) => {
+  const memberUIDs = thread.messages.map((m) => m.uid);
+  const allChecked = memberUIDs.length > 0 && memberUIDs.every((u) => selectedUIDs.includes(u));
+  const newest = thread.messages.reduce((a, b) => (new Date(a.date) >= new Date(b.date) ? a : b), thread.messages[0]);
+  if (!newest) return null;
+
+  const senderLabel = (addrs: string[]) => {
+    const names = addrs.slice(0, 2).map((a) => {
+      const c = contactMap?.[a.toLowerCase()];
+      if (c?.displayName) return c.displayName;
+      const byName = newest.from?.find((f) => f.address?.toLowerCase() === a.toLowerCase())?.name;
+      return byName || a.split('@')[0];
+    });
+    return names.join(', ') + (addrs.length > 2 ? ` +${addrs.length - 2}` : '');
+  };
+
+  return (
+    <div className={`${thread.unreadCount > 0 ? '' : ''}`}>
+      <div
+        className={`flex items-start gap-2.5 px-3 py-2.5 cursor-pointer transition select-none w-full min-w-0 ${
+          activeUID !== null && memberUIDs.includes(activeUID)
+            ? 'bg-blue-50/90 dark:bg-blue-950/50 border-l-4 border-blue-600'
+            : allChecked
+              ? 'bg-blue-100/40 dark:bg-blue-900/30 border-l-4 border-blue-400'
+              : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+        }`}
+        onClick={() => onOpen(newest.uid)}
+      >
+        <input
+          type="checkbox"
+          checked={allChecked}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onToggleSelect(memberUIDs, e.target.checked)}
+          className="w-4 h-4 mt-1 rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer shrink-0"
+        />
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+          className="p-2 -m-1 shrink-0 text-slate-400 hover:text-slate-600"
+          title={expanded ? '收起對話' : '展開對話'}
+          aria-label={expanded ? '收起對話' : '展開對話'}
+        >
+          {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        </button>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <span className={`truncate text-[13px] md:text-sm ${thread.unreadCount > 0 ? 'font-bold text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
+              {senderLabel(thread.senders)}
+              {thread.messageCount > 1 && (
+                <span className="ml-1.5 text-[10px] text-slate-400 font-normal">({thread.messageCount})</span>
+              )}
+            </span>
+            <span className="text-[11px] text-slate-400 shrink-0 font-mono">{formatDateShort(newest.date)}</span>
+          </div>
+          <div className={`truncate text-xs mt-0.5 ${thread.unreadCount > 0 ? 'font-semibold text-slate-800 dark:text-slate-100' : 'text-slate-600 dark:text-slate-400'}`}>
+            {thread.subject || '(無主旨)'}
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-400 min-w-0 mt-0.5">
+            {thread.hasAttachment && <Paperclip className="w-3 h-3 shrink-0" />}
+            <span className="truncate">{(newest.snippet || '').slice(0, 90)}</span>
+          </div>
+        </div>
+        {thread.unreadCount > 0 && (
+          <div className="shrink-0 mt-1.5 flex flex-col items-center gap-0.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+            {thread.unreadCount > 1 && <span className="text-[9px] font-bold text-blue-600">{thread.unreadCount}</span>}
+          </div>
+        )}
+      </div>
+      {expanded && thread.messages.length > 1 && (
+        <div className="bg-slate-50/60 dark:bg-slate-900/60 border-y border-slate-100 dark:border-slate-800">
+          {thread.messages.map((m) => (
+            <div
+              key={m.uid}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen(m.uid);
+              }}
+              className={`flex items-center gap-2.5 pl-14 pr-3 py-1.5 text-xs cursor-pointer min-w-0 ${
+                activeUID === m.uid ? 'bg-blue-100/50 dark:bg-blue-950/50 font-semibold' : 'hover:bg-slate-100/70 dark:hover:bg-slate-800/70'
+              }`}
+            >
+              <span className={`truncate flex-1 min-w-0 ${m.unread ? 'font-semibold text-slate-800 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                {m.from?.[0]?.name || m.from?.[0]?.address?.split('@')[0] || '?'}
+              </span>
+              {m.hasAttachment && <Paperclip className="w-3 h-3 text-slate-400 shrink-0" />}
+              {m.unread && <div className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />}
+              <span className="text-[10px] text-slate-400 font-mono shrink-0">{formatDateShort(m.date)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const MessageList: React.FC = () => {
   const queryClient = useQueryClient();
   const activeAccount = useActiveAccount();
@@ -75,7 +198,17 @@ export const MessageList: React.FC = () => {
     page,
     setPage,
     limit,
+    listMode,
+    setListMode,
   } = useMailStore();
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
+  const toggleThread = (id: string) =>
+    setExpandedThreads((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const [selectedUIDs, setSelectedUIDs] = useState<number[]>([]);
   const [isMultiSelect, setIsMultiSelect] = useState(false);
@@ -166,8 +299,8 @@ export const MessageList: React.FC = () => {
 
   // 取得郵件清單
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['messages', accountId, currentFolder, page, limit, searchQuery],
-    queryFn: () => mailApi.getMessages(currentFolder, page, limit, searchQuery, accountId),
+    queryKey: ['messages', accountId, currentFolder, page, limit, searchQuery, listMode],
+    queryFn: () => mailApi.getMessages(currentFolder, page, limit, searchQuery, accountId, listMode === 'threads'),
     enabled: !!accountId,
     staleTime: 10000,
   });
@@ -249,8 +382,12 @@ export const MessageList: React.FC = () => {
   }, []);
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked && data?.messages) {
-      setSelectedUIDs(data.messages.map((m) => m.uid));
+    if (e.target.checked) {
+      if (listMode === 'threads') {
+        setSelectedUIDs(threads.flatMap((t) => t.messages.map((m) => m.uid)));
+      } else if (data?.messages) {
+        setSelectedUIDs(data.messages.map((m) => m.uid));
+      }
     } else {
       setSelectedUIDs([]);
     }
@@ -261,6 +398,18 @@ export const MessageList: React.FC = () => {
     setSelectedUIDs((prev) =>
       prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]
     );
+  };
+
+  // thread 模式：成組 UID 加/減
+  const toggleThreadSelect = (uids: number[], checked: boolean) => {
+    setSelectedUIDs((prev) => {
+      const set = new Set(prev);
+      for (const u of uids) {
+        if (checked) set.add(u);
+        else set.delete(u);
+      }
+      return Array.from(set);
+    });
   };
 
   // Desktop multi-select (Ctrl/Cmd+click toggle, Shift+click range)
@@ -374,17 +523,20 @@ export const MessageList: React.FC = () => {
   };
 
   const messages = data?.messages || [];
+  const threads = useMemo(() => data?.threads || [], [data]);
   const totalPages = data?.totalPages || 1;
 
   // 通訊錄批量解析：寄件人是否已在地址簿（用於顯示頭像/名稱）
   const senderEmails = useMemo(() => {
     const set = new Set<string>();
-    for (const m of messages) {
+    const collect = (m: MessageSummary) => {
       const e = m.from?.[0]?.address?.toLowerCase()?.trim();
       if (e) set.add(e);
-    }
+    };
+    for (const m of messages) collect(m);
+    for (const t of threads) for (const m of t.messages) collect(m);
     return Array.from(set).slice(0, 100);
-  }, [messages]);
+  }, [messages, threads]);
   const { data: contactMap } = useQuery({
     queryKey: ['contact-resolve-list', senderEmails.join(',')],
     queryFn: () => contactsApi.resolve(senderEmails),
@@ -424,7 +576,11 @@ export const MessageList: React.FC = () => {
           ) : (
             <input
               type="checkbox"
-              checked={messages.length > 0 && selectedUIDs.length === messages.length}
+              checked={
+                listMode === 'threads'
+                  ? threads.length > 0 && threads.every((t) => t.messages.every((m) => selectedUIDs.includes(m.uid)))
+                  : messages.length > 0 && selectedUIDs.length === messages.length
+              }
               onChange={handleSelectAll}
               className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer"
             />
@@ -494,9 +650,29 @@ export const MessageList: React.FC = () => {
             </div>
           ) : (
             <span className="text-xs font-medium text-slate-500 truncate">
-              {data?.total ? `共 ${data.total} 封` : '信件清單'}
+              {data?.total ? (listMode === 'threads' ? `共 ${data.total} 個對話` : `共 ${data.total} 封`) : (listMode === 'threads' ? '對話清單' : '信件清單')}
             </span>
           )}
+        </div>
+
+        {/* Mail / Threads 模式切換 */}
+        <div className="flex items-center gap-0.5 bg-slate-200/60 dark:bg-slate-800 rounded-lg p-0.5 shrink-0">
+          <button
+            onClick={() => setListMode('messages')}
+            className={`p-1.5 rounded-md transition ${listMode === 'messages' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+            title="單封模式"
+            aria-label="單封模式"
+          >
+            <Inbox className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setListMode('threads')}
+            className={`p-1.5 rounded-md transition ${listMode === 'threads' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+            title="對話串模式"
+            aria-label="對話串模式"
+          >
+            <MessagesSquare className="w-4 h-4" />
+          </button>
         </div>
 
         {/* 分頁與重新整理按鈕 */}
@@ -538,6 +714,34 @@ export const MessageList: React.FC = () => {
       >
         {isLoading ? (
           <div className="p-8 text-center text-xs text-slate-400">正在讀取信件...</div>
+        ) : listMode === 'threads' ? (
+          threads.length === 0 ? (
+            <div className="p-12 text-center text-slate-400 flex flex-col items-center">
+              <MessagesSquare className="w-12 h-12 stroke-1 mb-2 text-slate-300 dark:text-slate-700" />
+              <p className="text-xs">此資料夾沒有對話</p>
+            </div>
+          ) : (
+            threads.map((t) => (
+              <ThreadRow
+                key={t.threadId}
+                thread={t}
+                contactMap={contactMap}
+                expanded={expandedThreads.has(t.threadId)}
+                onToggle={() => toggleThread(t.threadId)}
+                selectedUIDs={selectedUIDs}
+                onToggleSelect={toggleThreadSelect}
+                activeUID={selectedUID}
+                onOpen={(uid) => {
+                  if (swipedUID !== null) {
+                    setSwipedUID(null);
+                    setSwipeOffset(0);
+                    return;
+                  }
+                  setSelectedUID(uid);
+                }}
+              />
+            ))
+          )
         ) : messages.length === 0 ? (
           <div className="p-12 text-center text-slate-400 flex flex-col items-center">
             <Inbox className="w-12 h-12 stroke-1 mb-2 text-slate-300 dark:text-slate-700" />

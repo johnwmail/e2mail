@@ -25,6 +25,7 @@ export interface MessageSummary {
   hasAttachment: boolean;
   size: number;
   snippet?: string;
+  threadId?: string;
 }
 
 export interface ParsedMessage {
@@ -59,11 +60,35 @@ export interface FolderInfo {
 
 export interface MessageListResult {
   folder: string;
+  mode?: 'messages' | 'threads';
   total: number;
   page: number;
   limit: number;
   totalPages: number;
   messages: MessageSummary[];
+  threads?: ThreadSummary[]; // mode === 'threads' 時有值
+}
+
+export interface ThreadSummary {
+  threadId: string;
+  subject: string;
+  date: string;
+  senders: string[];
+  messageCount: number;
+  unreadCount: number;
+  starred: boolean;
+  hasAttachment: boolean;
+  messages: MessageSummary[];
+}
+
+export interface ThreadListResult {
+  folder: string;
+  mode: 'threads';
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  threads: ThreadSummary[];
 }
 
 export interface Account {

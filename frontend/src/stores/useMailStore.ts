@@ -14,6 +14,7 @@ interface MailState {
   isSidebarOpen: boolean;
   view: 'mail' | 'accounts' | 'contacts';
   inboxUnread: number;
+  listMode: 'messages' | 'threads';
 
   setCurrentFolder: (folder: string) => void;
   setActiveAccountId: (id: string | null) => void;
@@ -26,6 +27,7 @@ interface MailState {
   toggleSidebar: () => void;
   setView: (view: 'mail' | 'accounts' | 'contacts') => void;
   setInboxUnread: (n: number) => void;
+  setListMode: (mode: 'messages' | 'threads') => void;
 }
 
 export const useMailStore = create<MailState>((set) => ({
@@ -41,6 +43,7 @@ export const useMailStore = create<MailState>((set) => ({
   isSidebarOpen: false,
   view: 'mail',
   inboxUnread: 0,
+  listMode: (localStorage.getItem('webmail_list_mode') === 'threads' ? 'threads' : 'messages'),
 
   setCurrentFolder: (folder) =>
     set({ currentFolder: folder, selectedUID: null, page: 1, isSidebarOpen: false }),
@@ -67,4 +70,9 @@ export const useMailStore = create<MailState>((set) => ({
   setView: (view) => set({ view }),
 
   setInboxUnread: (n) => set({ inboxUnread: n }),
+
+  setListMode: (mode) => {
+    localStorage.setItem('webmail_list_mode', mode);
+    set({ listMode: mode, page: 1, selectedUID: null });
+  },
 }));

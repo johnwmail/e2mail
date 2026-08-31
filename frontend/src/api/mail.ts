@@ -30,7 +30,8 @@ export const mailApi = {
     page = 1,
     limit = 50,
     query = '',
-    account?: string
+    account?: string,
+    thread = false
   ): Promise<MessageListResult> => {
     const params = new URLSearchParams({
       folder,
@@ -42,6 +43,9 @@ export const mailApi = {
     }
     if (account) {
       params.set('account', account);
+    }
+    if (thread) {
+      params.set('thread', '1');
     }
     return request<MessageListResult>(`/mail/messages?${params.toString()}`);
   },
