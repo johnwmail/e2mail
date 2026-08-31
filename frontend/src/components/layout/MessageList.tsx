@@ -301,6 +301,59 @@ export const MessageList: React.FC = () => {
     }
   };
 
+  // --- Thread 行 swipe-to-reveal（同 flat 一致，但以 threadId 為鍵） ---
+  const threadSwipeStartRef = useRef<{ x: number; y: number; threadId: string; horizontal: boolean | null } | null>(null);
+  const [threadSwipeOffset, setThreadSwipeOffset] = useState(0);
+  const [draggingThreadId, setDraggingThreadId] = useState<string | null>(null);
+  const [swipedThreadId, setSwipedThreadId] = useState<string | null>(null);
+
+  const handleThreadTouchStart = (thread: ThreadSummary) => (e: React.TouchEvent) => {
+    if (isMultiSelectRef.current) return;
+    const t = e.touches[0];
+    threadSwipeStartRef.current = { x: t.clientX, y: t.clientY, threadId: thread.threadId, horizontal: null };
+    setDraggingThreadId(thread.threadId);
+  };
+
+  const handleThreadTouchMove = (thread: ThreadSummary) => (e: React.TouchEvent) => {
+    const start = threadSwipeStartRef.current;
+    if (!start || start.threadId !== thread.threadId) return;
+    const t = e.touches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (start.horizontal === null && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) {
+      start.horizontal = Math.abs(dx) > Math.abs(dy);
+    }
+    if (start.horizontal) {
+      setThreadSwipeOffset(Math.max(-160, Math.min(160, dx)));
+    }
+  };
+
+  const handleThreadTouchEnd = (thread: ThreadSummary) => (e: React.TouchEvent) => {
+    const start = threadSwipeStartRef.current;
+    threadSwipeStartRef.current = null;
+    setDraggingThreadId(null);
+    if (!start || start.threadId !== thread.threadId) return;
+    if (!start.horizontal || isMultiSelectRef.current) {
+      setThreadSwipeOffset(0);
+      setSwipedThreadId(null);
+      return;
+    }
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    if (Math.abs(dx) < 40) {
+      setThreadSwipeOffset(0);
+      setSwipedThreadId(null);
+      return;
+    }
+    setSwipedThreadId(thread.threadId);
+    setThreadSwipeOffset(dx < 0 ? -160 : 160);
+  };
+
+  const clearThreadSwipe = () => {
+    setSwipedThreadId(null);
+    setThreadSwipeOffset(0);
+  };
+
   // 取得郵件清單
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['messages', accountId, currentFolder, page, limit, searchQuery, listMode],
@@ -659,25 +712,15 @@ export const MessageList: React.FC = () => {
           )}
         </div>
 
-        {/* Mail / Threads 模式切換 */}
-        <div className="flex items-center gap-0.5 bg-slate-200/60 dark:bg-slate-800 rounded-lg p-0.5 shrink-0">
-          <button
-            onClick={() => setListMode('messages')}
-            className={`p-1.5 rounded-md transition ${listMode === 'messages' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-            title="單封模式"
-            aria-label="單封模式"
-          >
-            <Inbox className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setListMode('threads')}
-            className={`p-1.5 rounded-md transition ${listMode === 'threads' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-            title="對話串模式"
-            aria-label="對話串模式"
-          >
-            <MessagesSquare className="w-4 h-4" />
-          </button>
-        </div>
+        {/* Threads 模式 on/off（單一按鈕） */}
+        <button
+          onClick={() => setListMode(listMode === 'threads' ? 'messages' : 'threads')}
+          className={`p-1.5 rounded-lg transition flex items-center gap-1 ${listMode === 'threads' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
+          title={listMode === 'threads' ? '切換為單封模式' : '切換為對話串模式'}
+          aria-label={listMode === 'threads' ? '切換為單封模式' : '切換為對話串模式'}
+        >
+          <MessagesSquare className="w-4 h-4" />
+        </button>
 
         {/* 分頁與重新整理按鈕 */}
         <div className="flex items-center gap-1 text-xs text-slate-500 shrink-0">
@@ -725,26 +768,85 @@ export const MessageList: React.FC = () => {
               <p className="text-xs">此資料夾沒有對話</p>
             </div>
           ) : (
-            threads.map((t) => (
-              <ThreadRow
-                key={t.threadId}
-                thread={t}
-                contactMap={contactMap}
-                expanded={expandedThreads.has(t.threadId)}
-                onToggle={() => toggleThread(t.threadId)}
-                selectedUIDs={selectedUIDs}
-                onToggleSelect={toggleThreadSelect}
-                activeUID={selectedUID}
-                onOpen={(uid) => {
-                  if (swipedUID !== null) {
-                    setSwipedUID(null);
-                    setSwipeOffset(0);
-                    return;
-                  }
-                  setSelectedUID(uid);
-                }}
-              />
-            ))
+            threads.map((t) => {
+              const tUids = t.messages.map((m) => m.uid);
+              return (
+                <div key={t.threadId} className="relative overflow-hidden w-full">
+                  {/* 揭示按鈕層 — 向左滑揭露（右邊：垃圾桶 + 垃圾郵件[若存在]） */}
+                  <div className="absolute inset-y-0 right-0 flex">
+                    <button
+                      onClick={() => {
+                        deleteMutation.mutate(tUids, { onSuccess: () => setSelectedUID(null) });
+                        clearThreadSwipe();
+                      }}
+                      className="w-[80px] bg-red-500 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold h-full"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                      垃圾桶
+                    </button>
+                    {junkFolder && (
+                      <button
+                        onClick={() => {
+                          moveMutation.mutate({ uids: tUids, dest: junkFolder });
+                          clearThreadSwipe();
+                        }}
+                        className="w-[80px] bg-orange-500 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold h-full"
+                      >
+                        <AlertOctagon className="w-5 h-5" />
+                        垃圾郵件
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 揭示按鈕層 — 向右滑揭露（左邊：已讀/未讀） */}
+                  <div className="absolute inset-y-0 left-0 flex">
+                    <button
+                      onClick={() => {
+                        flagMutation.mutate({ uids: tUids, flags: ['\\Seen'], op: t.unreadCount > 0 ? 'add' : 'remove' });
+                        clearThreadSwipe();
+                      }}
+                      className="w-[80px] bg-blue-500 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold h-full"
+                    >
+                      <MailCheck className="w-5 h-5" />
+                      {t.unreadCount > 0 ? '已讀' : '未讀'}
+                    </button>
+                  </div>
+
+                  {/* Thread 內容（translate-x revealing） */}
+                  <div
+                    style={{
+                      touchAction: isMultiSelect ? 'none' : 'pan-y',
+                      transform:
+                        swipedThreadId === t.threadId || draggingThreadId === t.threadId
+                          ? `translateX(${threadSwipeOffset}px)`
+                          : 'translateX(0)',
+                      transition: draggingThreadId === t.threadId ? 'none' : 'transform 0.2s ease',
+                    }}
+                    onTouchStart={handleThreadTouchStart(t)}
+                    onTouchMove={handleThreadTouchMove(t)}
+                    onTouchEnd={handleThreadTouchEnd(t)}
+                    onContextMenu={(e) => e.preventDefault()}
+                  >
+                    <ThreadRow
+                      thread={t}
+                      contactMap={contactMap}
+                      expanded={expandedThreads.has(t.threadId)}
+                      onToggle={() => toggleThread(t.threadId)}
+                      selectedUIDs={selectedUIDs}
+                      onToggleSelect={toggleThreadSelect}
+                      activeUID={selectedUID}
+                      onOpen={(uid) => {
+                        if (swipedThreadId !== null) {
+                          clearThreadSwipe();
+                          return;
+                        }
+                        setSelectedUID(uid);
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })
           )
         ) : messages.length === 0 ? (
           <div className="p-12 text-center text-slate-400 flex flex-col items-center">

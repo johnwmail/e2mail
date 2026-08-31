@@ -287,15 +287,16 @@ func (c *Client) fetchThreadNodes(ctx context.Context, folder string, idx *threa
 			case imapclient.FetchItemDataUID:
 				uid = uint32(it.UID)
 			case imapclient.FetchItemDataFlags:
-				unread, starred = false, false
+				seen := false
 				for _, f := range it.Flags {
 					if f == imap.FlagSeen {
-						unread = false
+						seen = true
 					}
 					if f == imap.FlagFlagged {
 						starred = true
 					}
 				}
+				unread = !seen
 			case imapclient.FetchItemDataEnvelope:
 				env = it.Envelope
 			case imapclient.FetchItemDataBodySection:
