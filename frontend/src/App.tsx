@@ -53,6 +53,18 @@ export const App: React.FC = () => {
     })();
   }, [isAuthenticated, view]);
 
+  // 登入後從 DB 載入 listMode（threads/messages），覆蓋本地快取，做到跨裝置一致
+  const setListMode = useMailStore((s) => s.setListMode);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    import('./api/prefs')
+      .then(({ prefsApi }) => prefsApi.get('listMode'))
+      .then((mode) => {
+        if (mode === 'threads' || mode === 'messages') setListMode(mode);
+      })
+      .catch(() => {});
+  }, [isAuthenticated, setListMode]);
+
   // 登入後每次從雲端載入 PGP 金鑰包（唔留 localStorage；logout/session 過期後再 fetch）
   useEffect(() => {
     if (isAuthenticated) {

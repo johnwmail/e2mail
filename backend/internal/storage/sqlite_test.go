@@ -373,3 +373,46 @@ func TestUserCredentialCRUD(t *testing.T) {
 		t.Fatalf("wrapped_dek = %q, want wrapped-dek-2", reloaded.WrappedDEK)
 	}
 }
+
+func TestUserPrefs(t *testing.T) {
+	s, err := NewSQLiteStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+
+	// 未設定 → ""
+	v, err := s.GetUserPref("a@b.c", "listMode")
+	if err != nil {
+		t.Fatalf("GetUserPref missing: %v", err)
+	}
+	if v != "" {
+		t.Fatalf("missing pref = %q, want empty", v)
+	}
+
+	if err := s.SetUserPref("a@b.c", "listMode", "threads"); err != nil {
+		t.Fatalf("SetUserPref: %v", err)
+	}
+	v, _ = s.GetUserPref("a@b.c", "listMode")
+	if v != "threads" {
+		t.Fatalf("pref = %q, want threads", v)
+	}
+
+	// upsert 覆寫
+	if err := s.SetUserPref("a@b.c", "listMode", "messages"); err != nil {
+		t.Fatalf("SetUserPref upsert: %v", err)
+	}
+	v, _ = s.GetUserPref("a@b.c", "listMode")
+	if v != "messages" {
+		t.Fatalf("pref = %q, want messages", v)
+	}
+
+	// per-user 隔離
+	if err := s.SetUserPref("other@b.c", "listMode", "threads"); err != nil {
+		t.Fatalf("SetUserPref other: %v", err)
+	}
+	v, _ = s.GetUserPref("a@b.c", "listMode")
+	if v != "messages" {
+		t.Fatalf("owner isolation broken: %q", v)
+	}
+}

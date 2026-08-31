@@ -19,6 +19,7 @@ func NewRouter(
 	pgpH *handler.PGPHandler,
 	contactsH *handler.ContactsHandler,
 	addressH *handler.AddressContactsHandler,
+	prefsH *handler.PrefsHandler,
 	configH *handler.ServerConfigHandler,
 	accountsH *handler.AccountsHandler,
 	store session.Store,
@@ -126,6 +127,12 @@ func NewRouter(
 				ab.Get("/{id}/avatar", addressH.GetAvatar)
 				ab.Put("/{id}/avatar", addressH.PutAvatar)
 				ab.Delete("/{id}/avatar", addressH.DeleteAvatar)
+			})
+
+			// per-user 設定（key-value）
+			protected.Route("/prefs", func(prefs chi.Router) {
+				prefs.Get("/{key}", prefsH.GetPref)
+				prefs.Put("/{key}", prefsH.SetPref)
 			})
 		})
 	})

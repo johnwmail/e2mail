@@ -122,10 +122,11 @@ func main() {
 	pgpHandler := handler.NewPGPHandler(store)
 	contactsHandler := handler.NewContactsHandler(store)
 	addressContactsHandler := handler.NewAddressContactsHandler(store, dataDir)
+	prefsHandler := handler.NewPrefsHandler(store)
 	configHandler := handler.NewServerConfigHandler(serverConfig)
 	accountsHandler := handler.NewAccountsHandler(sessionStore, store, poolManager, idleManager, serverConfig)
 
-	router := api.NewRouter(authHandler, mailHandler, eventsHandler, pgpHandler, contactsHandler, addressContactsHandler, configHandler, accountsHandler, sessionStore)
+	router := api.NewRouter(authHandler, mailHandler, eventsHandler, pgpHandler, contactsHandler, addressContactsHandler, prefsHandler, configHandler, accountsHandler, sessionStore)
 
 	server := &http.Server{
 		Addr:         ":" + port,

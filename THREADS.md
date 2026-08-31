@@ -1,9 +1,9 @@
 # Threads 對話串模式 — 設計文檔
 
-> 狀態：**已實作**（T1–T4，`main` `7dc5bf9`/`4ac5fad`+）
-> 決定：展開子項 **Gmail 式（最新喺頂）**、**默認收起**、**Sent 照 thread**、頂欄 **Mail/Threads 即時切換按鈕**（localStorage 持久化）
+> 狀態：**已實作**（T1–T4 + 單封隱箭咀 + DB 持久化）
+> 決定：展開子項 **Gmail 式（最新喺頂）**、**默認收起**、**Sent 照 thread**、頂欄 **Mail/Threads 即時切換按鈕**（localStorage + **`user_prefs` DB** 雙重持久化）、**單封（messageCount≤1）唔顯示展開箭咀**
 > 目標：為郵件清單提供 Gmail / Roundcube 式「對話串（thread）」分組顯示，把同一來往（References / In-Reply-To / 主題）的郵件摺疊成一組
-> 資料庫：**無需新表** — thread 係 IMAP header 的即時運算結果，全部由記憶體索引處理，`sqlite3` 不動
+> 資料庫：`sqlite3` 只加 `user_prefs`（key-value，存 thread 模式狀態）；thread 分組本身係 IMAP header 的即時運算結果，無新表
 
 ---
 
@@ -112,7 +112,7 @@ GET /api/mail/messages?folder=INBOX&page=1&limit=50&q=&thread=0|1
 
 - `MessageList` 頂欄加 `Mail / Threads` 兩個圖示按鈕（`Inbox` / `MessagesSquare` lucide icon），喺「共 N 封」右邊
 - **點擊即時生效**：切換即改 `listMode` 並即時以新 queryKey refetch（`enabled` 掛 `listMode`，**唔使手动刷新/重載頁**），按鈕以 `bg-blue-600 text-white` 高亮當前模式
-- 狀態入 `useMailStore.listMode: 'messages' | 'threads'`，持久化 `localStorage('webmail_list_mode')`；切換時重置 `page=1`
+- 狀態入 `useMailStore.listMode: 'messages' | 'threads'`，持久化 `localStorage('webmail_list_mode')` **+ 後端 `user_prefs` 表（`/api/prefs/listMode`）**：本地寫入即時生效，後台異步 sync DB；登入後自 DB 載入覆蓋本地快取 → 跨裝置一致；切換時重置 `page=1`
 - **摺疊默認全收起**（已確認決定 2）；展開後組內子項 **Gmail 式最新喺頂**（決定 1）；`Sent` 照樣 thread（決定 3）
 - 每個 folder 共用同一模式（唔做 per-folder 設定，MVP）
 
@@ -127,7 +127,7 @@ GET /api/mail/messages?folder=INBOX&page=1&limit=50&q=&thread=0|1
 └──────────────────────────────────────────────┘
 ```
 
-- **摺疊行為**：默認收起（只顯示根行：`senders` 前 2 + `+N`、subject、messageCount badge、最新 date、unread 點）；點 ▾/▸ chevron 展開成組內按日期降序（Gmail 式，最新喺頂）嘅子行；子行點擊照舊開 `ViewerPane`（用該 UID）
+- **摺疊行為**：默認收起（只顯示根行：`senders` 前 2 + `+N`、subject、messageCount badge、最新 date、unread 點）；點 ▾/▸ chevron 展開成組內按日期降序（Gmail 式，最新喺頂）嘅子行；子行點擊照舊開 `ViewerPane`（用該 UID）；**單封（`messageCount ≤ 1`）唔顯示 chevron**（無嘢可展開）
 - **根行本身 = 展開後嘅「最新一封」**：chevron 直接 tap 展開/收起；要睇最新內文就照舊 tap 行體開 viewer
 - **未讀樣式**：thread 有未讀 → 整行加粗 + 藍點；展開後逐封維持現有單封未讀樣式
 - **全選**：`select all` 喺 thread 模式 = 選中當頁所有 thread（實際選中佢哋全部 member UID）

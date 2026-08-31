@@ -47,25 +47,25 @@ type TwoFA struct {
 
 // Account 儲存於 SQLite 之郵件帳號設定（密碼以 DEK 加密，非明文）
 type Account struct {
-	ID                  string    `json:"id"`
-	UserEmail           string    `json:"-"` // 登入者（owner）
-	Label               string    `json:"label"`
-	Email               string    `json:"email"`
-	IMAPHost            string    `json:"imapHost"`
-	IMAPPort            int       `json:"imapPort"`
-	IMAPUseTLS          bool      `json:"imapUseTls"`
-	IMAPAllowInsecureTLS bool     `json:"imapAllowInsecureTls"`
-	SMTPHost            string    `json:"smtpHost"`
-	SMTPPort            int       `json:"smtpPort"`
-	SMTPUseTLS          bool      `json:"smtpUseTls"`
-	SMTPAllowInsecureTLS bool     `json:"smtpAllowInsecureTls"`
-	Username            string    `json:"username"`
-	EncIMAPPassword     string    `json:"-"` // AES-GCM(DEK, imap_password)
-	EncSMTPPassword     string    `json:"-"` // AES-GCM(DEK, smtp_password)
-	IsDefault           bool      `json:"isDefault"`
-	SortOrder           int       `json:"sortOrder"`
-	CreatedAt           time.Time `json:"createdAt"`
-	UpdatedAt           time.Time `json:"updatedAt"`
+	ID                   string    `json:"id"`
+	UserEmail            string    `json:"-"` // 登入者（owner）
+	Label                string    `json:"label"`
+	Email                string    `json:"email"`
+	IMAPHost             string    `json:"imapHost"`
+	IMAPPort             int       `json:"imapPort"`
+	IMAPUseTLS           bool      `json:"imapUseTls"`
+	IMAPAllowInsecureTLS bool      `json:"imapAllowInsecureTls"`
+	SMTPHost             string    `json:"smtpHost"`
+	SMTPPort             int       `json:"smtpPort"`
+	SMTPUseTLS           bool      `json:"smtpUseTls"`
+	SMTPAllowInsecureTLS bool      `json:"smtpAllowInsecureTls"`
+	Username             string    `json:"username"`
+	EncIMAPPassword      string    `json:"-"` // AES-GCM(DEK, imap_password)
+	EncSMTPPassword      string    `json:"-"` // AES-GCM(DEK, smtp_password)
+	IsDefault            bool      `json:"isDefault"`
+	SortOrder            int       `json:"sortOrder"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
 }
 
 // UserCredential 儲存於 SQLite 之 per-user 憑證包（包裹 DEK）
@@ -143,6 +143,10 @@ type Store interface {
 	// Folder order (top-level folder display order, per account)
 	GetFolderOrder(userEmail, accountID string) ([]string, error)
 	SetFolderOrder(userEmail, accountID string, orderedNames []string) error
+
+	// User prefs (generic per-user key-value settings, e.g. thread mode)
+	GetUserPref(userEmail, key string) (string, error)
+	SetUserPref(userEmail, key, value string) error
 
 	// Lifecycle
 	MigrateLegacyKeyrings(dataDir string) (migrated int, err error)
@@ -242,6 +246,15 @@ CREATE TABLE IF NOT EXISTS contacts (
 );
 CREATE INDEX IF NOT EXISTS idx_contacts_owner ON contacts(owner_email);
 CREATE INDEX IF NOT EXISTS idx_contacts_owner_email ON contacts(owner_email, email);
+
+CREATE TABLE IF NOT EXISTS user_prefs (
+	owner_email  TEXT NOT NULL,
+	pref_key     TEXT NOT NULL,
+	pref_value   TEXT NOT NULL DEFAULT '',
+	updated_at   INTEGER NOT NULL,
+	PRIMARY KEY (owner_email, pref_key)
+);
+CREATE INDEX IF NOT EXISTS idx_user_prefs_owner ON user_prefs(owner_email);
 `
 
 // SQLiteStore SQLite 儲存實作
@@ -1117,4 +1130,40 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// ===== User Prefs =====
+
+// GetUserPref 取得 per-user key-value（無則回傳 ""）
+func (s *SQLiteStore) GetUserPref(userEmail, key string) (string, error) {
+	var val string
+	err := s.db.QueryRow(`SELECT pref_value FROM user_prefs WHERE owner_email = ? AND pref_key = ?`, userEmail, key).Scan(&val)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to get user pref %s: %w", key, err)
+	}
+	return val, nil
+}
+
+// SetUserPref upsert per-user key-value
+func (s *SQLiteStore) SetUserPref(userEmail, key, value string) error {
+	if userEmail == "" || key == "" {
+		return errors.New("user_email and key are required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`INSERT INTO user_prefs (owner_email, pref_key, pref_value, updated_at)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(owner_email, pref_key) DO UPDATE SET
+			pref_value = excluded.pref_value,
+			updated_at = excluded.updated_at`,
+		userEmail, key, value, time.Now().UTC().Unix(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set user pref %s: %w", key, err)
+	}
+	return nil
 }

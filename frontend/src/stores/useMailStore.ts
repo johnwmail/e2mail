@@ -74,5 +74,9 @@ export const useMailStore = create<MailState>((set) => ({
   setListMode: (mode) => {
     localStorage.setItem('webmail_list_mode', mode);
     set({ listMode: mode, page: 1, selectedUID: null });
+    // 同步到 DB（後台，失敗唔阻塞 UI）
+    void import('../api/prefs').then(({ prefsApi }) =>
+      prefsApi.set('listMode', mode).catch(() => {})
+    );
   },
 }));

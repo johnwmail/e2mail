@@ -123,17 +123,21 @@ const ThreadRow: React.FC<ThreadRowProps> = ({
           onChange={(e) => onToggleSelect(memberUIDs, e.target.checked)}
           className="w-4 h-4 mt-1 rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer shrink-0"
         />
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggle();
-          }}
-          className="p-2 -m-1 shrink-0 text-slate-400 hover:text-slate-600"
-          title={expanded ? '收起對話' : '展開對話'}
-          aria-label={expanded ? '收起對話' : '展開對話'}
-        >
-          {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-        </button>
+        {thread.messageCount > 1 ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle();
+            }}
+            className="p-2 -m-1 shrink-0 text-slate-400 hover:text-slate-600"
+            title={expanded ? '收起對話' : '展開對話'}
+            aria-label={expanded ? '收起對話' : '展開對話'}
+          >
+            {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+        ) : (
+          <span className="w-6 shrink-0" />
+        )}
         <div className="flex-1 min-w-0 overflow-hidden">
           <div className="flex items-center justify-between gap-2 min-w-0">
             <span className={`truncate text-[13px] md:text-sm ${thread.unreadCount > 0 ? 'font-bold text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
