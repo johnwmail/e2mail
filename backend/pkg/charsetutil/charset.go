@@ -109,8 +109,9 @@ func ToUTF8(data []byte, charsetName string) (string, error) {
 		return "", nil
 	}
 
-	// 若已為有效 UTF-8 且未指定編碼或指定 UTF-8，直接返回
-	if (charsetName == "" || strings.EqualFold(charsetName, "utf-8")) && utf8.Valid(data) {
+	// 若已為有效 UTF-8，直接返回，唔再解碼。
+	//（go-message 經 CharsetReader 已可能做過 charset 轉換，呢度避免重複解碼搞亂）
+	if utf8.Valid(data) {
 		return string(data), nil
 	}
 
