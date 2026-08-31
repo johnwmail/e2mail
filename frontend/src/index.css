@@ -1,6 +1,26 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* 對齊 v3 darkMode:'class'（app 從未加 .dark → dark: 永遠不生效，與 main 一致；
+   否則 v4 預設跟 OS 深色模式會突然變黑）*/
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* v4 將 shadow-sm 改名為更大的舊 shadow；還原為 v3.4 的 shadow-sm 值 */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+/* v4 移除了裸 rounded（改稱 rounded-sm）；此 app 有 23 處使用，還原 0.25rem */
+@utility rounded {
+  border-radius: 0.25rem;
+}
+
+/* v4 preflight 將 button cursor 由 pointer 改為 default；還原 v3 行為（桌面滑鼠體驗一致）*/
+@layer base {
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+}
 
 html, body, #root {
   height: 100%;
