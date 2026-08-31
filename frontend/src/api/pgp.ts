@@ -271,7 +271,7 @@ export const pgpService = {
   ): Promise<PgpKeyPair> => {
     const { privateKey, publicKey } = await openpgp.generateKey({
       type: 'ecc',
-      curve: 'ed25519',
+      curve: 'ed25519Legacy',
       userIDs: [{ name, email }],
       passphrase: passphrase || undefined,
     });
