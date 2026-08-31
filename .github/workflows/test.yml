@@ -1,5 +1,8 @@
 name: test
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -11,6 +14,8 @@ jobs:
   backend:
     name: Backend (Go)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: backend
@@ -35,6 +40,8 @@ jobs:
   frontend:
     name: Frontend (Node)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: frontend

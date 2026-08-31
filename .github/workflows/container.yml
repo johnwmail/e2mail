@@ -1,5 +1,8 @@
 name: container
 
+permissions:
+  contents: read
+
 # Build & push container image（tag push 觸發）。build 成功後 deploy job 先會啟動。
 #
 # Deploy job 需要喺 GitHub repo Secrets 設定：
@@ -119,6 +122,8 @@ jobs:
     name: Trigger remote webhook-action
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     # 只喺 tag 推送或手動指定 tag 時先部署
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     timeout-minutes: 2

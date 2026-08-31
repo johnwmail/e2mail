@@ -1,5 +1,8 @@
 name: webhook-action
 
+permissions:
+  contents: read
+
 # Send a signed HTTPS request to a remote webhook-action server, which then runs
 # the deploy script. Copy this workflow into the repo you want to deploy.
 #
@@ -33,6 +36,8 @@ jobs:
   deploy:
     name: Trigger remote webhook-action
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 2
     concurrency:
       group: webhook-${{ github.ref }}
