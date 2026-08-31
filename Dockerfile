@@ -20,7 +20,7 @@ RUN npm run build
 # ============================================================
 # Stage 2: 編譯 backend（將 frontend dist embed 入 binary）
 # ============================================================
-FROM golang:1.25-alpine AS backend-builder
+FROM golang:1.26-alpine AS backend-builder
 
 ARG VERSION=vdev
 ARG BUILD_TIME=timeless

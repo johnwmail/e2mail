@@ -1,6 +1,6 @@
 module github.com/johnwmail/e2mail/backend
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/ProtonMail/go-crypto v1.4.1

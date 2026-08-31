@@ -2,8 +2,8 @@
 
 ## Project
 Self-hosted end-to-end encrypted webmail client.
-- `backend/` — Go 1.25 + chi, IMAP/SMTP proxy + HTTP API, serves the embedded frontend.
-- `frontend/` — React 18 + Vite + Tailwind; built by the Docker image and `go:embed` into the backend binary (see `backend/web`).
+- `backend/` — Go 1.26 + chi, IMAP/SMTP proxy + HTTP API, serves the embedded frontend.
+- `frontend/` — React 19 + Vite 8 + Tailwind 4; built by the Docker image and `go:embed` into the backend binary (see `backend/web`).
 - `Dockerfile` — single multi-stage image (node build → go build → alpine runtime); `docker-compose.yml` runs one service.
 
 ## Notes
