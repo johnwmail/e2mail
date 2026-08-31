@@ -29,7 +29,7 @@ type ThreadSummary struct {
 	UnreadCount   int              `json:"unreadCount"`
 	Starred       bool             `json:"starred"`
 	HasAttachment bool             `json:"hasAttachment"`
-	Messages      []MessageSummary `json:"messages"` // date 升序（原信在上），最多 20
+	Messages      []MessageSummary `json:"messages"` // date 降序（Gmail 式：最新喺頂），最多 20
 }
 
 // ThreadListResult thread 模式清單回傳
@@ -381,7 +381,7 @@ func parseReferencesHeader(raw string) []string {
 	return out
 }
 
-// buildThreadGroups 由索引節點跑 JWZ + 組裝群組（root UID -> members，date 升序）
+// buildThreadGroups 由索引節點跑 JWZ + 組裝群組（root UID -> members，date 降序 Gmail 式）
 func buildThreadGroups(idx *threadIndex) map[uint32][]*threadNode {
 	inputs := make([]ThreadInput, 0, len(idx.nodes))
 	for _, n := range idx.nodes {
@@ -396,7 +396,8 @@ func buildThreadGroups(idx *threadIndex) map[uint32][]*threadNode {
 	}
 	for uid := range groups {
 		members := groups[uid]
-		sort.Slice(members, func(i, j int) bool { return members[i].uid < members[j].uid })
+		// Gmail 式：最新喺頂（UID 降序 ≈ 時間降序）
+		sort.Slice(members, func(i, j int) bool { return members[i].uid > members[j].uid })
 	}
 	return groups
 }
@@ -525,7 +526,7 @@ func filterIndexByQuery(idx *threadIndex, query string) *threadIndex {
 	return filtered
 }
 
-// assembleThreads 將分組結果組裝為 ThreadSummary 清單（date 升序成員、cap threadMaxMembers）
+// assembleThreads 將分組結果組裝為 ThreadSummary 清單（date 降序成員、cap threadMaxMembers）
 func assembleThreads(groups map[uint32][]*threadNode) []ThreadSummary {
 	threads := make([]ThreadSummary, 0, len(groups))
 	for _, members := range groups {

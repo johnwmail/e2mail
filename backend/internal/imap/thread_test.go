@@ -6,13 +6,13 @@ import (
 
 func TestSubjectKey(t *testing.T) {
 	cases := map[string]string{
-		"Re: Re: [tag] Fwd: Hello":  "hello",
+		"Re: Re: [tag] Fwd: Hello": "hello",
 		"答复：部署問題":                  "部署問題",
-		"RE(2): Meeting":            "meeting",
-		"(no subject)":              "",
-		"   ":                       "",
-		"Plain subject":             "plain subject",
-		"Fwd: Re: A":                "a",
+		"RE(2): Meeting":           "meeting",
+		"(no subject)":             "",
+		"   ":                      "",
+		"Plain subject":            "plain subject",
+		"Fwd: Re: A":               "a",
 	}
 	for in, want := range cases {
 		got := subjectKey(in)

@@ -82,4 +82,21 @@ describe('useMailStore', () => {
     useMailStore.getState().toggleSidebar();
     expect(useMailStore.getState().isSidebarOpen).toBe(false);
   });
+
+  it('setListMode toggles instantly, resets page/selection and persists', () => {
+    useMailStore.getState().setPage(3);
+    useMailStore.getState().setSelectedUID(42);
+
+    useMailStore.getState().setListMode('threads');
+    let s = useMailStore.getState();
+    expect(s.listMode).toBe('threads');
+    expect(s.page).toBe(1);
+    expect(s.selectedUID).toBeNull();
+    expect(localStorage.getItem('webmail_list_mode')).toBe('threads');
+
+    useMailStore.getState().setListMode('messages');
+    s = useMailStore.getState();
+    expect(s.listMode).toBe('messages');
+    expect(localStorage.getItem('webmail_list_mode')).toBe('messages');
+  });
 });
