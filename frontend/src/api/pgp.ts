@@ -241,7 +241,7 @@ const buildParsedKeyInfo = async (
   const emailMatch = primaryUser.match(/<([^>]+)>/);
   if (emailMatch) {
     email = emailMatch[1].toLowerCase().trim();
-    name = primaryUser.replace(/<[^>]+>/, '').trim();
+    name = primaryUser.replace(/<[^>]*>/g, '').trim();
   } else if (primaryUser.includes('@')) {
     email = primaryUser.trim().toLowerCase();
   }
