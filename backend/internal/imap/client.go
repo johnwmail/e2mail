@@ -50,6 +50,7 @@ type SelectResult struct {
 // MessageListResult 郵件分頁清單
 type MessageListResult struct {
 	Folder     string           `json:"folder"`
+	Mode       string           `json:"mode,omitempty"` // "messages"（缺省）
 	Total      int              `json:"total"`
 	Page       int              `json:"page"`
 	Limit      int              `json:"limit"`

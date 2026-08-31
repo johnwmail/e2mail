@@ -63,6 +63,7 @@ type MessageSummary struct {
 	HasAttachment bool         `json:"hasAttachment"`
 	Size        uint32         `json:"size"`
 	Snippet     string         `json:"snippet"`
+	ThreadID    string         `json:"threadId,omitempty"` // thread 模式先有值；flat 模式不受影響
 }
 
 // ParseAddressList 解析郵件地址清單並解碼 RFC 2047 字元

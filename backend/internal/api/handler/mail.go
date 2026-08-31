@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -141,13 +142,40 @@ func (h *MailHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query().Get("q")
+	threadMode := r.URL.Query().Get("thread") == "1"
 
-	client, release, _, _, err := h.acquireClient(r.Context(), r)
+	client, release, authCtx, _, err := h.acquireClient(r.Context(), r)
 	if err != nil {
 		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
 		return
 	}
 	defer release()
+
+	if threadMode {
+		owner := ""
+		if authCtx != nil && authCtx.Session != nil {
+			owner = authCtx.Session.Email
+		}
+		result, terr := client.FetchThreadList(r.Context(), owner, folder, page, limit, query)
+		if terr == nil {
+			response.Success(w, result)
+			return
+		}
+		// folder 過大 → 降級 flat，令清單仍然可用
+		var tooLarge *imapinternal.ThreadUnavailableError
+		if errors.As(terr, &tooLarge) {
+			w.Header().Set("X-Thread-Mode", "unavailable")
+			flat, ferr := client.FetchMessageSummaries(r.Context(), folder, page, limit, query)
+			if ferr == nil {
+				flat.Mode = "messages"
+				response.Success(w, flat)
+				return
+			}
+			terr = ferr
+		}
+		response.InternalServerError(w, "failed to fetch threads: "+terr.Error())
+		return
+	}
 
 	result, err := client.FetchMessageSummaries(r.Context(), folder, page, limit, query)
 	if err != nil {
