@@ -239,14 +239,23 @@ export const MessageList: React.FC = () => {
   };
 
   // --- Mobile swipe-to-reveal（左滑=垃圾桶/更多、右滑=已讀/封存） ---
-  const swipeStartRef = useRef<{ x: number; y: number; uid: number; horizontal: boolean | null } | null>(null);
-  const [swipeOffset, setSwipeOffset] = useState(0); // 揭示位移 (px)，負=向左揭示垃圾桶
+  const REVEAL_W = 160;
+  const REVEAL_HALF = REVEAL_W / 2; // 80：過半先停留喺揭示位，否則彈返正中
+  const swipeStartRef = useRef<{ x: number; y: number; uid: number; horizontal: boolean | null; base: number } | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState(0); // 目前顯示位移（拖曳中=即時，彈定後=±REVEAL_W/0）
   const [draggingUID, setDraggingUID] = useState<number | null>(null);
+
+  const closeSwipe = () => {
+    setSwipeOffset(0);
+    setSwipedUID(null);
+  };
 
   const handleTouchStart = (msg: MessageSummary) => (e: React.TouchEvent) => {
     if (isMultiSelectRef.current) return;
     const t = e.touches[0];
-    swipeStartRef.current = { x: t.clientX, y: t.clientY, uid: msg.uid, horizontal: null };
+    // 起點位移：若呢行已揭示，由當前停留位開始計（左滑傾斜量相對），咁先可以用同一方向拖返去正中
+    const base = swipedUID === msg.uid ? swipeOffset : 0;
+    swipeStartRef.current = { x: t.clientX, y: t.clientY, uid: msg.uid, horizontal: null, base };
     setDraggingUID(msg.uid);
   };
 
@@ -263,9 +272,8 @@ export const MessageList: React.FC = () => {
     }
 
     if (start.horizontal) {
-      let next = dx;
-      const max = 160;
-      next = Math.max(-max, Math.min(max, next));
+      let next = start.base + dx;
+      next = Math.max(-REVEAL_W, Math.min(REVEAL_W, next));
       setSwipeOffset(next);
     }
     // CSS touch-action: pan-y 已限制垂直 roll；水平 swipe 不需 preventDefault
@@ -278,41 +286,38 @@ export const MessageList: React.FC = () => {
     if (!start || start.uid !== msg.uid) return;
     // 只有水平方向先觸發動作；且唔係響多選模式
     if (!start.horizontal || isMultiSelectRef.current) {
-      setSwipeOffset(0);
-      setSwipedUID(null);
+      closeSwipe();
       return;
     }
 
     const t = e.changedTouches[0];
-    const dx = t.clientX - start.x;
-    const threshold = 40;
-    if (Math.abs(dx) < threshold) {
-      // 唔夠過 threshold → 收返
-      setSwipeOffset(0);
-      setSwipedUID(null);
+    let final = start.base + (t.clientX - start.x);
+    final = Math.max(-REVEAL_W, Math.min(REVEAL_W, final));
+    // 過半（±80）先停留喺揭示位；否則一律彈返正中（0）
+    if (final > -REVEAL_HALF && final < REVEAL_HALF) {
+      closeSwipe();
       return;
     }
-    if (dx < 0) {
-      // 向左滑 → 揭示垃圾桶
-      setSwipedUID(msg.uid);
-      setSwipeOffset(-160);
-    } else {
-      // 向右滑 → 揭示已讀/未讀
-      setSwipedUID(msg.uid);
-      setSwipeOffset(160);
-    }
+    setSwipedUID(msg.uid);
+    setSwipeOffset(final <= -REVEAL_HALF ? -REVEAL_W : REVEAL_W);
   };
 
   // --- Thread 行 swipe-to-reveal（同 flat 一致，但以 threadId 為鍵） ---
-  const threadSwipeStartRef = useRef<{ x: number; y: number; threadId: string; horizontal: boolean | null } | null>(null);
+  const threadSwipeStartRef = useRef<{ x: number; y: number; threadId: string; horizontal: boolean | null; base: number } | null>(null);
   const [threadSwipeOffset, setThreadSwipeOffset] = useState(0);
   const [draggingThreadId, setDraggingThreadId] = useState<string | null>(null);
   const [swipedThreadId, setSwipedThreadId] = useState<string | null>(null);
 
+  const closeThreadSwipe = () => {
+    setThreadSwipeOffset(0);
+    setSwipedThreadId(null);
+  };
+
   const handleThreadTouchStart = (thread: ThreadSummary) => (e: React.TouchEvent) => {
     if (isMultiSelectRef.current) return;
     const t = e.touches[0];
-    threadSwipeStartRef.current = { x: t.clientX, y: t.clientY, threadId: thread.threadId, horizontal: null };
+    const base = swipedThreadId === thread.threadId ? threadSwipeOffset : 0;
+    threadSwipeStartRef.current = { x: t.clientX, y: t.clientY, threadId: thread.threadId, horizontal: null, base };
     setDraggingThreadId(thread.threadId);
   };
 
@@ -326,7 +331,7 @@ export const MessageList: React.FC = () => {
       start.horizontal = Math.abs(dx) > Math.abs(dy);
     }
     if (start.horizontal) {
-      setThreadSwipeOffset(Math.max(-160, Math.min(160, dx)));
+      setThreadSwipeOffset(Math.max(-REVEAL_W, Math.min(REVEAL_W, start.base + dx)));
     }
   };
 
@@ -336,25 +341,29 @@ export const MessageList: React.FC = () => {
     setDraggingThreadId(null);
     if (!start || start.threadId !== thread.threadId) return;
     if (!start.horizontal || isMultiSelectRef.current) {
-      setThreadSwipeOffset(0);
-      setSwipedThreadId(null);
+      closeThreadSwipe();
       return;
     }
     const t = e.changedTouches[0];
-    const dx = t.clientX - start.x;
-    if (Math.abs(dx) < 40) {
-      setThreadSwipeOffset(0);
-      setSwipedThreadId(null);
+    let final = start.base + (t.clientX - start.x);
+    final = Math.max(-REVEAL_W, Math.min(REVEAL_W, final));
+    if (final > -REVEAL_HALF && final < REVEAL_HALF) {
+      closeThreadSwipe();
       return;
     }
     setSwipedThreadId(thread.threadId);
-    setThreadSwipeOffset(dx < 0 ? -160 : 160);
+    setThreadSwipeOffset(final <= -REVEAL_HALF ? -REVEAL_W : REVEAL_W);
   };
 
   const clearThreadSwipe = () => {
-    setSwipedThreadId(null);
-    setThreadSwipeOffset(0);
+    closeThreadSwipe();
   };
+
+  // 清單上下文改變（資料夾/搜尋/分頁/模式）時收返所有揭示，避免殘留 swiped 遮檔開信
+  useEffect(() => {
+    closeSwipe();
+    closeThreadSwipe();
+  }, [currentFolder, searchQuery, page, limit, listMode]);
 
   // 取得郵件清單
   const { data, isLoading, isFetching, refetch } = useQuery({
@@ -548,6 +557,8 @@ export const MessageList: React.FC = () => {
       longPressTimer.current = null;
       isMultiSelectRef.current = true;
       setIsMultiSelect(true);
+      closeSwipe();
+      closeThreadSwipe();
       const m = messages[index];
       if (m) selectUID(m.uid);
     }, 400);
@@ -837,7 +848,8 @@ export const MessageList: React.FC = () => {
                     style={{
                       touchAction: isMultiSelect ? 'none' : 'pan-y',
                       transform:
-                        swipedThreadId === t.threadId || draggingThreadId === t.threadId
+                        draggingThreadId === t.threadId ||
+                        (swipedThreadId === t.threadId && draggingThreadId === null)
                           ? `translateX(${threadSwipeOffset}px)`
                           : 'translateX(0)',
                       transition: draggingThreadId === t.threadId ? 'none' : 'transform 0.2s ease',
@@ -942,7 +954,8 @@ export const MessageList: React.FC = () => {
                   style={{
                     touchAction: isMultiSelect ? 'none' : 'pan-y',
                     transform:
-                      swipedUID === msg.uid || draggingUID === msg.uid
+                      draggingUID === msg.uid ||
+                      (swipedUID === msg.uid && draggingUID === null)
                         ? `translateX(${swipeOffset}px)`
                         : 'translateX(0)',
                     transition: draggingUID === msg.uid ? 'none' : 'transform 0.2s ease',
