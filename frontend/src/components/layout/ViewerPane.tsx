@@ -41,10 +41,29 @@ export const ViewerPane: React.FC = () => {
   // 後端讀取郵件時會自動標記為已讀：直接更新 list cache 中該 mail 嘅 unread flag
   useEffect(() => {
     if (selectedUID != null && message) {
-      queryClient.setQueriesData<{ messages: MessageSummary[] } | MessageListResult>(
+      queryClient.setQueriesData<MessageListResult>(
         { queryKey: ['messages', accountId, currentFolder] },
         (old) => {
-          if (!old || !('messages' in old)) return old;
+          if (!old) return old;
+          if (old.mode === 'threads' && old.threads) {
+            return {
+              ...old,
+              threads: old.threads.map((t) => {
+                const target = t.messages.find((m) => m.uid === selectedUID);
+                if (!target) return t;
+                const wasUnread = target.unread;
+                return {
+                  ...t,
+                  messages: t.messages.map((m) =>
+                    m.uid === selectedUID ? { ...m, unread: false } : m
+                  ),
+                  unreadCount:
+                    wasUnread && t.unreadCount > 0 ? t.unreadCount - 1 : t.unreadCount,
+                };
+              }),
+            };
+          }
+          if (!('messages' in old)) return old;
           return {
             ...old,
             messages: old.messages.map((m) =>
