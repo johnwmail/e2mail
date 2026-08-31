@@ -164,7 +164,7 @@ const ThreadRow: React.FC<ThreadRowProps> = ({
         )}
       </div>
       {expanded && thread.messages.length > 1 && (
-        <div className="bg-slate-50/60 dark:bg-slate-900/60 border-y border-slate-100 dark:border-slate-800">
+        <div className="bg-slate-50 dark:bg-slate-900 border-y border-slate-100 dark:border-slate-800">
           {thread.messages.map((m) => (
             <div
               key={m.uid}
@@ -814,6 +814,7 @@ export const MessageList: React.FC = () => {
 
                   {/* Thread 內容（translate-x revealing） */}
                   <div
+                    className="bg-white dark:bg-slate-900 w-full"
                     style={{
                       touchAction: isMultiSelect ? 'none' : 'pan-y',
                       transform:
