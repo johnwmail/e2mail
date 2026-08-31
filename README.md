@@ -45,13 +45,13 @@ and the API from a single Go binary in one container.
                                 /data/webmail.db  (named volume)
 ```
 
-The frontend `dist/` (React 18 + Vite + Tailwind) is built during the Docker
+The frontend `dist/` (React 19 + Vite 8 + Tailwind 4) is built during the Docker
 image build and `go:embed`-ed into the backend binary (`backend/web`), so the
 container runs a single process serving both the SPA and the API.
 
 | Service  | Tech                                            | Port (host) |
 |----------|-------------------------------------------------|-------------|
-| webmail  | Go 1.25 + chi + modernc.org/sqlite, embeds the Vite build | `8080`      |
+| webmail  | Go 1.26 + chi + modernc.org/sqlite, embeds the Vite build | `8080`      |
 
 ## Quick start
 
