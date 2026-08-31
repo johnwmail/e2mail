@@ -372,20 +372,26 @@ func (c *Client) FetchMessageSummaries(ctx context.Context, folder string, page,
 	var matchedSeqNums []uint32
 
 	if query != "" {
-		criteria := &imap.SearchCriteria{
-			Or: [][2]imap.SearchCriteria{
-				{
-					{Header: []imap.SearchCriteriaHeaderField{{Key: "Subject", Value: query}}},
-					{Header: []imap.SearchCriteriaHeaderField{{Key: "From", Value: query}}},
-				},
-			},
+		criteria, usesAttachment := buildSearchCriteria(query)
+		if criteria != nil {
+			searchData, err := c.rawClient.Search(criteria, nil).Wait()
+			if err != nil && usesAttachment {
+				// 某些伺服器唔支援 \HasAttachment keyword → 撤回重試
+				if c2, _ := buildSearchCriteriaNoAttachment(query); c2 != nil {
+					searchData, err = c.rawClient.Search(c2, nil).Wait()
+				}
+			}
+			if err != nil {
+				return nil, fmt.Errorf("search failed: %w", err)
+			}
+			matchedSeqNums = append(matchedSeqNums, searchData.AllSeqNums()...)
+			total = len(matchedSeqNums)
+		} else {
+			// 查詢只有無意義 operator → 當作無過濾
+			for i := uint32(1); i <= selectData.NumMessages; i++ {
+				matchedSeqNums = append(matchedSeqNums, i)
+			}
 		}
-		searchData, err := c.rawClient.Search(criteria, nil).Wait()
-		if err != nil {
-			return nil, fmt.Errorf("search failed: %w", err)
-		}
-		matchedSeqNums = append(matchedSeqNums, searchData.AllSeqNums()...)
-		total = len(matchedSeqNums)
 	} else {
 		for i := uint32(1); i <= selectData.NumMessages; i++ {
 			matchedSeqNums = append(matchedSeqNums, i)

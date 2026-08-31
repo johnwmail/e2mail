@@ -15,6 +15,7 @@ import {
   X,
   MessagesSquare,
   ChevronDown,
+  Search,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { contactsApi } from '../../api/addressBook';
@@ -199,6 +200,7 @@ export const MessageList: React.FC = () => {
     selectedUID,
     setSelectedUID,
     searchQuery,
+    setSearchQuery,
     page,
     setPage,
     limit,
@@ -751,6 +753,23 @@ export const MessageList: React.FC = () => {
         </div>
       </div>
 
+      {/* 搜尋結果提示列（進行搜尋時顯示） */}
+      {searchQuery && (
+        <div className="px-3.5 py-2 border-b border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/30 flex items-center gap-2 shrink-0 text-xs text-blue-800 dark:text-blue-200">
+          <Search className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate flex-1 min-w-0">
+            搜尋「{searchQuery}」— <b>{data?.total ?? 0}</b> 個結果
+          </span>
+          <button
+            onClick={() => setSearchQuery('')}
+            className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/50 transition shrink-0"
+            title="清除搜尋"
+            aria-label="清除搜尋"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
       {/* 郵件清單容器 */}
       <div
         onPointerMove={handleListPointerMove}
@@ -765,7 +784,7 @@ export const MessageList: React.FC = () => {
           threads.length === 0 ? (
             <div className="p-12 text-center text-slate-400 flex flex-col items-center">
               <MessagesSquare className="w-12 h-12 stroke-1 mb-2 text-slate-300 dark:text-slate-700" />
-              <p className="text-xs">此資料夾沒有對話</p>
+              <p className="text-xs">{searchQuery ? '沒有符合搜尋嘅對話' : '此資料夾沒有對話'}</p>
             </div>
           ) : (
             threads.map((t) => {
@@ -852,7 +871,7 @@ export const MessageList: React.FC = () => {
         ) : messages.length === 0 ? (
           <div className="p-12 text-center text-slate-400 flex flex-col items-center">
             <Inbox className="w-12 h-12 stroke-1 mb-2 text-slate-300 dark:text-slate-700" />
-            <p className="text-xs">此資料夾沒有郵件</p>
+            <p className="text-xs">{searchQuery ? '沒有符合搜尋嘅郵件' : '此資料夾沒有郵件'}</p>
           </div>
         ) : (
           messages.map((msg, index) => {

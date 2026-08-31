@@ -12,7 +12,26 @@ export const Header: React.FC = () => {
   const { searchQuery, setSearchQuery, openComposer, toggleSidebar, selectedUID, currentFolder } = useMailStore();
   const [searchInput, setSearchInput] = useState(searchQuery);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isPgpModalOpen, setIsPgpModalOpen] = useState(false);
+
+  // Gmail 風格搜尋運算符（點擊加入輸入欄）
+  const searchOperators = [
+    'from:',
+    'to:',
+    'subject:',
+    'body:',
+    'is:unread',
+    'is:read',
+    'is:starred',
+    'has:attachment',
+    'after:2024-01-01',
+    'before:2024-12-31',
+  ];
+  const showSearchHint = isSearchFocused && (searchInput.trim() !== '' || searchInput.includes(':'));
+  const appendSearchOperator = (op: string) => {
+    setSearchInput((prev) => (prev.trim() ? prev.trim() + ' ' : '') + op);
+  };
 
   // 頂層合計：所有帳號嘅頂層 folder 未讀總和，不包括垃圾桶及 Virtual
   const accounts = session?.accounts ?? [];
@@ -76,7 +95,7 @@ export const Header: React.FC = () => {
                 autoFocus
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="搜尋郵件主旨、內文或寄件者..."
+                placeholder="搜尋郵件主旨、內文或寄件者...（可用 from: is:unread）"
                 className="w-full pl-9 pr-8 py-1.5 text-sm bg-slate-100 dark:bg-slate-800 border-0 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
               />
               {searchInput && (
@@ -129,14 +148,16 @@ export const Header: React.FC = () => {
             </div>
 
             {/* 中間搜尋欄 (Desktop 顯示) */}
-            <div className="hidden md:flex flex-1 max-w-xl px-4">
+            <div className="hidden md:flex flex-1 max-w-xl px-4 relative">
               <form onSubmit={handleSearchSubmit} className="relative w-full">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
                   type="text"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="搜尋郵件主旨、內文或寄件者..."
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setIsSearchFocused(false)}
+                  placeholder="搜尋郵件主旨、內文或寄件者...（可用 from: to: is:unread）"
                   className="w-full pl-9 pr-8 py-1.5 text-sm bg-slate-100 dark:bg-slate-800 border-0 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400"
                 />
                 {searchInput && (
@@ -149,6 +170,25 @@ export const Header: React.FC = () => {
                   </button>
                 )}
               </form>
+
+              {showSearchHint && (
+                <div className="absolute left-0 right-0 top-full mt-2 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg p-2.5 text-left">
+                  <p className="text-[11px] text-slate-400 mb-1.5 px-1">進階搜尋運算符（點擊插入）</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {searchOperators.map((op) => (
+                      <button
+                        key={op}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => appendSearchOperator(op)}
+                        className="px-2 py-1 text-[11px] font-mono rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-600 transition"
+                      >
+                        {op}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 右側操作按鈕 */}

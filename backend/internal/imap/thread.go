@@ -429,7 +429,8 @@ func (c *Client) FetchThreadList(ctx context.Context, owner, folder string, page
 		return nil, err
 	}
 
-	groups := buildThreadGroups(filterIndexByQuery(idx, query))
+	filtered := c.filterThreadIndex(ctx, idx, query)
+	groups := buildThreadGroups(filtered)
 	threads := assembleThreads(groups)
 	sort.Slice(threads, func(i, j int) bool { return threads[i].Date.After(threads[j].Date) })
 
@@ -504,27 +505,73 @@ func (c *Client) refreshThreadIndexLocked(ctx context.Context, entry *threadEntr
 	}
 }
 
-// filterIndexByQuery 搜尋模式：只留 match 節點（subject / from 名稱或地址包含 q）
-func filterIndexByQuery(idx *threadIndex, query string) *threadIndex {
-	q := strings.ToLower(strings.TrimSpace(query))
-	if q == "" {
+// filterThreadIndex 搜尋模式下只保留符合 query 嘅節點。
+// 優先使用 IMAP UID SEARCH（支援全文/to/cc/body/attachment/日期），失敗時降級為客戶端欄位過濾。
+func (c *Client) filterThreadIndex(ctx context.Context, idx *threadIndex, query string) *threadIndex {
+	pq := ParseSearchQuery(query)
+	if pq.IsEmpty() {
 		return idx
+	}
+	uids, err := c.searchUIDs(ctx, query)
+	if err == nil && uids != nil {
+		return filterIndexByUIDs(idx, uids)
+	}
+	return filterIndexByPredicate(idx, pq)
+}
+
+// filterIndexByUIDs 只保留 UID 喺 search 結果集內嘅節點
+func filterIndexByUIDs(idx *threadIndex, uids []uint32) *threadIndex {
+	set := make(map[uint32]bool, len(uids))
+	for _, u := range uids {
+		set[u] = true
 	}
 	filtered := &threadIndex{byUID: make(map[uint32]*threadNode), uidValidity: idx.uidValidity}
 	for _, n := range idx.nodes {
-		senderHit := false
-		for _, fe := range n.summary.From {
-			if strings.Contains(strings.ToLower(fe.Address), q) || strings.Contains(strings.ToLower(fe.Name), q) {
-				senderHit = true
-				break
-			}
-		}
-		if strings.Contains(strings.ToLower(n.subject), q) || senderHit {
+		if set[n.uid] {
 			filtered.nodes = append(filtered.nodes, n)
 			filtered.byUID[n.uid] = n
 		}
 	}
 	return filtered
+}
+
+// filterIndexByPredicate 客戶端降級過濾（只睇 index 有嘅欄位）
+func filterIndexByPredicate(idx *threadIndex, pq *SearchQuery) *threadIndex {
+	filtered := &threadIndex{byUID: make(map[uint32]*threadNode), uidValidity: idx.uidValidity}
+	for _, n := range idx.nodes {
+		if pq.MatchesNode(n) {
+			filtered.nodes = append(filtered.nodes, n)
+			filtered.byUID[n.uid] = n
+		}
+	}
+	return filtered
+}
+
+// searchUIDs 用 IMAP UID SEARCH 搵出符合 query 嘅 UID；query 無條件時返回 nil。
+// 若 query 用到 has:attachment 而伺服器唔支援 keyword，會自動撤回重試。
+func (c *Client) searchUIDs(ctx context.Context, query string) ([]uint32, error) {
+	pq := ParseSearchQuery(query)
+	if pq.IsEmpty() {
+		return nil, nil
+	}
+	criteria, usesAttachment := pq.BuildCriteria()
+	if criteria == nil {
+		return nil, nil
+	}
+	data, err := c.rawClient.UIDSearch(criteria, nil).Wait()
+	if err != nil && usesAttachment {
+		if c2, _ := pq.BuildCriteriaNoAttachment(); c2 != nil {
+			data, err = c.rawClient.UIDSearch(c2, nil).Wait()
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("search failed: %w", err)
+	}
+	var uids []uint32
+	for _, u := range data.AllUIDs() {
+		uids = append(uids, uint32(u))
+	}
+	return uids, nil
 }
 
 // assembleThreads 將分組結果組裝為 ThreadSummary 清單（date 降序成員、cap threadMaxMembers）
