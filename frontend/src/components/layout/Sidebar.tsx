@@ -319,7 +319,7 @@ const AccountFolders: React.FC<{
                 setUnreadView(true);
                 setSidebarOpen(false);
               }}
-              className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition ${
+              className={`w-full flex items-center justify-between py-2 pl-[28px] pr-2.5 rounded-lg text-xs font-medium transition ${
                 isActiveAccount && unreadView
                   ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 font-semibold'
                   : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800'
