@@ -369,7 +369,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-      <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh] max-h-[90dvh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Modal 頂部標題 */}
         <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
           <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm md:text-base min-w-0">
@@ -388,7 +388,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
               setActiveTab('mykey');
               setMsg(null);
             }}
-            className={`py-3 px-1 md:px-0 border-b-2 whitespace-nowrap transition ${
+            className={`py-3 px-1 md:px-0 border-b-2 whitespace-nowrap shrink-0 transition ${
               activeTab === 'mykey'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -401,7 +401,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
               setActiveTab('contacts');
               setMsg(null);
             }}
-            className={`py-3 px-1 md:px-0 border-b-2 whitespace-nowrap transition ${
+            className={`py-3 px-1 md:px-0 border-b-2 whitespace-nowrap shrink-0 transition ${
               activeTab === 'contacts'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -414,7 +414,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
               setActiveTab('security');
               setMsg(null);
             }}
-            className={`py-3 px-1 md:px-0 border-b-2 whitespace-nowrap transition flex items-center gap-1.5 ${
+            className={`py-3 px-1 md:px-0 border-b-2 whitespace-nowrap shrink-0 transition flex items-center gap-1.5 ${
               activeTab === 'security'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -738,15 +738,15 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                 onSubmit={handleSaveContactKey}
                 className="p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 space-y-3.5"
               >
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
-                    <Plus className="w-4 h-4 text-blue-600" />
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5 min-w-0">
+                    <Plus className="w-4 h-4 text-blue-600 shrink-0" />
                     匯入聯絡人 PGP 公開金鑰
                   </h4>
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-1 text-xs text-blue-600 hover:underline font-semibold"
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:underline font-semibold shrink-0"
                   >
                     <Upload className="w-3.5 h-3.5" />
                     上傳 .asc / .pub 檔案
@@ -761,19 +761,19 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                   />
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="email"
                     value={contactEmail}
                     onChange={(e) => setContactEmail(e.target.value)}
                     placeholder="聯絡人電子郵件 (匯入公鑰後會自動解析填入)"
-                    className="flex-1 px-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
+                    className="flex-1 min-w-0 px-3 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                   />
                   <button
                     type="button"
                     onClick={handleSearchKeyserver}
                     disabled={isSearchingKeyserver}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-semibold transition shrink-0 disabled:opacity-50"
+                    className="flex items-center justify-center gap-1 px-3 py-2 w-full sm:w-auto bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-semibold transition shrink-0 disabled:opacity-50"
                   >
                     {isSearchingKeyserver ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -850,20 +850,20 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                         key={c.email}
                         className="p-3 flex items-center justify-between bg-white dark:bg-slate-900"
                       >
-                        <div>
+                        <div className="min-w-0">
                           <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>{c.email}</span>
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span className="break-all">{c.email}</span>
                             {c.name && <span className="text-slate-400 font-normal">({c.name})</span>}
                           </div>
-                          <div className="text-[10px] font-mono text-slate-400 mt-0.5">
+                          <div className="text-[10px] font-mono text-slate-400 mt-0.5 break-all">
                             {c.fingerprint}
                           </div>
                         </div>
                         <button
                           onClick={() => setContactToRemove(c.email)}
                           disabled={removingEmail !== null}
-                          className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="p-2 shrink-0 text-slate-400 hover:text-red-600 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                           title={removingEmail === c.email ? '刪除中...' : '刪除此公鑰'}
                         >
                           {removingEmail === c.email ? (
