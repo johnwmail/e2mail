@@ -7,6 +7,7 @@ interface MailState {
   selectedUID: number | null;
   searchQuery: string;
   searchInput: string;
+  unreadView: boolean;
   page: number;
   limit: number;
   isComposerOpen: boolean;
@@ -23,6 +24,7 @@ interface MailState {
   setSearchQuery: (q: string) => void;
   setSearchInput: (input: string) => void;
   clearSearch: () => void;
+  setUnreadView: (flag: boolean) => void;
   setPage: (page: number) => void;
   openComposer: (draft?: Partial<OutgoingMessage>) => void;
   closeComposer: () => void;
@@ -39,6 +41,7 @@ export const useMailStore = create<MailState>((set) => ({
   selectedUID: null,
   searchQuery: '',
   searchInput: '',
+  unreadView: false,
   page: 1,
   limit: 50,
   isComposerOpen: false,
@@ -50,10 +53,10 @@ export const useMailStore = create<MailState>((set) => ({
   listMode: (localStorage.getItem('webmail_list_mode') === 'threads' ? 'threads' : 'messages'),
 
   setCurrentFolder: (folder) =>
-    set({ currentFolder: folder, selectedUID: null, page: 1, isSidebarOpen: false }),
+    set({ currentFolder: folder, selectedUID: null, page: 1, isSidebarOpen: false, unreadView: false }),
 
   setActiveAccountId: (id) =>
-    set({ activeAccountId: id, currentFolder: 'INBOX', selectedUID: null, page: 1, inboxUnread: 0 }),
+    set({ activeAccountId: id, currentFolder: 'INBOX', selectedUID: null, page: 1, inboxUnread: 0, unreadView: false }),
 
   setSelectedUID: (uid) => set({ selectedUID: uid }),
 
@@ -63,6 +66,8 @@ export const useMailStore = create<MailState>((set) => ({
 
   clearSearch: () =>
     set({ searchInput: '', searchQuery: '', page: 1, selectedUID: null }),
+
+  setUnreadView: (flag) => set({ unreadView: flag, page: 1, selectedUID: null }),
 
   setPage: (page) => set({ page }),
 

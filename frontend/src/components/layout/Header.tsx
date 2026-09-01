@@ -3,16 +3,26 @@ import { Mail, Search, LogOut, PenSquare, X, Menu, Key } from 'lucide-react';
 import { useQueries } from '@tanstack/react-query';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useMailStore } from '../../stores/useMailStore';
+import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { mailApi } from '../../api/mail';
 import { PgpKeyModal } from '../mail/PgpKeyModal';
 import { FolderInfo } from '../../types/api';
 
 export const Header: React.FC = () => {
   const { session, logout } = useAuthStore();
-  const { searchQuery, searchInput, setSearchQuery, setSearchInput, clearSearch, openComposer, toggleSidebar, selectedUID, currentFolder } = useMailStore();
+  const { searchQuery, searchInput, setSearchQuery, setSearchInput, clearSearch, openComposer, toggleSidebar, selectedUID, currentFolder, setActiveAccountId, unreadView, setUnreadView } = useMailStore();
+  const activeAccount = useActiveAccount();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isPgpModalOpen, setIsPgpModalOpen] = useState(false);
+
+  // 點擊未讀 badge → 切去該帳號嘅動態未讀虛擬列表（純 App 前端合併）
+  const openUnread = () => {
+    const acc = activeAccount || session?.accounts?.[0];
+    if (!acc) return;
+    setActiveAccountId(acc.id);
+    setUnreadView(true);
+  };
 
   // Debounce：停低輸入 800ms 之後先 commit 落 searchQuery 觸發後台全文搜尋。
   // 每次打字都 reset，所以快速／連住打都只會 send 一次。Enter 仍可即時提交。
@@ -126,18 +136,24 @@ export const Header: React.FC = () => {
           <>
             {/* 左側：漢堡選單 (Mobile) / Logo (Desktop) */}
             <div className="flex items-center gap-2.5">
-              <button
-                onClick={toggleSidebar}
-                className="lg:hidden relative p-2 -ml-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
-                title="開啟選單"
-              >
-                <Menu className="w-5 h-5" />
+              <div className="lg:hidden relative">
+                <button
+                  onClick={toggleSidebar}
+                  className="p-2 -ml-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                  title="開啟選單"
+                >
+                  <Menu className="w-5 h-5" />
+                </button>
                 {totalUnread > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[9px] font-bold leading-none border-2 border-white dark:border-slate-900">
+                  <button
+                    onClick={openUnread}
+                    className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[9px] font-bold leading-none border-2 border-white dark:border-slate-900 hover:bg-red-700 transition"
+                    title="查看所有未讀郵件"
+                  >
                     {totalUnread > 99 ? '99+' : totalUnread}
-                  </span>
+                  </button>
                 )}
-              </button>
+              </div>
 
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-sm shrink-0">
@@ -148,7 +164,7 @@ export const Header: React.FC = () => {
                     WebMail
                   </span>
                   <span className="lg:hidden text-[11px] text-slate-400 font-medium leading-none mt-0.5">
-                    {getFolderDisplayName(currentFolder)}
+                    {unreadView ? '未讀' : getFolderDisplayName(currentFolder)}
                   </span>
                 </div>
               </div>
