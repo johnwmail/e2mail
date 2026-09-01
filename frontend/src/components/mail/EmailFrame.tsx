@@ -105,7 +105,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
           FORBID_TAGS: ['script', 'object', 'embed', 'applet'],
           FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover'],
         });
-        return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;box-sizing:border-box}table{table-layout:auto;width:auto !important;min-width:0;max-width:none !important;border-collapse:collapse}td,th{word-break:normal;white-space:normal}img{max-width:100%;height:auto}img[data-blocked-src]{background:#f8fafc;color:#94a3b8;font-size:12px;box-sizing:border-box}img[src=""]{background:transparent}a{color:#2563eb}</style></head><body>${clean}</body></html>`;
+        return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;box-sizing:border-box}.email-content{max-width:720px;margin:0 auto}table{table-layout:auto;max-width:100% !important;border-collapse:collapse}td,th{word-break:normal;white-space:normal;vertical-align:top}img{max-width:100%;height:auto}img[data-blocked-src]{background:#f8fafc;color:#94a3b8;font-size:12px;box-sizing:border-box}img[src=""]{background:transparent}a{color:#2563eb}</style></head><body><div class="email-content">${clean}</div></body></html>`;
       }
       let escaped = decryptedContent
         .replace(/&/g, '&amp;')
@@ -245,8 +245,9 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
               width: 100%;
               box-sizing: border-box;
             }
-            table { table-layout: auto; width: auto !important; min-width: 0; max-width: none !important; border-collapse: collapse; }
-            td, th { word-break: normal; white-space: normal; }
+            table { table-layout: auto; max-width: 100% !important; border-collapse: collapse; }
+            td, th { word-break: normal; white-space: normal; vertical-align: top; }
+            .email-content { max-width: 720px; margin: 0 auto; }
             img[data-blocked-src] { background: #f8fafc; color: #94a3b8; font-size: 12px; box-sizing: border-box; }
             img[src=""] { background: transparent; }
             img { max-width: 100%; height: auto; }
@@ -260,7 +261,9 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
           </style>
         </head>
         <body>
+          <div class="email-content">
           ${clean}
+          </div>
         </body>
       </html>
     `;
