@@ -20,6 +20,12 @@
   [role="button"] {
     cursor: pointer;
   }
+  /* 防止行動端「點擊兩次」觸發 Safari 縮放（用戶手勢誤判），pinch-zoom 不受影響 */
+  button,
+  [role="button"],
+  a {
+    touch-action: manipulation;
+  }
 }
 
 html, body, #root {
@@ -38,4 +44,14 @@ html, body, #root {
 }
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* iOS Safari focus 計算字級 <16px 的輸入框會強制放大整個頁面（無法自動還原）。
+   手機上統一將表單控件提升到 16px 消除該自動縮放，同時保留用戶手動 pinch-zoom。 */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
