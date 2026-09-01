@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Mail, Search, LogOut, PenSquare, X, Menu, Key } from 'lucide-react';
 import { useQueries } from '@tanstack/react-query';
 import { useAuthStore } from '../../stores/useAuthStore';
@@ -9,11 +9,19 @@ import { FolderInfo } from '../../types/api';
 
 export const Header: React.FC = () => {
   const { session, logout } = useAuthStore();
-  const { searchQuery, setSearchQuery, openComposer, toggleSidebar, selectedUID, currentFolder } = useMailStore();
-  const [searchInput, setSearchInput] = useState(searchQuery);
+  const { searchQuery, searchInput, setSearchQuery, setSearchInput, clearSearch, openComposer, toggleSidebar, selectedUID, currentFolder } = useMailStore();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isPgpModalOpen, setIsPgpModalOpen] = useState(false);
+
+  // Debounce：停低輸入 800ms 之後先 commit 落 searchQuery 觸發後台全文搜尋。
+  // 每次打字都 reset，所以快速／連住打都只會 send 一次。Enter 仍可即時提交。
+  useEffect(() => {
+    const q = searchInput.trim();
+    if (q === searchQuery) return;
+    const t = setTimeout(() => setSearchQuery(q), 800);
+    return () => clearTimeout(t);
+  }, [searchInput, searchQuery, setSearchQuery]);
 
   // Gmail 風格搜尋運算符（點擊加入輸入欄）
   const searchOperators = [
@@ -30,7 +38,7 @@ export const Header: React.FC = () => {
   ];
   const showSearchHint = isSearchFocused && (searchInput.trim() !== '' || searchInput.includes(':'));
   const appendSearchOperator = (op: string) => {
-    setSearchInput((prev) => (prev.trim() ? prev.trim() + ' ' : '') + op);
+    setSearchInput((searchInput.trim() ? searchInput.trim() + ' ' : '') + op);
   };
 
   // 頂層合計：所有帳號嘅頂層 folder 未讀總和，不包括垃圾桶及 Virtual
@@ -63,8 +71,7 @@ export const Header: React.FC = () => {
   };
 
   const handleClearSearch = () => {
-    setSearchInput('');
-    setSearchQuery('');
+    clearSearch();
   };
 
   const getFolderDisplayName = (name: string) => {

@@ -6,6 +6,7 @@ interface MailState {
   activeAccountId: string | null;
   selectedUID: number | null;
   searchQuery: string;
+  searchInput: string;
   page: number;
   limit: number;
   isComposerOpen: boolean;
@@ -20,6 +21,8 @@ interface MailState {
   setActiveAccountId: (id: string | null) => void;
   setSelectedUID: (uid: number | null) => void;
   setSearchQuery: (q: string) => void;
+  setSearchInput: (input: string) => void;
+  clearSearch: () => void;
   setPage: (page: number) => void;
   openComposer: (draft?: Partial<OutgoingMessage>) => void;
   closeComposer: () => void;
@@ -35,6 +38,7 @@ export const useMailStore = create<MailState>((set) => ({
   activeAccountId: null,
   selectedUID: null,
   searchQuery: '',
+  searchInput: '',
   page: 1,
   limit: 50,
   isComposerOpen: false,
@@ -54,6 +58,11 @@ export const useMailStore = create<MailState>((set) => ({
   setSelectedUID: (uid) => set({ selectedUID: uid }),
 
   setSearchQuery: (q) => set({ searchQuery: q, page: 1, selectedUID: null }),
+
+  setSearchInput: (input) => set({ searchInput: input }),
+
+  clearSearch: () =>
+    set({ searchInput: '', searchQuery: '', page: 1, selectedUID: null }),
 
   setPage: (page) => set({ page }),
 

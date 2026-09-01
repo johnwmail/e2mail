@@ -21,7 +21,7 @@ import { mailApi } from '../../api/mail';
 import { contactsApi } from '../../api/addressBook';
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
-import { MessageSummary, FolderInfo, ThreadSummary } from '../../types/api';
+import { MessageSummary, FolderInfo, ThreadSummary, EmailAddress } from '../../types/api';
 
 const getFolderDisplayName = (folder: FolderInfo) => {
   switch (folder.specialUse) {
@@ -191,6 +191,108 @@ const ThreadRow: React.FC<ThreadRowProps> = ({
   );
 };
 
+// ==== 即時本機搜尋過濾（對已載入嘅 list 打字即時縮窄） ====
+
+interface LocalToken {
+  op: string;
+  val: string;
+}
+
+// 以空白切分，支援雙引號/單引號同 operator（word:value）
+function tokenizeLocalQuery(q: string): LocalToken[] {
+  const tokens: LocalToken[] = [];
+  const re = /([a-z-]+:)?("(?:\\.|[^"])*"|'[^']*'|\S+)/gi;
+  let m: RegExpExecArray | null;
+  const lower = q;
+  while ((m = re.exec(lower))) {
+    const op = m[1] ? m[1].toLowerCase() : '';
+    const val = (m[2] || '').replace(/^["']|["']$/g, '');
+    if (val) tokens.push({ op, val });
+  }
+  return tokens;
+}
+
+function containsAddr(list: EmailAddress[] | undefined, needle: string): boolean {
+  const n = needle.toLowerCase();
+  return (list || []).some((e) => e.address.toLowerCase().includes(n) || e.name.toLowerCase().includes(n));
+}
+
+// 支援純文字（AND）、from:/to:/subject:/body:/text:、is:unread/read/starred、has:attachment
+function matchesLocalQuery(msg: MessageSummary, query: string): boolean {
+  const tokens = tokenizeLocalQuery(query);
+  if (!tokens.length) return true;
+  const ops = new Set<string>(['from', 'to', 'subject', 'cc', 'bcc', 'body', 'text', 'is', 'has']);
+
+  // 純文字（無 operator）：subject/from/to/snippet 都要包含（AND）
+  const plains = tokens.filter((t) => !t.op);
+  if (plains.length) {
+    const hay = [
+      msg.subject || '',
+      msg.snippet || '',
+      ...(msg.from || []).flatMap((f) => [f.name, f.address]),
+      ...(msg.to || []).flatMap((t) => [t.name, t.address]),
+    ]
+      .join(' ')
+      .toLowerCase();
+    if (!plains.every((t) => hay.includes(t.val.toLowerCase()))) return false;
+  }
+
+  for (const t of tokens) {
+    const val = t.val.toLowerCase();
+    switch (t.op) {
+      case 'from':
+        if (!containsAddr(msg.from, t.val)) return false;
+        break;
+      case 'to':
+        if (!containsAddr(msg.to, t.val)) return false;
+        break;
+      case 'subject':
+        if (!(msg.subject || '').toLowerCase().includes(val)) return false;
+        break;
+      case 'body':
+      case 'text':
+        // 只有 snippet（預覽層），冇全文；唔達就唔顯示，等伺服器全文補充
+        if (!(msg.snippet || '').toLowerCase().includes(val) && !(msg.subject || '').toLowerCase().includes(val)) return false;
+        break;
+      case 'is':
+        if (val === 'unread' && !msg.unread) return false;
+        if (val === 'read' && msg.unread) return false;
+        if (val === 'starred' && !msg.starred) return false;
+        break;
+      case 'has':
+        if (val === 'attachment' && !msg.hasAttachment) return false;
+        break;
+      default:
+        if (!ops.has(t.op)) {
+          // 未支援嘅 operator（after:/before:/larger: 等）→ 唔做本機過濾，交返伺服器
+          if (!(msg.snippet || '').toLowerCase().includes(val) && !(msg.subject || '').toLowerCase().includes(val)) return false;
+        }
+    }
+  }
+  return true;
+}
+
+function matchesLocalThread(thread: ThreadSummary, query: string): boolean {
+  if (thread.messages.length) return thread.messages.some((m) => matchesLocalQuery(m, query));
+  return matchesLocalQuery(
+    {
+      uid: 0,
+      messageId: '',
+      subject: thread.subject,
+      date: thread.date,
+      from: [],
+      to: [],
+      flags: [],
+      unread: thread.unreadCount > 0,
+      starred: thread.starred,
+      hasAttachment: thread.hasAttachment,
+      size: 0,
+      snippet: thread.messages[0]?.snippet || '',
+    },
+    query
+  );
+}
+
 export const MessageList: React.FC = () => {
   const queryClient = useQueryClient();
   const activeAccount = useActiveAccount();
@@ -200,7 +302,8 @@ export const MessageList: React.FC = () => {
     selectedUID,
     setSelectedUID,
     searchQuery,
-    setSearchQuery,
+    searchInput,
+    clearSearch,
     page,
     setPage,
     limit,
@@ -371,6 +474,8 @@ export const MessageList: React.FC = () => {
     queryFn: () => mailApi.getMessages(currentFolder, page, limit, searchQuery, accountId, listMode === 'threads'),
     enabled: !!accountId,
     staleTime: 10000,
+    // 搜尋途中保留舊結果，避免 list 「閃白」；新結果返嚟先取代
+    placeholderData: (previousData) => previousData,
   });
 
   // 修改 Flag Mutation
@@ -596,6 +701,27 @@ export const MessageList: React.FC = () => {
   const threads = useMemo(() => data?.threads || [], [data]);
   const totalPages = data?.totalPages || 1;
 
+  // 即時本機過濾：資料未「完全對應個草稿」時（searchInput 未 commit 成 searchQuery 或緊 fetching），
+  // 對已載入嘅 list 用 searchInput 即刻縮窄；一旦伺服器返到權威結果就停用，避免「body-only match」被誤刪。
+  const inputTrim = searchInput.trim();
+  const isFreshForInput = inputTrim === searchQuery && !isFetching;
+  const applyLocalPreview = !isFreshForInput;
+  const displayMessages = useMemo(() => {
+    if (!applyLocalPreview || !inputTrim) return messages;
+    return messages.filter((m) => matchesLocalQuery(m, inputTrim));
+  }, [messages, applyLocalPreview, inputTrim]);
+  const displayThreads = useMemo(() => {
+    if (!applyLocalPreview || !inputTrim) return threads;
+    return threads.filter((t) => matchesLocalThread(t, inputTrim));
+  }, [threads, applyLocalPreview, inputTrim]);
+
+  // 預覽期間顯示「即時縮窄後」嘅數量；權威結果返到先顯示伺服器總數
+  const resultCount = applyLocalPreview
+    ? listMode === 'threads'
+      ? displayThreads.length
+      : displayMessages.length
+    : data?.total ?? 0;
+
   // 通訊錄批量解析：寄件人是否已在地址簿（用於顯示頭像/名稱）
   const senderEmails = useMemo(() => {
     const set = new Set<string>();
@@ -648,8 +774,8 @@ export const MessageList: React.FC = () => {
               type="checkbox"
               checked={
                 listMode === 'threads'
-                  ? threads.length > 0 && threads.every((t) => t.messages.every((m) => selectedUIDs.includes(m.uid)))
-                  : messages.length > 0 && selectedUIDs.length === messages.length
+                  ? displayThreads.length > 0 && displayThreads.every((t) => t.messages.every((m) => selectedUIDs.includes(m.uid)))
+                  : displayMessages.length > 0 && selectedUIDs.length === displayMessages.length
               }
               onChange={handleSelectAll}
               className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer"
@@ -720,7 +846,7 @@ export const MessageList: React.FC = () => {
             </div>
           ) : (
             <span className="text-xs font-medium text-slate-500 truncate">
-              {data?.total ? (listMode === 'threads' ? `共 ${data.total} 個對話` : `共 ${data.total} 封`) : (listMode === 'threads' ? '對話清單' : '信件清單')}
+              {resultCount ? (listMode === 'threads' ? `共 ${resultCount} 個對話` : `共 ${resultCount} 封`) : (listMode === 'threads' ? '對話清單' : '信件清單')}
             </span>
           )}
         </div>
@@ -764,15 +890,15 @@ export const MessageList: React.FC = () => {
         </div>
       </div>
 
-      {/* 搜尋結果提示列（進行搜尋時顯示） */}
-      {searchQuery && (
+      {/* 搜尋結果提示列（進行搜尋時顯示；即時預覽階段都顯示） */}
+      {(searchQuery || searchInput.trim()) && (
         <div className="px-3.5 py-2 border-b border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/30 flex items-center gap-2 shrink-0 text-xs text-blue-800 dark:text-blue-200">
           <Search className="w-3.5 h-3.5 shrink-0" />
           <span className="truncate flex-1 min-w-0">
-            搜尋「{searchQuery}」— <b>{data?.total ?? 0}</b> 個結果
+             搜尋「{searchInput.trim() || searchQuery}」— <b>{resultCount}</b> 個結果
           </span>
           <button
-            onClick={() => setSearchQuery('')}
+            onClick={() => clearSearch()}
             className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/50 transition shrink-0"
             title="清除搜尋"
             aria-label="清除搜尋"
@@ -792,13 +918,13 @@ export const MessageList: React.FC = () => {
         {isLoading ? (
           <div className="p-8 text-center text-xs text-slate-400">正在讀取信件...</div>
         ) : listMode === 'threads' ? (
-          threads.length === 0 ? (
+          displayThreads.length === 0 ? (
             <div className="p-12 text-center text-slate-400 flex flex-col items-center">
               <MessagesSquare className="w-12 h-12 stroke-1 mb-2 text-slate-300 dark:text-slate-700" />
-              <p className="text-xs">{searchQuery ? '沒有符合搜尋嘅對話' : '此資料夾沒有對話'}</p>
+              <p className="text-xs">{searchInput.trim() ? '沒有符合搜尋嘅對話' : '此資料夾沒有對話'}</p>
             </div>
           ) : (
-            threads.map((t) => {
+            displayThreads.map((t) => {
               const tUids = t.messages.map((m) => m.uid);
               return (
                 <div key={t.threadId} className="relative overflow-hidden w-full">
@@ -880,13 +1006,13 @@ export const MessageList: React.FC = () => {
               );
             })
           )
-        ) : messages.length === 0 ? (
+        ) : displayMessages.length === 0 ? (
           <div className="p-12 text-center text-slate-400 flex flex-col items-center">
             <Inbox className="w-12 h-12 stroke-1 mb-2 text-slate-300 dark:text-slate-700" />
-            <p className="text-xs">{searchQuery ? '沒有符合搜尋嘅郵件' : '此資料夾沒有郵件'}</p>
+            <p className="text-xs">{searchInput.trim() ? '沒有符合搜尋嘅郵件' : '此資料夾沒有郵件'}</p>
           </div>
         ) : (
-          messages.map((msg, index) => {
+          displayMessages.map((msg, index) => {
             const isSelected = selectedUID === msg.uid;
             const isChecked = selectedUIDs.includes(msg.uid);
             const fromName = msg.from?.[0]?.name || msg.from?.[0]?.address || '未知寄件者';
