@@ -311,7 +311,6 @@ export const MessageList: React.FC = () => {
     limit,
     unreadView,
     listMode,
-    setListMode,
   } = useMailStore();
   const isUnreadView = unreadView;
   const threadMode = listMode === 'threads' && !isUnreadView;
@@ -919,18 +918,6 @@ export const MessageList: React.FC = () => {
             </span>
           )}
         </div>
-
-        {/* Threads 模式 on/off（單一按鈕；未讀虛擬列表唔支援對話串） */}
-        {!isUnreadView && (
-          <button
-            onClick={() => setListMode(listMode === 'threads' ? 'messages' : 'threads')}
-            className={`p-1.5 rounded-lg transition flex items-center gap-1 ${listMode === 'threads' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
-            title={listMode === 'threads' ? '切換為單封模式' : '切換為對話串模式'}
-            aria-label={listMode === 'threads' ? '切換為單封模式' : '切換為對話串模式'}
-          >
-            <MessagesSquare className="w-4 h-4" />
-          </button>
-        )}
 
         {/* 分頁與重新整理按鈕 */}
         <div className="flex items-center gap-1 text-xs text-slate-500 shrink-0">
