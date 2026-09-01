@@ -21,7 +21,7 @@ import { mailApi } from '../../api/mail';
 import { contactsApi } from '../../api/addressBook';
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
-import { MessageSummary, FolderInfo, ThreadSummary, EmailAddress, MessageListResult } from '../../types/api';
+import { MessageSummary, FolderInfo, ThreadSummary, EmailAddress } from '../../types/api';
 
 const getFolderDisplayName = (folder: FolderInfo) => {
   switch (folder.specialUse) {
@@ -198,19 +198,20 @@ interface LocalToken {
   val: string;
 }
 
-// 以空白切分，支援雙引號/單引號同 operator（word:value）
-function tokenizeLocalQuery(q: string): LocalToken[] {
-  const tokens: LocalToken[] = [];
-  const re = /([a-z-]+:)?("(?:\\.|[^"])*"|'[^']*'|\S+)/gi;
-  let m: RegExpExecArray | null;
-  const lower = q;
-  while ((m = re.exec(lower))) {
-    const op = m[1] ? m[1].toLowerCase() : '';
-    const val = (m[2] || '').replace(/^["']|["']$/g, '');
-    if (val) tokens.push({ op, val });
+  // 以空白切分，支援雙引號/單引號同 operator（word:value）
+  // 注意：雙引號內要用 [^"\\]（排除反斜線），令 \\. 唯一負責反斜線，避免 ReDoS 指數回溯
+  function tokenizeLocalQuery(q: string): LocalToken[] {
+    const tokens: LocalToken[] = [];
+    const re = /([a-z-]+:)?("(?:\\.|[^"\\])*"|'[^']*'|\S+)/gi;
+    let m: RegExpExecArray | null;
+    const lower = q;
+    while ((m = re.exec(lower))) {
+      const op = m[1] ? m[1].toLowerCase() : '';
+      const val = (m[2] || '').replace(/^["']|["']$/g, '');
+      if (val) tokens.push({ op, val });
+    }
+    return tokens;
   }
-  return tokens;
-}
 
 function containsAddr(list: EmailAddress[] | undefined, needle: string): boolean {
   const n = needle.toLowerCase();
@@ -495,33 +496,7 @@ export const MessageList: React.FC = () => {
     refetch: unreadRefetch,
   } = useQuery({
     queryKey: ['unread-aggregate', accountId, page, limit],
-    queryFn: async (): Promise<MessageListResult> => {
-      const folders = await mailApi.getFolders(accountId);
-      const names = (folders || [])
-        .filter((f) => f.specialUse !== 'trash' && !/trash|bin/i.test(f.name))
-        .map((f) => f.name);
-      const results = await Promise.all(
-        names.map((n) => mailApi.getMessages(n, 1, 100, 'is:unread', accountId, false).catch(() => null))
-      );
-      const all: MessageSummary[] = [];
-      results.forEach((r, i) => {
-        if (!r) return;
-        for (const m of r.messages) all.push({ ...m, folder: names[i] });
-      });
-      all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      const total = all.length;
-      const totalPages = Math.max(1, Math.ceil(total / limit));
-      const start = (page - 1) * limit;
-      return {
-        folder: '未讀',
-        mode: 'messages',
-        total,
-        page,
-        limit,
-        totalPages,
-        messages: all.slice(start, start + limit),
-      };
-    },
+    queryFn: () => mailApi.getUnread(page, limit, accountId),
     enabled: !!accountId && unreadView,
     staleTime: 0,
     placeholderData: (previousData) => previousData,

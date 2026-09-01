@@ -89,6 +89,7 @@ func NewRouter(
 			protected.Route("/mail", func(mail chi.Router) {
 				mail.Get("/folders", mailH.ListFolders)
 				mail.Get("/messages", mailH.ListMessages)
+				mail.Get("/unread", mailH.ListUnreadMessages)
 				mail.Get("/messages/{uid}", mailH.GetMessageDetail)
 				mail.Get("/messages/{uid}/raw", mailH.GetRawMessage)
 				mail.Get("/messages/{uid}/attachments/{attId}", mailH.DownloadAttachment)

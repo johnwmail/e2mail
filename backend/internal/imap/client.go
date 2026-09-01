@@ -515,6 +515,59 @@ func (c *Client) FetchMessageSummaries(ctx context.Context, folder string, page,
 	}, nil
 }
 
+// FetchAllUnread 彙總多個 folder 嘅未讀郵件（伺服器端整合，唔依賴 IMAP/Dovecot virtual folder），
+// 按日期降序排序並分頁。每個 folder 以「is:unread」搜尋取回全部未讀，再合併成一個清單。
+func (c *Client) FetchAllUnread(ctx context.Context, folders []string, page, limit int) (*MessageListResult, error) {
+	result := &MessageListResult{
+		Folder:     "unread",
+		Mode:       "messages",
+		Page:       page,
+		Limit:      limit,
+		Messages:   []MessageSummary{},
+		TotalPages: 0,
+	}
+	var all []MessageSummary
+	// 用一個足夠大嘅 limit 取回每個 folder 嘅全部未讀（未讀量通常好細）
+	const bigLimit = 10000
+	for _, f := range folders {
+		if strings.TrimSpace(f) == "" {
+			continue
+		}
+		res, err := c.FetchMessageSummaries(ctx, f, 1, bigLimit, "is:unread")
+		if err != nil {
+			// 单个 folder 失敗（例如已不存在）唔好阻住成個列表
+			continue
+		}
+		for i := range res.Messages {
+			res.Messages[i].Folder = f
+		}
+		all = append(all, res.Messages...)
+	}
+
+	sort.Slice(all, func(i, j int) bool { return all[i].Date.After(all[j].Date) })
+
+	total := len(all)
+	result.Total = total
+	if total == 0 {
+		return result, nil
+	}
+	totalPages := (total + limit - 1) / limit
+	if page < 1 {
+		page = 1
+	}
+	start := (page - 1) * limit
+	if start > total {
+		start = total
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+	result.TotalPages = totalPages
+	result.Messages = all[start:end]
+	return result, nil
+}
+
 // FetchMessageDetail 取得特定 UID 郵件的完整內文與附件結構
 func (c *Client) FetchMessageDetail(ctx context.Context, folder string, uid uint32) (*ParsedMessage, error) {
 	c.lastUsed = time.Now()
