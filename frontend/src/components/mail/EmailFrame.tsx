@@ -52,6 +52,23 @@ const measureStable = (root: HTMLElement): Promise<{ w: number; h: number }> =>
     requestAnimationFrame(step);
   });
 
+// 郵件內所有連結強制新分頁（http/https/其他一般 URL）；mailto:/tel: 交返俾系統處理。
+// 亦會移除 target=_top/_parent/self 等企圖喺 app 內開啟嘅 target。
+const forceNewTabLinks = (html: string): string =>
+  html.replace(/<a\b([^>]*)>/gi, (match, attrs: string) => {
+    const hrefM =
+      attrs.match(/\shref=(["'])([^"']*)\1/i) ?? attrs.match(/\shref=([^\s"'>]+)/i);
+    if (!hrefM) return match;
+    const href = hrefM[2] ?? hrefM[1] ?? '';
+    const stripTarget = (a: string) =>
+      a.replace(/\s+target=(?:"[^"]*"|'[^']*'|[^\s"'>]+)/gi, '');
+    if (/^(mailto:|tel:|sms:|callto:|xmpp:)/i.test(href)) {
+      return /\starget=/i.test(attrs) ? `<a${stripTarget(attrs)}>` : match;
+    }
+    const base = stripTarget(attrs).replace(/\s+rel=(?:"[^"]*"|'[^']*'|[^\s"'>]+)/gi, '');
+    return `<a${base} target="_blank" rel="noopener noreferrer">`;
+  });
+
 export const EmailFrame: React.FC<EmailFrameProps> = ({
   uid,
   folder,
@@ -227,7 +244,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
           FORBID_TAGS: ['script', 'object', 'embed', 'applet'],
           FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover'],
         });
-        return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;width:100%;box-sizing:border-box}.email-content{max-width:720px;margin:0 auto}table{border-collapse:collapse;max-width:100% !important}div,td,th{max-width:100% !important}td,th{word-break:normal;vertical-align:top}img{max-width:100% !important;height:auto}img[data-blocked-src]{background:#f8fafc;border:1px dashed #cbd5e1;color:#94a3b8;font-size:12px;box-sizing:border-box}a{color:#2563eb}</style></head><body><div class="email-content">${clean}</div></body></html>`;
+        return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;width:100%;box-sizing:border-box}.email-content{max-width:720px;margin:0 auto}table{border-collapse:collapse;max-width:100% !important}div,td,th{max-width:100% !important}td,th{word-break:normal;vertical-align:top}img{max-width:100% !important;height:auto}img[data-blocked-src]{background:#f8fafc;border:1px dashed #cbd5e1;color:#94a3b8;font-size:12px;box-sizing:border-box}a{color:#2563eb}</style></head><body><div class="email-content">${forceNewTabLinks(clean)}</div></body></html>`;
       }
       let escaped = decryptedContent
         .replace(/&/g, '&amp;')
@@ -379,7 +396,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
         </head>
         <body>
           <div class="email-content">
-          ${clean}
+          ${forceNewTabLinks(clean)}
           </div>
         </body>
       </html>

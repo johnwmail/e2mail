@@ -106,6 +106,33 @@ describe('EmailFrame', () => {
     expect(getFrame().srcdoc).toContain('src="https://cdn.example/logo.png"');
   });
 
+  it('forces all http links to open in a new tab, neutralising _top hijacks', () => {
+    renderFrame({
+      htmlBody:
+        '<a href="https://example.com/x">plain</a>' +
+        '<a href="https://example.com/y" target="_top">hijack</a>' +
+        '<a href="https://example.com/z" target="_parent" rel="external">both</a>',
+    });
+    const doc = getFrame().srcdoc;
+    expect(doc.match(/target="_blank"/g)?.length).toBe(3);
+    expect(doc).not.toContain('target="_top"');
+    expect(doc).not.toContain('target="_parent"');
+    expect(doc).toContain('rel="noopener noreferrer"');
+    expect(doc).toContain('hijack');
+    expect(doc).toContain('both');
+  });
+
+  it('leaves mailto:/tel: links to the OS (no _blank wrapper)', () => {
+    renderFrame({
+      htmlBody:
+        '<a href="mailto:a@b.test">mail</a><a href="tel:+85212345678">tel</a>',
+    });
+    const doc = getFrame().srcdoc;
+    expect(doc).not.toContain('target="_blank"');
+    expect(doc).toContain('mail');
+    expect(doc).toContain('tel');
+  });
+
   it('renders text/plain with preserved line breaks and pre-wrap', () => {
     renderFrame({ htmlBody: '', textBody: '第一行\n第二行' });
     const doc = getFrame().srcdoc;
