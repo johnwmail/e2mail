@@ -27,7 +27,7 @@ export const contactsApi = {
     return request<Contact>(`/contacts/${encodeURIComponent(id)}`);
   },
 
-  create: async (data: { email: string; displayName?: string; note?: string; givenName?: string; familyName?: string }): Promise<Contact> => {
+  create: async (data: { email: string; displayName?: string; note?: string; givenName?: string; familyName?: string; source?: string }): Promise<Contact> => {
     return request<Contact>('/contacts/', { method: 'POST', body: JSON.stringify(data) });
   },
 
