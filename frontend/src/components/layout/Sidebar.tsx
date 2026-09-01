@@ -125,7 +125,9 @@ const FolderBranch: React.FC<{
   const hasChildren = node.children.size > 0;
   const isExpanded = expandedMap[node.path] ?? false;
   const isActive = isActiveAccount && currentFolder === node.path;
-  const unread = node.folder?.unreadCount ?? 0;
+  // Virtual folder（Dovecot 儲存搜尋）只係其他地方郵件嘅鏡像，唔顯示 unread badge
+  const isVirtualNode = /^virtual(\/|$)/i.test(node.path);
+  const unread = isVirtualNode ? 0 : (node.folder?.unreadCount ?? 0);
   const isTrash = node.folder?.specialUse === 'trash' || /trash|bin|垃圾/i.test(node.path);
   const [emptying, setEmptying] = useState(false);
   const [confirmEmpty, setConfirmEmpty] = useState(false);

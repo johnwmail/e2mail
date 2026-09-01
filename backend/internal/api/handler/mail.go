@@ -215,8 +215,18 @@ func (h *MailHandler) ListUnreadMessages(w http.ResponseWriter, r *http.Request)
 	}
 	names := make([]string, 0, len(folders))
 	for _, f := range folders {
+		lower := strings.ToLower(f.Name)
 		// 排除垃圾桶；未讀列表係「新郵件」，垃圾箱意義唔大
-		if f.SpecialUse == "trash" || strings.Contains(strings.ToLower(f.Name), "trash") || strings.Contains(strings.ToLower(f.Name), "bin") {
+		if f.SpecialUse == "trash" || strings.Contains(lower, "trash") || strings.Contains(lower, "bin") {
+			continue
+		}
+		// 排除 Dovecot virtual folder（virtual/*）：佢哋只係其他 folder 郵件嘅儲存搜尋，
+		// 一併彙總會造成重複
+		delim := f.Delimiter
+		if delim == "" {
+			delim = "/"
+		}
+		if root := strings.SplitN(lower, delim, 2)[0]; root == "virtual" {
 			continue
 		}
 		names = append(names, f.Name)
