@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    timeout-minutes: 2
+    timeout-minutes: 3
     concurrency:
       group: webhook-${{ github.ref }}
       cancel-in-progress: false
@@ -86,12 +86,16 @@ jobs:
           SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "${{ secrets.WEBHOOK_SECRET }}" | awk '{print $2}')
 
           # Deliver with the signature in X-Hub-Signature-256 as webhook-action expects.
-          # --max-time 15 避免掛起；--retry 2 容忍瞬間網絡抖動。
+          # --max-time 15 避免單次掛起；--retry 5 + --retry-delay 3 容忍瞬間網絡抖動 /
+          # webhook server 重啟中（--retry-connrefused）；--retry-max-time 90 為整個
+          # retry 窗口設上限（配合 job timeout-minutes: 3）。
           curl -X POST \
             --fail \
             --max-time 15 \
-            --retry 2 \
-            --retry-delay 2 \
+            --retry 5 \
+            --retry-delay 3 \
+            --retry-max-time 90 \
+            --retry-connrefused \
             -H "Content-Type: application/json" \
             -H "X-Hub-Signature-256: sha256=$SIGNATURE" \
             -d "$PAYLOAD" \
