@@ -50,6 +50,14 @@ export const mailApi = {
     return request<MessageListResult>(`/mail/messages?${params.toString()}`);
   },
 
+  getUnread: async (page = 1, limit = 50, account?: string): Promise<MessageListResult> => {
+    const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() });
+    if (account) {
+      params.set('account', account);
+    }
+    return request<MessageListResult>(`/mail/unread?${params.toString()}`);
+  },
+
   getMessageDetail: async (
     uid: number,
     folder = 'INBOX',

@@ -186,6 +186,50 @@ func (h *MailHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, result)
 }
 
+// ListUnreadMessages 彙總所有資料夾嘅未讀郵件（伺服器端整合，唔係依賴 IMAP/Dovecot virtual folder）
+func (h *MailHandler) ListUnreadMessages(w http.ResponseWriter, r *http.Request) {
+	page := 1
+	if pStr := r.URL.Query().Get("page"); pStr != "" {
+		if p, err := strconv.Atoi(pStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+	limit := 50
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	client, release, _, _, err := h.acquireClient(r.Context(), r)
+	if err != nil {
+		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
+		return
+	}
+	defer release()
+
+	folders, err := client.ListFolders(r.Context())
+	if err != nil {
+		response.InternalServerError(w, "failed to list folders: "+err.Error())
+		return
+	}
+	names := make([]string, 0, len(folders))
+	for _, f := range folders {
+		// 排除垃圾桶；未讀列表係「新郵件」，垃圾箱意義唔大
+		if f.SpecialUse == "trash" || strings.Contains(strings.ToLower(f.Name), "trash") || strings.Contains(strings.ToLower(f.Name), "bin") {
+			continue
+		}
+		names = append(names, f.Name)
+	}
+
+	result, err := client.FetchAllUnread(r.Context(), names, page, limit)
+	if err != nil {
+		response.InternalServerError(w, "failed to fetch unread messages: "+err.Error())
+		return
+	}
+	response.Success(w, result)
+}
+
 // GetMessageDetail 讀取特定 UID 的完整郵件內文與附件結構
 func (h *MailHandler) GetMessageDetail(w http.ResponseWriter, r *http.Request) {
 	uidStr := chi.URLParam(r, "uid")
