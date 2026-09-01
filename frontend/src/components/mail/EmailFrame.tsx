@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
-import { ShieldAlert, Image, Lock, Unlock, ShieldCheck, Key } from 'lucide-react';
+import { ShieldAlert, Image, Lock, Unlock, ShieldCheck, Key, Maximize2, Minimize2 } from 'lucide-react';
 import { AttachmentInfo } from '../../types/api';
 import { mailApi } from '../../api/mail';
 import { pgpService } from '../../api/pgp';
@@ -15,6 +15,43 @@ interface EmailFrameProps {
   trustedSender?: boolean;
 }
 
+// 寬度自適應（fit-to-width）常量 — 見 MAIL-RENDER.md §4.1
+const WIDTH_EPS = 40; // 只處理超出閱讀欄 40px 以上的闊郵件，避免臨界抖動
+const WIDTH_MAX_FRAMES = 8; // 穩定量度最多等 ~8 個 rAF（image load / table reflow）
+const WIDTH_MIN_SCALE = 0.45; // 縮放下限，再闊都用橫向捲動而非無限縮細
+
+export const computeFitScale = (paneW: number, intrinsicW: number): number => {
+  if (paneW <= 0 || intrinsicW <= 0) return 1;
+  const s = paneW / intrinsicW;
+  return Math.min(1, Math.max(s, WIDTH_MIN_SCALE));
+};
+
+// iframe 以 W 寬 render 後輪候 layout 穩定（異步入圖、table reflow），先回報最終尺寸
+const measureStable = (root: HTMLElement): Promise<{ w: number; h: number }> =>
+  new Promise((resolve) => {
+    let best = { w: root.scrollWidth, h: root.scrollHeight };
+    let same = 0;
+    let frames = 0;
+    const step = () => {
+      const cur = { w: root.scrollWidth, h: root.scrollHeight };
+      if (cur.w === best.w && cur.h === best.h) {
+        if (++same >= 2) {
+          resolve(best);
+          return;
+        }
+      } else {
+        same = 0;
+        best = cur;
+      }
+      if (++frames >= WIDTH_MAX_FRAMES) {
+        resolve(best);
+        return;
+      }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+
 export const EmailFrame: React.FC<EmailFrameProps> = ({
   uid,
   folder,
@@ -28,6 +65,90 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
   const [hasRemoteImages, setHasRemoteImages] = useState(false);
   // 可信寄件人（已在通訊錄）自動放行，無需 relogin
   const allowRemoteImages = trustedSender || userAllowed;
+
+  // ── 闊版郵件 fit-to-width 量度（無 script，純 parent 側 DOM 量度）──
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const childRORef = useRef<ResizeObserver | null>(null);
+  const childRODocRef = useRef<Document | null>(null);
+  const [paneW, setPaneW] = useState(0);
+  const [intrinsicW, setIntrinsicW] = useState(0);
+  const [contentH, setContentH] = useState(0);
+  const [widthMode, setWidthMode] = useState<'auto' | 'fit' | 'original'>('auto');
+
+  const measuringRef = useRef(false);
+  // RO 經 ref間接呼叫最新 measureDoc，避開 useCallback 循環依賴
+  const measureDocRef = useRef<() => void>(() => {});
+
+  const ensureChildObserver = useCallback((doc: Document, root: HTMLElement) => {
+    if (typeof ResizeObserver === 'undefined' || childRODocRef.current === doc) return;
+    childRORef.current?.disconnect();
+    const ro = new ResizeObserver(() => void measureDocRef.current());
+    ro.observe(root);
+    if (doc.body) ro.observe(doc.body);
+    childRORef.current = ro;
+    childRODocRef.current = doc;
+  }, []);
+
+  const measureDoc = useCallback(async () => {
+    if (measuringRef.current) return; // 防止 RO 喺 width pass1→2 中途重入
+    const fr = iframeRef.current;
+    const wrapEl = wrapRef.current;
+    const doc = fr?.contentDocument;
+    const root = doc?.documentElement;
+    if (!fr || !wrapEl || !doc || !root) return;
+    if (doc.readyState !== 'complete') return; // srcdoc 未 load 完，等 onLoad
+    const pw = wrapEl.clientWidth;
+    if (!pw) return; // jsdom / 隱藏中，跳過量度
+
+    measuringRef.current = true;
+    try {
+      // pass 1：以欄寬渲染，量度內容溢出寬度（reflow-assist CSS 已收文可縮的 table/img）
+      fr.style.width = '100%';
+      const baseW = Math.max(root.scrollWidth, doc.body?.scrollWidth ?? 0);
+      if (baseW <= pw + WIDTH_EPS) {
+        if (doc.body) doc.body.style.width = '';
+        setIntrinsicW(pw);
+        setContentH(Math.max(root.scrollHeight, 160));
+        ensureChildObserver(doc, root);
+        return;
+      }
+
+      // pass 2：以設計寬度 W 重新排版，輪候穩定後攞最終內容高度
+      fr.style.width = `${baseW}px`;
+      const { w, h } = await measureStable(root);
+      if (doc.body) doc.body.style.width = `${w}px`;
+      setIntrinsicW(w);
+      setContentH(Math.max(h, 160));
+      ensureChildObserver(doc, root);
+    } finally {
+      measuringRef.current = false;
+    }
+  }, [ensureChildObserver]);
+
+  measureDocRef.current = () => void measureDoc();
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    setPaneW(el.clientWidth);
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const w = Math.round(entries[0].contentRect.width);
+      setPaneW((prev) => (Math.abs(prev - w) > 1 ? w : prev));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(
+    () => () => {
+      childRORef.current?.disconnect();
+      childRORef.current = null;
+      childRODocRef.current = null;
+    },
+    [],
+  );
 
   // PGP 解密狀態
   const [decryptedContent, setDecryptedContent] = useState<string | null>(null);
@@ -45,6 +166,9 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
 
   useEffect(() => {
     setUserAllowed(false);
+    setWidthMode('auto');
+    setIntrinsicW(0);
+    setContentH(0);
     setDecryptedContent(null);
     setIsDecrypted(false);
     setIsSignatureVerified(null);
@@ -105,7 +229,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
           FORBID_TAGS: ['script', 'object', 'embed', 'applet'],
           FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover'],
         });
-        return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;box-sizing:border-box}.email-content{max-width:720px;margin:0 auto}table{table-layout:auto;max-width:100% !important;border-collapse:collapse}td,th{word-break:normal;white-space:normal;vertical-align:top}img{max-width:100%;height:auto}img[data-blocked-src]{background:#f8fafc;color:#94a3b8;font-size:12px;box-sizing:border-box}img[src=""]{background:transparent}a{color:#2563eb}</style></head><body><div class="email-content">${clean}</div></body></html>`;
+        return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;width:100%;box-sizing:border-box}.email-content{max-width:720px;margin:0 auto}table{border-collapse:collapse;max-width:100% !important}div,td,th{max-width:100% !important}td,th{word-break:normal;vertical-align:top}img{max-width:100% !important;height:auto}img[data-blocked-src]{background:#f8fafc;border:1px dashed #cbd5e1;color:#94a3b8;font-size:12px;box-sizing:border-box}a{color:#2563eb}</style></head><body><div class="email-content">${clean}</div></body></html>`;
       }
       let escaped = decryptedContent
         .replace(/&/g, '&amp;')
@@ -137,6 +261,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
         <html>
           <head>
             <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
               body {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -146,6 +271,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
                 margin: 0;
                 padding: 16px;
                 word-break: break-word;
+                overflow-wrap: break-word;
                 white-space: pre-wrap;
               }
             </style>
@@ -164,7 +290,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/\n/g, '<br/>');
-      return `<div style="font-family: sans-serif; white-space: pre-wrap; line-height: 1.6; color: #1e293b;">${escaped}</div>`;
+      return `<div style="font-family: sans-serif; white-space: pre-wrap; line-height: 1.6; color: #1e293b; padding: 16px; box-sizing: border-box; max-width: 100%; overflow-wrap: break-word; word-break: break-word;">${escaped}</div>`;
     }
 
     if (!content) {
@@ -192,28 +318,21 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
     const hasExternal = /<img[^>]+src=["']https?:\/\//i.test(content);
     setHasRemoteImages(hasExternal);
 
-    // 若未允許外部圖片，將 src 暫時阻擋為佔位（保留原圖 width/height 避免版面塌縮成窄 column）
-    // 保留 width/height 令 email 原本嘅 602px 版面唔會因 header/footer 被 block 而塌縮
+    // 若未允許外部圖片，只改寫 src 屬性、保留原圖所有屬性（含 width/height），
+    // 佔位框由 CSS img[data-blocked-src] 提供；闊度由 img{max-width:100%!important} 兜底，
+    // 避免 600px+ 佔位圖喺手機上撐出空白右側。
     if (!allowRemoteImages && hasExternal) {
-      content = content.replace(
-        /<img([^>]+)src=(["'])(https?:\/\/[^"']+)["']/gi,
-        (match, attrs: string, quote: string, src: string) => {
-          let width = '';
-          let height = '';
-          const wm = attrs.match(/\swidth=["']?(\d+)["']?/i);
-          const hm = attrs.match(/\sheight=["']?(\d+)["']?/i);
-          if (wm) width = wm[1];
-          if (hm) height = hm[1];
-          const dimStyle = [
-            width ? `width:${width}px` : '',
-            height ? `height:${height}px` : '',
-          ].filter(Boolean).join(';');
-          const placeholder =
-            dimStyle ||
-            'border:1px dashed #cbd5e1;padding:4px;background:#f8fafc;color:#94a3b8;font-size:12px;';
-          return `<img${attrs}data-blocked-src=${quote}${src}${quote} src="" alt="[已阻擋外部圖片]" style="${placeholder};display:inline-block;vertical-align:middle;"${width ? ` width="${width}"` : ''}${height ? ` height="${height}"` : ''}>`;
+      content = content.replace(/<img\b[^>]*>/gi, (tag) => {
+        if (!/\ssrc=["']https?:\/\//i.test(tag)) return tag;
+        let next = tag.replace(
+          /\ssrc=(["'])(https?:\/\/[^"']+)\1/i,
+          (_m, _q: string, url: string) => ` data-blocked-src="${url.replace(/"/g, '&quot;')}" src=""`,
+        );
+        if (!/\salt=/i.test(next)) {
+          next = next.replace(/\s*\/?>$/, ' alt="[已阻擋外部圖片]">');
         }
-      );
+        return next;
+      });
     }
 
     // DOMPurify XSS 安全過濾
@@ -230,7 +349,9 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       <html>
         <head>
           <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
           <style>
+            html, body { max-width: 100%; }
             body {
               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
               font-size: 14px;
@@ -240,17 +361,15 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
               padding: 16px;
               word-break: normal;
               overflow-wrap: break-word;
-              overflow-x: auto;
-              -webkit-overflow-scrolling: touch;
               width: 100%;
               box-sizing: border-box;
             }
-            table { table-layout: auto; max-width: 100% !important; border-collapse: collapse; }
-            td, th { word-break: normal; white-space: normal; vertical-align: top; }
+            table { border-collapse: collapse; max-width: 100% !important; }
+            div, td, th { max-width: 100% !important; }
+            td, th { word-break: normal; vertical-align: top; }
             .email-content { max-width: 720px; margin: 0 auto; }
-            img[data-blocked-src] { background: #f8fafc; color: #94a3b8; font-size: 12px; box-sizing: border-box; }
-            img[src=""] { background: transparent; }
-            img { max-width: 100%; height: auto; }
+            img[data-blocked-src] { background: #f8fafc; border: 1px dashed #cbd5e1; color: #94a3b8; font-size: 12px; box-sizing: border-box; }
+            img { max-width: 100% !important; height: auto; }
             a { color: #2563eb; text-decoration: underline; }
             blockquote {
               border-left: 3px solid #cbd5e1;
@@ -271,8 +390,23 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
     return wrapper;
   }, [htmlBody, textBody, decryptedContent, attachments, uid, folder, allowRemoteImages]);
 
+  // srcDoc 重組（換信 / 放行圖片 / 解密）→ 作廢舊量度，load 後重新計
+  useEffect(() => {
+    setIntrinsicW(0);
+    setContentH(0);
+  }, [processedHtml]);
+
+  useEffect(() => {
+    void measureDoc();
+  }, [processedHtml, paneW, measureDoc]);
+
+  const fitEnabled = widthMode !== 'original';
+  const isWideEmail = intrinsicW > 0 && paneW > 0 && intrinsicW > paneW + WIDTH_EPS;
+  const fitScale = fitEnabled && isWideEmail ? computeFitScale(paneW, intrinsicW) : 1;
+  const frameH = Math.max(contentH, 320);
+
   return (
-    <div className="flex flex-col h-full w-full max-w-4xl mx-auto bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+    <div className="flex flex-col min-h-full w-full max-w-4xl mx-auto bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
       {/* PGP 加密提示列 (未解密時) */}
       {isPgpMessage && !isDecrypted && (
         <div className="flex items-center justify-between px-4 py-2.5 bg-indigo-50 dark:bg-indigo-950/60 border-b border-indigo-200 dark:border-indigo-800/80 text-indigo-950 dark:text-indigo-200 text-xs">
@@ -331,13 +465,57 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
         </div>
       )}
 
-      {/* 沙盒 Iframe (解密後僅渲染純淨明文) */}
-      <iframe
-        srcDoc={processedHtml}
-        sandbox="allow-popups allow-popups-to-escape-sandbox"
-        className="w-full flex-1 border-0"
-        title="Email Body View"
-      />
+      {/* 闊版面郵件偵測：縮放至螢幕（Apple Mail 式）/ 原寸橫向捲動（Gmail 式） */}
+      {isWideEmail && (
+        <div className="flex items-center gap-1.5 px-3 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/40">
+          <span className="text-[10px] text-slate-400 truncate mr-auto">郵件版面 {intrinsicW}px，超出可視寬度</span>
+          <button
+            onClick={() => setWidthMode('fit')}
+            aria-pressed={fitEnabled}
+            className={`flex items-center gap-1 px-3 py-2.5 min-h-11 rounded-md text-[11px] font-medium transition ${
+              fitEnabled ? 'bg-blue-600 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Maximize2 className="w-3 h-3" /> 縮放至螢幕
+          </button>
+          <button
+            onClick={() => setWidthMode('original')}
+            aria-pressed={!fitEnabled}
+            className={`flex items-center gap-1 px-3 py-2.5 min-h-11 rounded-md text-[11px] font-medium transition ${
+              !fitEnabled ? 'bg-blue-600 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Minimize2 className="w-3 h-3" /> 原寸
+          </button>
+        </div>
+      )}
+
+      {/* 沙盒 Iframe (解密後僅渲染純淨明文)；fit 模式以 transform 縮放、原寸模式以橫向捲動顯示設計寬度 */}
+      <div
+        ref={wrapRef}
+        className="w-full"
+        style={{
+          height: Math.ceil(frameH * fitScale),
+          overflowX: fitScale < 1 ? 'hidden' : 'auto',
+        }}
+      >
+        <iframe
+          key={processedHtml}
+          ref={iframeRef}
+          onLoad={() => void measureDoc()}
+          srcDoc={processedHtml}
+          sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          className="border-0 block"
+          style={{
+            width: '100%',
+            height: `${frameH}px`,
+            transform: fitScale < 1 ? `scale(${fitScale})` : undefined,
+            transformOrigin: '0 0',
+            background: 'transparent',
+          }}
+          title="Email Body View"
+        />
+      </div>
 
       {/* PGP Passphrase 輸入彈窗 */}
       {showPassModal && (

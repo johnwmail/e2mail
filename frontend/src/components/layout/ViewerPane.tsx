@@ -440,8 +440,8 @@ export const ViewerPane: React.FC = () => {
         )}
       </div>
 
-      {/* 郵件內文沙盒 */}
-      <div className="flex-1 p-2 md:p-6 overflow-hidden bg-slate-50/40 dark:bg-slate-950/40 min-w-0">
+      {/* 郵件內文沙盒（連 Reading Pane 一齊纵向捲動，單一 scrollbar） */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 md:p-6 bg-slate-50/40 dark:bg-slate-950/40 min-w-0">
         <EmailFrame
           uid={message.uid}
           folder={currentFolder}
