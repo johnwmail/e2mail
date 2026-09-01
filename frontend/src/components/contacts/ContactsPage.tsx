@@ -30,6 +30,8 @@ export const ContactsPage: React.FC = () => {
   const [searchInput, setSearchInput] = useState('');
   const [editing, setEditing] = useState<Contact | null>(null);
   const [editForm, setEditForm] = useState({ displayName: '', email: '', note: '' });
+  const [creating, setCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({ email: '', displayName: '', note: '' });
   const [importMode, setImportMode] = useState<'skip' | 'overwrite'>('skip');
   const [importResult, setImportResult] = useState<{ saved: number; skipped: string[]; invalid: number } | null>(null);
 
@@ -55,6 +57,36 @@ export const ContactsPage: React.FC = () => {
       toast('已更新聯絡人');
     },
   });
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      contactsApi.create({
+        email: createForm.email.trim(),
+        displayName: createForm.displayName.trim(),
+        note: createForm.note.trim(),
+        source: 'manual',
+      }),
+    onSuccess: (c) => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      setCreating(false);
+      setCreateForm({ email: '', displayName: '', note: '' });
+      toast(`已新增聯絡人：${c.displayName}`);
+    },
+    onError: (err: any) => {
+      const msg = String(err?.message || err);
+      toast(/already exists/i.test(msg) ? '這個 email 已存在於通訊錄' : '新增失敗: ' + msg);
+    },
+  });
+
+  const handleCreateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = createForm.email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      toast('請輸入有效的 email 地址（例：name@example.com）');
+      return;
+    }
+    createMutation.mutate();
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,6 +146,12 @@ export const ContactsPage: React.FC = () => {
           <button type="submit" className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold">搜尋</button>
         </form>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setCreateForm({ email: '', displayName: '', note: '' }); setCreating(true); }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold"
+          >
+            <UserPlus className="w-3.5 h-3.5" /> 新增
+          </button>
           <label className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-lg text-xs font-semibold cursor-pointer">
             <Upload className="w-3.5 h-3.5" /> 匯入
             <input type="file" accept=".csv,.vcf,.vcard" onChange={handleImport} className="hidden" />
@@ -142,7 +180,7 @@ export const ContactsPage: React.FC = () => {
         ) : !contacts || contacts.length === 0 ? (
           <div className="p-12 text-center text-slate-400 flex flex-col items-center gap-2">
             <UserPlus className="w-10 h-10 text-slate-300" />
-            <p className="text-xs">未有聯絡人，試下匯入 CSV/vCard 或由郵件一鍵加入</p>
+            <p className="text-xs">未有聯絡人 — 可用上面「新增」手動輸入 email，或匯入 CSV/vCard</p>
           </div>
         ) : (
           contacts.map((c) => (
@@ -165,6 +203,56 @@ export const ContactsPage: React.FC = () => {
           ))
         )}
       </div>
+
+      {creating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setCreating(false)}>
+          <form
+            onSubmit={handleCreateSubmit}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-xl p-4 space-y-3 border border-slate-200 dark:border-slate-800 shadow-2xl"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-sm">新增聯絡人</h3>
+              <button type="button" onClick={() => setCreating(false)} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <input
+              type="email"
+              inputMode="email"
+              autoFocus
+              required
+              value={createForm.email}
+              onChange={(e) => setCreateForm((s) => ({ ...s, email: e.target.value }))}
+              placeholder="Email 地址 *"
+              className="w-full px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              value={createForm.displayName}
+              onChange={(e) => setCreateForm((s) => ({ ...s, displayName: e.target.value }))}
+              placeholder="顯示名稱（可留空，會用 email）"
+              className="w-full px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <textarea
+              value={createForm.note}
+              onChange={(e) => setCreateForm((s) => ({ ...s, note: e.target.value }))}
+              placeholder="備註"
+              className="w-full px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+              rows={2}
+            />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setCreating(false)} className="px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 rounded-lg">取消</button>
+              <button
+                type="submit"
+                disabled={createMutation.isPending}
+                className="px-4 py-2 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50"
+              >
+                {createMutation.isPending ? '新增中...' : '新增'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
