@@ -7,6 +7,13 @@
 > regex that orphaned `width="…"`/`height="…"` outside the `<img>` tag (corrupting the blocked
 > placeholder and leaking stray text); it now rewrites only the `src` attribute and keeps all
 > original attributes, with `max-width:100% !important` capping the placeholder on phones.
+>
+> **Update (v0.1.46, user feedback):** the Fit/原寸 toggle bar was **removed** — wide emails are
+> now *always* auto-scaled to pane width (the measured fit size was judged good enough); pinch-zoom
+> + wrapper horizontal pan (beyond the 0.45 scale floor) remain as escape hatches.
+> **Also (v0.1.45):** removing `user-scalable=no` exposed iOS Safari's focus auto-zoom on <16px
+> inputs (whole page zooms on tap of `text-xs` fields). Fixed in `index.css` by forcing
+> `input/select/textarea{font-size:16px}` below `md` + `touch-action: manipulation` on buttons/links.
 
 > Issue: HTML emails on mobile render pinned to the **left**, leaving a large **empty area on the
 > right**, and never reflow to use the full available width/height. Goal: the mail body should
