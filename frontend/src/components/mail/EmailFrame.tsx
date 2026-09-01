@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
-import { ShieldAlert, Image, Lock, Unlock, ShieldCheck, Key, Maximize2, Minimize2 } from 'lucide-react';
+import { ShieldAlert, Image, Lock, Unlock, ShieldCheck, Key } from 'lucide-react';
 import { AttachmentInfo } from '../../types/api';
 import { mailApi } from '../../api/mail';
 import { pgpService } from '../../api/pgp';
@@ -74,7 +74,6 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
   const [paneW, setPaneW] = useState(0);
   const [intrinsicW, setIntrinsicW] = useState(0);
   const [contentH, setContentH] = useState(0);
-  const [widthMode, setWidthMode] = useState<'auto' | 'fit' | 'original'>('auto');
 
   const measuringRef = useRef(false);
   // RO 經 ref間接呼叫最新 measureDoc，避開 useCallback 循環依賴
@@ -166,7 +165,6 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
 
   useEffect(() => {
     setUserAllowed(false);
-    setWidthMode('auto');
     setIntrinsicW(0);
     setContentH(0);
     setDecryptedContent(null);
@@ -400,9 +398,8 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
     void measureDoc();
   }, [processedHtml, paneW, measureDoc]);
 
-  const fitEnabled = widthMode !== 'original';
   const isWideEmail = intrinsicW > 0 && paneW > 0 && intrinsicW > paneW + WIDTH_EPS;
-  const fitScale = fitEnabled && isWideEmail ? computeFitScale(paneW, intrinsicW) : 1;
+  const fitScale = isWideEmail ? computeFitScale(paneW, intrinsicW) : 1;
   const frameH = Math.max(contentH, 320);
 
   return (
@@ -465,38 +462,16 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
         </div>
       )}
 
-      {/* 闊版面郵件偵測：縮放至螢幕（Apple Mail 式）/ 原寸橫向捲動（Gmail 式） */}
-      {isWideEmail && (
-        <div className="flex items-center gap-1.5 px-3 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/40">
-          <span className="text-[10px] text-slate-400 truncate mr-auto">郵件版面 {intrinsicW}px，超出可視寬度</span>
-          <button
-            onClick={() => setWidthMode('fit')}
-            aria-pressed={fitEnabled}
-            className={`flex items-center gap-1 px-3 py-2.5 min-h-11 rounded-md text-[11px] font-medium transition ${
-              fitEnabled ? 'bg-blue-600 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Maximize2 className="w-3 h-3" /> 縮放至螢幕
-          </button>
-          <button
-            onClick={() => setWidthMode('original')}
-            aria-pressed={!fitEnabled}
-            className={`flex items-center gap-1 px-3 py-2.5 min-h-11 rounded-md text-[11px] font-medium transition ${
-              !fitEnabled ? 'bg-blue-600 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Minimize2 className="w-3 h-3" /> 原寸
-          </button>
-        </div>
-      )}
-
-      {/* 沙盒 Iframe (解密後僅渲染純淨明文)；fit 模式以 transform 縮放、原寸模式以橫向捲動顯示設計寬度 */}
+      {/* 沙盒 Iframe (解密後僅渲染純淨明文)；闊郵件一律自動縮放至欄寬，用戶可用 pinch-zoom 看細節 */}
       <div
         ref={wrapRef}
         className="w-full"
         style={{
           height: Math.ceil(frameH * fitScale),
-          overflowX: fitScale < 1 ? 'hidden' : 'auto',
+          // 正常 fit 後內容剛好等於欄寬（冇 scrollbars）；
+          // 得尺超過縮放下限嘅極闊郵件先會橫向可拖
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
         }}
       >
         <iframe
