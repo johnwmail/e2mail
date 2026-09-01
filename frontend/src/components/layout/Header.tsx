@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Mail, Search, LogOut, PenSquare, X, Menu, Key } from 'lucide-react';
+import { Mail, Search, LogOut, PenSquare, X, Menu, Key, MessagesSquare } from 'lucide-react';
 import { useQueries } from '@tanstack/react-query';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useMailStore } from '../../stores/useMailStore';
@@ -10,7 +10,7 @@ import { FolderInfo } from '../../types/api';
 
 export const Header: React.FC = () => {
   const { session, logout } = useAuthStore();
-  const { searchQuery, searchInput, setSearchQuery, setSearchInput, clearSearch, openComposer, toggleSidebar, selectedUID, currentFolder, setActiveAccountId, unreadView, setUnreadView } = useMailStore();
+  const { searchQuery, searchInput, setSearchQuery, setSearchInput, clearSearch, openComposer, toggleSidebar, selectedUID, currentFolder, setActiveAccountId, unreadView, setUnreadView, listMode, setListMode } = useMailStore();
   const activeAccount = useActiveAccount();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -161,7 +161,7 @@ export const Header: React.FC = () => {
                 </div>
                 <div className="flex flex-col">
                   <span className="font-bold text-sm md:text-base text-slate-900 dark:text-white leading-tight">
-                    WebMail
+                    e2Mail
                   </span>
                   <span className="lg:hidden text-[11px] text-slate-400 font-medium leading-none mt-0.5">
                     {unreadView ? '未讀' : getFolderDisplayName(currentFolder)}
@@ -224,6 +224,18 @@ export const Header: React.FC = () => {
               >
                 <Search className="w-4 h-4" />
               </button>
+
+              {/* Threads 模式 on/off（未讀虛擬列表唔支援對話串） */}
+              {!unreadView && (
+                <button
+                  onClick={() => setListMode(listMode === 'threads' ? 'messages' : 'threads')}
+                  className={`p-2 rounded-lg transition ${listMode === 'threads' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                  title={listMode === 'threads' ? '切換為單封模式' : '切換為對話串模式'}
+                  aria-label={listMode === 'threads' ? '切換為單封模式' : '切換為對話串模式'}
+                >
+                  <MessagesSquare className="w-4 h-4" />
+                </button>
+              )}
 
               {/* PGP 金鑰管理按鈕 */}
               <button
