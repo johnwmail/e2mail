@@ -26,6 +26,7 @@ export interface MessageSummary {
   size: number;
   snippet?: string;
   threadId?: string;
+  folder?: string;
 }
 
 export interface ParsedMessage {

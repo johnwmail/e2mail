@@ -23,6 +23,7 @@ import {
   Minus,
   Loader2,
   Users,
+  MailOpen,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { accountsApi } from '../../api/accounts';
@@ -232,7 +233,7 @@ const AccountFolders: React.FC<{
   onToggleExpand: () => void;
   setSidebarOpen: (open: boolean) => void;
 }> = ({ account, expanded, onToggleExpand, setSidebarOpen }) => {
-  const { currentFolder, setCurrentFolder, setActiveAccountId, setInboxUnread } = useMailStore();
+  const { currentFolder, setCurrentFolder, setActiveAccountId, setInboxUnread, unreadView, setUnreadView } = useMailStore();
   const isActiveAccount = useActiveAccount()?.id === account.id;
   const [isManagerOpen, setIsManagerOpen] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(() => {
@@ -309,6 +310,31 @@ const AccountFolders: React.FC<{
       {expanded && (
         <>
           <nav className="space-y-1 ml-5 border-l border-slate-200 dark:border-slate-800 pl-2 mb-2">
+            {/* 未讀 Smart 列表（純 App 前端合併，唔係真 imap folder） */}
+            <button
+              onClick={() => {
+                setActiveAccountId(account.id);
+                setUnreadView(true);
+                setSidebarOpen(false);
+              }}
+              className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition ${
+                isActiveAccount && unreadView
+                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800'
+              }`}
+              title="顯示所有未讀郵件"
+            >
+              <span className="flex items-center gap-2.5 truncate">
+                <MailOpen className="w-4 h-4 text-slate-400" />
+                <span className="truncate">未讀</span>
+              </span>
+              {accountUnread > 0 && (
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded-full shrink-0">
+                  {accountUnread}
+                </span>
+              )}
+            </button>
+
             {isLoading ? (
               <div className="p-3 text-xs text-slate-400">正在載入資料夾...</div>
             ) : visibleFolders.length === 0 ? (

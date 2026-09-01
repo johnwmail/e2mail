@@ -21,7 +21,7 @@ import { mailApi } from '../../api/mail';
 import { contactsApi } from '../../api/addressBook';
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
-import { MessageSummary, FolderInfo, ThreadSummary, EmailAddress } from '../../types/api';
+import { MessageSummary, FolderInfo, ThreadSummary, EmailAddress, MessageListResult } from '../../types/api';
 
 const getFolderDisplayName = (folder: FolderInfo) => {
   switch (folder.specialUse) {
@@ -299,6 +299,7 @@ export const MessageList: React.FC = () => {
   const accountId = activeAccount?.id;
   const {
     currentFolder,
+    setCurrentFolder,
     selectedUID,
     setSelectedUID,
     searchQuery,
@@ -307,9 +308,12 @@ export const MessageList: React.FC = () => {
     page,
     setPage,
     limit,
+    unreadView,
     listMode,
     setListMode,
   } = useMailStore();
+  const isUnreadView = unreadView;
+  const threadMode = listMode === 'threads' && !isUnreadView;
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
   const toggleThread = (id: string) =>
     setExpandedThreads((prev) => {
@@ -466,37 +470,120 @@ export const MessageList: React.FC = () => {
   useEffect(() => {
     closeSwipe();
     closeThreadSwipe();
-  }, [currentFolder, searchQuery, page, limit, listMode]);
+  }, [currentFolder, searchQuery, page, limit, listMode, unreadView]);
 
-  // 取得郵件清單
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  // 正常資料夾清單
+  const {
+    data: folderData,
+    isLoading: folderLoading,
+    isFetching: folderFetching,
+    refetch: folderRefetch,
+  } = useQuery({
     queryKey: ['messages', accountId, currentFolder, page, limit, searchQuery, listMode],
     queryFn: () => mailApi.getMessages(currentFolder, page, limit, searchQuery, accountId, listMode === 'threads'),
-    enabled: !!accountId,
+    enabled: !!accountId && !unreadView,
     staleTime: 10000,
     // 搜尋途中保留舊結果，避免 list 「閃白」；新結果返嚟先取代
     placeholderData: (previousData) => previousData,
   });
 
+  // 未讀 Smart 列表（純 App 前端合併）：逐 folder 用現有 getMessages(folder, q=is:unread)，再合併排序分頁
+  const {
+    data: unreadData,
+    isLoading: unreadLoading,
+    isFetching: unreadFetching,
+    refetch: unreadRefetch,
+  } = useQuery({
+    queryKey: ['unread-aggregate', accountId, page, limit],
+    queryFn: async (): Promise<MessageListResult> => {
+      const folders = await mailApi.getFolders(accountId);
+      const names = (folders || [])
+        .filter((f) => f.specialUse !== 'trash' && !/trash|bin/i.test(f.name))
+        .map((f) => f.name);
+      const results = await Promise.all(
+        names.map((n) => mailApi.getMessages(n, 1, 100, 'is:unread', accountId, false).catch(() => null))
+      );
+      const all: MessageSummary[] = [];
+      results.forEach((r, i) => {
+        if (!r) return;
+        for (const m of r.messages) all.push({ ...m, folder: names[i] });
+      });
+      all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const total = all.length;
+      const totalPages = Math.max(1, Math.ceil(total / limit));
+      const start = (page - 1) * limit;
+      return {
+        folder: '未讀',
+        mode: 'messages',
+        total,
+        page,
+        limit,
+        totalPages,
+        messages: all.slice(start, start + limit),
+      };
+    },
+    enabled: !!accountId && unreadView,
+    staleTime: 0,
+    placeholderData: (previousData) => previousData,
+  });
+
+  const data = isUnreadView ? unreadData : folderData;
+  const isLoading = isUnreadView ? unreadLoading : folderLoading;
+  const isFetching = isUnreadView ? unreadFetching : folderFetching;
+  const refetch = isUnreadView ? unreadRefetch : folderRefetch;
+
+  // 未讀虛擬列表下，每封郵件屬唔同真 folder；用呢個 map 搵返每封嘅來源資料夾
+  const folderByUID = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const m of data?.messages || []) {
+      if (m.uid && m.folder) map.set(m.uid, m.folder);
+    }
+    return map;
+  }, [data]);
+
+  const folderForUID = (uid: number): string => {
+    if (isUnreadView) {
+      const f = folderByUID.get(uid);
+      if (f) return f;
+    }
+    return currentFolder;
+  };
+
+  // 將一組 uid 依真 folder 分組（未讀列表可跨 folder；正常情況淨係得一組 = currentFolder）
+  const groupUidsByFolder = (uids: number[]): { folder: string; uids: number[] }[] => {
+    const map = new Map<string, number[]>();
+    for (const uid of uids) {
+      const f = folderForUID(uid);
+      if (!f) continue;
+      const arr = map.get(f) || [];
+      arr.push(uid);
+      map.set(f, arr);
+    }
+    return [...map.entries()].map(([folder, ids]) => ({ folder, uids: ids }));
+  };
+
   // 修改 Flag Mutation
   const flagMutation = useMutation({
     mutationFn: ({ uids, flags, op }: { uids: number[]; flags: string[]; op: 'add' | 'remove' }) =>
-      mailApi.setFlags(currentFolder, uids, flags, op, accountId),
+      Promise.all(groupUidsByFolder(uids).map((g) => mailApi.setFlags(g.folder, g.uids, flags, op, accountId))),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
+      queryClient.invalidateQueries({ queryKey: ['unread-aggregate', accountId] });
       queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
     },
   });
 
   // 刪除郵件 Mutation
   const deleteMutation = useMutation({
-    mutationFn: (uids: number[]) => mailApi.deleteMessages(currentFolder, uids, false, accountId),
+    mutationFn: (uids: number[]) =>
+      Promise.all(groupUidsByFolder(uids).map((g) => mailApi.deleteMessages(g.folder, g.uids, false, accountId))),
     onSuccess: () => {
       setSelectedUIDs([]);
       if (selectedUID && selectedUIDs.includes(selectedUID)) {
         setSelectedUID(null);
       }
       queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
+      queryClient.invalidateQueries({ queryKey: ['unread-aggregate', accountId] });
       queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
     },
   });
@@ -504,11 +591,12 @@ export const MessageList: React.FC = () => {
   // 移動郵件 Mutation
   const moveMutation = useMutation({
     mutationFn: ({ uids, dest }: { uids: number[]; dest: string }) =>
-      mailApi.moveMessages(currentFolder, uids, dest, accountId),
+      Promise.all(groupUidsByFolder(uids).map((g) => mailApi.moveMessages(g.folder, g.uids, dest, accountId))),
     onSuccess: () => {
       setSelectedUIDs([]);
       if (selectedUID) setSelectedUID(null);
       queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
+      queryClient.invalidateQueries({ queryKey: ['unread-aggregate', accountId] });
       queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
     },
     onError: (err: any) => {
@@ -556,7 +644,7 @@ export const MessageList: React.FC = () => {
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      if (listMode === 'threads') {
+      if (threadMode) {
         setSelectedUIDs(threads.flatMap((t) => t.messages.map((m) => m.uid)));
       } else if (data?.messages) {
         setSelectedUIDs(data.messages.map((m) => m.uid));
@@ -641,8 +729,12 @@ export const MessageList: React.FC = () => {
       return;
     }
 
-    // 普通 click: 開 viewer
+    // 普通 click: 開 viewer —— 未讀虛擬列表要跳去嗰封嘅真 folder 先開得
     lastClickedIndexRef.current = index;
+    if (isUnreadView) {
+      const f = folderForUID(msg.uid);
+      if (f) setCurrentFolder(f);
+    }
     setSelectedUID(msg.uid);
   };
 
@@ -705,7 +797,9 @@ export const MessageList: React.FC = () => {
   // 對已載入嘅 list 用 searchInput 即刻縮窄；一旦伺服器返到權威結果就停用，避免「body-only match」被誤刪。
   const inputTrim = searchInput.trim();
   const isFreshForInput = inputTrim === searchQuery && !isFetching;
-  const applyLocalPreview = !isFreshForInput;
+  // 未讀列表係 App 前端合併好嘅（server 唔理 q），所以只要有字就永遠本機過濾；
+  // 正常列表先至用「權威結果就停用」嚟避免 body-only match 被誤刪。
+  const applyLocalPreview = isUnreadView ? inputTrim !== '' : !isFreshForInput;
   const displayMessages = useMemo(() => {
     if (!applyLocalPreview || !inputTrim) return messages;
     return messages.filter((m) => matchesLocalQuery(m, inputTrim));
@@ -717,7 +811,7 @@ export const MessageList: React.FC = () => {
 
   // 預覽期間顯示「即時縮窄後」嘅數量；權威結果返到先顯示伺服器總數
   const resultCount = applyLocalPreview
-    ? listMode === 'threads'
+    ? threadMode
       ? displayThreads.length
       : displayMessages.length
     : data?.total ?? 0;
@@ -846,20 +940,22 @@ export const MessageList: React.FC = () => {
             </div>
           ) : (
             <span className="text-xs font-medium text-slate-500 truncate">
-              {resultCount ? (listMode === 'threads' ? `共 ${resultCount} 個對話` : `共 ${resultCount} 封`) : (listMode === 'threads' ? '對話清單' : '信件清單')}
+              {resultCount ? (threadMode ? `共 ${resultCount} 個對話` : `共 ${resultCount} 封`) : (threadMode ? '對話清單' : '信件清單')}
             </span>
           )}
         </div>
 
-        {/* Threads 模式 on/off（單一按鈕） */}
-        <button
-          onClick={() => setListMode(listMode === 'threads' ? 'messages' : 'threads')}
-          className={`p-1.5 rounded-lg transition flex items-center gap-1 ${listMode === 'threads' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
-          title={listMode === 'threads' ? '切換為單封模式' : '切換為對話串模式'}
-          aria-label={listMode === 'threads' ? '切換為單封模式' : '切換為對話串模式'}
-        >
-          <MessagesSquare className="w-4 h-4" />
-        </button>
+        {/* Threads 模式 on/off（單一按鈕；未讀虛擬列表唔支援對話串） */}
+        {!isUnreadView && (
+          <button
+            onClick={() => setListMode(listMode === 'threads' ? 'messages' : 'threads')}
+            className={`p-1.5 rounded-lg transition flex items-center gap-1 ${listMode === 'threads' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
+            title={listMode === 'threads' ? '切換為單封模式' : '切換為對話串模式'}
+            aria-label={listMode === 'threads' ? '切換為單封模式' : '切換為對話串模式'}
+          >
+            <MessagesSquare className="w-4 h-4" />
+          </button>
+        )}
 
         {/* 分頁與重新整理按鈕 */}
         <div className="flex items-center gap-1 text-xs text-slate-500 shrink-0">
@@ -917,7 +1013,7 @@ export const MessageList: React.FC = () => {
       >
         {isLoading ? (
           <div className="p-8 text-center text-xs text-slate-400">正在讀取信件...</div>
-        ) : listMode === 'threads' ? (
+        ) : threadMode ? (
           displayThreads.length === 0 ? (
             <div className="p-12 text-center text-slate-400 flex flex-col items-center">
               <MessagesSquare className="w-12 h-12 stroke-1 mb-2 text-slate-300 dark:text-slate-700" />
@@ -1009,7 +1105,13 @@ export const MessageList: React.FC = () => {
         ) : displayMessages.length === 0 ? (
           <div className="p-12 text-center text-slate-400 flex flex-col items-center">
             <Inbox className="w-12 h-12 stroke-1 mb-2 text-slate-300 dark:text-slate-700" />
-            <p className="text-xs">{searchInput.trim() ? '沒有符合搜尋嘅郵件' : '此資料夾沒有郵件'}</p>
+            <p className="text-xs">
+              {searchInput.trim()
+                ? '沒有符合搜尋嘅郵件'
+                : isUnreadView
+                  ? '冇未讀郵件，全部睇完晒'
+                  : '此資料夾沒有郵件'}
+            </p>
           </div>
         ) : (
           displayMessages.map((msg, index) => {
@@ -1152,6 +1254,13 @@ export const MessageList: React.FC = () => {
                   >
                     {msg.subject || '(無主旨)'}
                   </div>
+
+                  {isUnreadView && msg.folder && (
+                    <div className="mb-1 flex items-center gap-1">
+                      <FolderInput className="w-3 h-3 text-slate-400 shrink-0" />
+                      <span className="text-[10px] text-slate-400 truncate">{msg.folder}</span>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between text-[11px] text-slate-400 min-w-0">
                     <span className="truncate pr-1">{msg.snippet || ''}</span>
