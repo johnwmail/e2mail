@@ -38,9 +38,11 @@ export async function request<T>(
 
   if (response.status === 401) {
     // 2FA endpoints 的 401 係業務錯誤（驗證碼錯誤），非 session 失效
+    // /auth/change-password 的 401 代表舊密碼不正確，同樣唔應該登出
     if (
       !endpoint.startsWith('/2fa/') &&
       !endpoint.startsWith('/auth/logout') &&
+      !endpoint.startsWith('/auth/change-password') &&
       !window.location.pathname.includes('/login')
     ) {
       localStorage.removeItem('webmail_token');

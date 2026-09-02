@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   ShieldCheck,
   ShieldOff,
@@ -11,14 +11,165 @@ import {
   Smartphone,
   Eye,
   EyeOff,
+  Lock,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { twoFApi } from '../../api/2fa';
+import { authApi } from '../../api/auth';
 import { TwoFASetupResponse } from '../../types/api';
 
 interface SecurityTabProps {
   sessionEmail?: string;
 }
+
+// ChangePasswordSection 經 ldapd 變更登入密碼（僅在伺服器 LDAP_ENABLED 時顯示）。
+// 設計見 repo 根目錄 LDAP.md：後端驗證舊密碼 → 改 ldapd → re-wrap 本地 DEK，當前 session 不會被登出。
+const ChangePasswordSection: React.FC = () => {
+  const [enabled, setEnabled] = useState(false);
+  const [oldPw, setOldPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/server-config')
+      .then((r) => r.json())
+      .then((data) => setEnabled(!!data?.success && !!data?.data?.ldapEnabled))
+      .catch(() => setEnabled(false));
+  }, []);
+
+  if (!enabled) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMsg(null);
+    if (newPw.length < 8) {
+      setMsg({ type: 'error', text: '新密碼至少 8 個字元' });
+      return;
+    }
+    if (newPw !== confirmPw) {
+      setMsg({ type: 'error', text: '新密碼與確認密碼不一致' });
+      return;
+    }
+    if (newPw === oldPw) {
+      setMsg({ type: 'error', text: '新密碼與舊密碼相同' });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await authApi.changePassword(oldPw, newPw, confirmPw);
+      setMsg({ type: 'success', text: '密碼已變更。你嘅加密資料已用新密碼重新包裝，目前登入不會被登出。' });
+      setOldPw('');
+      setNewPw('');
+      setConfirmPw('');
+    } catch (err: any) {
+      setMsg({ type: 'error', text: err.message || '密碼變更失敗，請重試' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const inputCls =
+    'w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500';
+
+  return (
+    <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+      <div className="flex items-center gap-2">
+        <Lock className="w-4 h-4 text-slate-500 shrink-0" />
+        <h4 className="text-sm font-bold text-slate-900 dark:text-white">變更登入密碼</h4>
+      </div>
+      <p className="text-[11px] text-slate-500 leading-relaxed">
+        新密碼會同步到你郵件伺服器嘅 LDAP 帳戶（IMAP/SMTP 登入密碼會一併變更），並即時重新包裝你嘅本地加密資料。
+      </p>
+
+      {msg && (
+        <div
+          className={`p-3 rounded-lg text-xs flex items-center gap-2 ${
+            msg.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+              : 'bg-red-50 text-red-800 border border-red-200'
+          }`}
+        >
+          {msg.type === 'success' ? (
+            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+          )}
+          <span className="break-all">{msg.text}</span>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div>
+            <label htmlFor="cp-old" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              舊密碼
+            </label>
+            <input
+              id="cp-old"
+              type={showPw ? 'text' : 'password'}
+              required
+              autoComplete="current-password"
+              value={oldPw}
+              onChange={(e) => setOldPw(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label htmlFor="cp-new" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              新密碼（至少 8 字）
+            </label>
+            <input
+              id="cp-new"
+              type={showPw ? 'text' : 'password'}
+              required
+              minLength={8}
+              autoComplete="new-password"
+              value={newPw}
+              onChange={(e) => setNewPw(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label htmlFor="cp-confirm" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              確認新密碼
+            </label>
+            <input
+              id="cp-confirm"
+              type={showPw ? 'text' : 'password'}
+              required
+              minLength={8}
+              autoComplete="new-password"
+              value={confirmPw}
+              onChange={(e) => setConfirmPw(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50 w-full sm:w-auto"
+          >
+            {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+            變更密碼
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowPw(!showPw)}
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition px-1 py-1 min-h-[40px] sm:min-h-0"
+          >
+            {showPw ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            {showPw ? '隱藏密碼' : '顯示密碼'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
 
 export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
   const [loading, setLoading] = useState(false);
@@ -452,6 +603,8 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
           )}
         </div>
       )}
+
+      <ChangePasswordSection />
     </div>
   );
 };

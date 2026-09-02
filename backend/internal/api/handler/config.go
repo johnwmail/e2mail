@@ -22,6 +22,7 @@ func (h *ServerConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
 		"require2fa":  h.cfg.Require2FA,
 		"requirePgp":  h.cfg.RequirePGP,
+		"ldapEnabled": h.cfg != nil && h.cfg.LDAP.Ready(),
 		"defaults":    nil,
 	}
 	if h.cfg != nil && h.cfg.HasDefaults() {
