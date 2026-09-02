@@ -133,6 +133,22 @@ describe('EmailFrame', () => {
     expect(doc).toContain('tel');
   });
 
+  it('keeps email <style> classes while neutralising @import and remote css urls', () => {
+    renderFrame({
+      htmlBody:
+        '<style>.c4{border:1px solid #000000}.c27{min-width:682px}' +
+        '@import url("https://track.example/x.css");' +
+        '.bg{background:url(https://track.example/bg.png)}</style>' +
+        '<table><tr><td class="c4">boxed</td></tr></table>',
+    });
+    const doc = getFrame().srcdoc;
+    expect(doc).toContain('.c27{min-width:682px}');
+    expect(doc).toContain('border:1px solid #000000');
+    expect(doc).not.toContain('@import');
+    expect(doc).not.toContain('track.example/bg.png');
+    expect(doc).toContain('.bg{background:none}');
+  });
+
   it('renders text/plain with preserved line breaks and pre-wrap', () => {
     renderFrame({ htmlBody: '', textBody: '第一行\n第二行' });
     const doc = getFrame().srcdoc;

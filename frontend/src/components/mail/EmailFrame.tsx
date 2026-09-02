@@ -52,6 +52,25 @@ const measureStable = (root: HTMLElement): Promise<{ w: number; h: number }> =>
     requestAnimationFrame(step);
   });
 
+// DOMPurify 喺 fragment mode（WHOLE_DOCUMENT:false）會剷走所有 <style> tag，
+// 而 email 佈局（eMPF 嗰類 border / min-width 欄寬 class）全靠佢哋 → 必須喺
+// sanitize 前提取出来，再注入返去 srcDoc head（排喺我哋 own CSS 之後）。
+const extractMailStyles = (html: string): { css: string; rest: string } => {
+  const blocks: string[] = [];
+  const rest = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, (m) => {
+    const inner = m
+      .replace(/^<style\b[^>]*>/i, '')
+      .replace(/<\/style>\s*$/i, '')
+      .replace(/@import[^;}]*;?/gi, '') // 外部 CSS = 追蹤 vector
+      .replace(/url\(\s*['"]?https?:[^)'"]*['"]?\s*\)/gi, 'none') // CSS 內遠端圖/font
+      .replace(/expression\s*\(/gi, 'expr(') // legacy IE script vector
+      .slice(0, 60000);
+    if (inner.trim()) blocks.push(inner);
+    return '';
+  });
+  return { css: blocks.join('\n'), rest };
+};
+
 // 郵件內所有連結強制新分頁（http/https/其他一般 URL）；mailto:/tel: 交返俾系統處理。
 // 亦會移除 target=_top/_parent/self 等企圖喺 app 內開啟嘅 target。
 const forceNewTabLinks = (html: string): string =>
@@ -242,14 +261,15 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       if (looksLikeHtml) {
         let htmlForSanitize = decryptedContent.replace(/<img[^>]*Template_Bilingual[^>]*>/gi, '');
         htmlForSanitize = htmlForSanitize.replace(/<img[^>]*width=["']?1["']?[^>]*height=["']?1["']?[^>]*>/gi, '');
-        const clean = DOMPurify.sanitize(htmlForSanitize, {
+        const { css: mailCss, rest: bodyHtml } = extractMailStyles(htmlForSanitize);
+        const clean = DOMPurify.sanitize(bodyHtml, {
           WHOLE_DOCUMENT: false,
           ADD_TAGS: ['style', 'iframe'],
           ADD_ATTR: ['target', 'data-blocked-src'],
           FORBID_TAGS: ['script', 'object', 'embed', 'applet'],
           FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover'],
         });
-        return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;width:100%;box-sizing:border-box}.email-content{max-width:720px;margin:0 auto}table{border-collapse:collapse}td,th{word-break:normal;vertical-align:top}.email-content{max-width:720px;margin:0 auto}img{max-width:100% !important;height:auto}img[data-blocked-src]{background:#f8fafc;border:1px dashed #cbd5e1;color:#94a3b8;font-size:12px;box-sizing:border-box}a{color:#2563eb}</style></head><body><div class="email-content">${forceNewTabLinks(clean)}</div></body></html>`;
+        return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;width:100%;box-sizing:border-box}.email-content{max-width:720px;margin:0 auto}table{border-collapse:collapse}td,th{word-break:normal;vertical-align:top}.email-content{max-width:720px;margin:0 auto}img{max-width:100% !important;height:auto}img[data-blocked-src]{background:#f8fafc;border:1px dashed #cbd5e1;color:#94a3b8;font-size:12px;box-sizing:border-box}a{color:#2563eb}</style>${mailCss ? `<style>${mailCss}</style>` : ''}</head><body><div class="email-content">${forceNewTabLinks(clean)}</div></body></html>`;
       }
       let escaped = decryptedContent
         .replace(/&/g, '&amp;')
@@ -355,8 +375,11 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       });
     }
 
+    // 提取 email 自己嘅 <style>（DOMPurify fragment mode 會剷走哋）
+    const { css: mailCss, rest: contentNoStyles } = extractMailStyles(content);
+
     // DOMPurify XSS 安全過濾
-    const clean = DOMPurify.sanitize(content, {
+    const clean = DOMPurify.sanitize(contentNoStyles, {
       WHOLE_DOCUMENT: false,
       ADD_TAGS: ['style', 'iframe'],
       ADD_ATTR: ['target', 'data-blocked-src'],
@@ -397,6 +420,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
               color: #64748b;
             }
           </style>
+          ${mailCss ? `<style>${mailCss}</style>` : ''}
         </head>
         <body>
           <div class="email-content">
