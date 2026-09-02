@@ -25,6 +25,17 @@
 > is scaled to the pane. Verified headless: 375px pane → scale 0.45 (design intact);
 > 850px desktop → scale 1, Outlook-faithful. Lesson: *measure at natural width first, never
 > reflow-clamp a table's design — Apple/Gmail/Outlook all scale, not squeeze.*
+>
+> **Update (v0.2.4, the real root cause):** comparing against iPhone Mail showed e2mail
+> rendering the same eMPF mail **without borders / crushed columns** → the mail's entire
+> `<style>` block was silently **removed by DOMPurify's fragment mode** (`WHOLE_DOCUMENT:false`
+> strips `<style>` even when ADD_TAGS includes it — verified empirically, dompurify 3.x).
+> Fix: `extractMailStyles()` hoists `<style>` blocks *before* sanitize (stripping `@import`,
+> remote `url(http…)` and IE `expression(`), re-injects them after our base CSS in the srcDoc
+> head. With the email's real classes alive again, the fixed 794px layout + min-width columns
+> produce genuine overflow → the pass-1/pass-2 natural-width measurement finally engages
+> scale-to-fit like iPhone Mail.
+
 
 
 > Issue: HTML emails on mobile render pinned to the **left**, leaving a large **empty area on the
