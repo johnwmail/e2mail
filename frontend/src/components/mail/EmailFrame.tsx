@@ -119,7 +119,12 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
 
     measuringRef.current = true;
     try {
-      // pass 1：以欄寬渲染，量度內容溢出寬度（reflow-assist CSS 已收文可縮的 table/img）
+      // 先喺 100% 欄寬渲染；若 .email-content (720 閱讀寬上限) 裝唔住內容（例如 eMPF
+      // 呢類 794px 固定欄 + min-width 設計），解除上限 preserve 原設計，等 baseW 量到真正闊度
+      const ec = doc.querySelector<HTMLElement>('.email-content');
+      if (ec) ec.style.maxWidth = ec.scrollWidth > ec.clientWidth + 8 ? 'none' : '';
+      // pass 1：以欄寬渲染，量度內容溢出寬度（table/img 嘅自然溢出，唔好 clamp，
+      // 否則固定欄位會被壓扁成窄欄，measure 唔到設計寬度）
       fr.style.width = '100%';
       const baseW = Math.max(root.scrollWidth, doc.body?.scrollWidth ?? 0);
       if (baseW <= pw + WIDTH_EPS) {
@@ -244,7 +249,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
           FORBID_TAGS: ['script', 'object', 'embed', 'applet'],
           FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover'],
         });
-        return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;width:100%;box-sizing:border-box}.email-content{max-width:720px;margin:0 auto}table{border-collapse:collapse;max-width:100% !important}div,td,th{max-width:100% !important}td,th{word-break:normal;vertical-align:top}img{max-width:100% !important;height:auto}img[data-blocked-src]{background:#f8fafc;border:1px dashed #cbd5e1;color:#94a3b8;font-size:12px;box-sizing:border-box}a{color:#2563eb}</style></head><body><div class="email-content">${forceNewTabLinks(clean)}</div></body></html>`;
+        return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;width:100%;box-sizing:border-box}.email-content{max-width:720px;margin:0 auto}table{border-collapse:collapse}td,th{word-break:normal;vertical-align:top}.email-content{max-width:720px;margin:0 auto}img{max-width:100% !important;height:auto}img[data-blocked-src]{background:#f8fafc;border:1px dashed #cbd5e1;color:#94a3b8;font-size:12px;box-sizing:border-box}a{color:#2563eb}</style></head><body><div class="email-content">${forceNewTabLinks(clean)}</div></body></html>`;
       }
       let escaped = decryptedContent
         .replace(/&/g, '&amp;')
@@ -379,8 +384,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
               width: 100%;
               box-sizing: border-box;
             }
-            table { border-collapse: collapse; max-width: 100% !important; }
-            div, td, th { max-width: 100% !important; }
+            table { border-collapse: collapse; }
             td, th { word-break: normal; vertical-align: top; }
             .email-content { max-width: 720px; margin: 0 auto; }
             img[data-blocked-src] { background: #f8fafc; border: 1px dashed #cbd5e1; color: #94a3b8; font-size: 12px; box-sizing: border-box; }
