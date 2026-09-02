@@ -677,7 +677,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	// 3. 寫入 ldapd
 	if err := h.pwChanger.ChangePassword(userDN, req.NewPassword); err != nil {
-		log.Printf("[PWCHANGE] ldap change failed for %s: %v", ownerEmail, err) // lgtm[go/clear-text-logging] - error contains only scheme name, not password
+		log.Printf("[PWCHANGE] ldap change failed for %s: %v", ownerEmail, err) // codeql[go/clear-text-logging] - err contains only result code, not password
 		if errors.Is(err, ldap.ErrInvalidCredentials) {
 			response.Error(w, http.StatusBadGateway, "LDAP 服務帳號認證失敗，請聯絡管理員")
 			return
@@ -766,7 +766,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 // rollbackLDAP 嘗試將 ldapd 端密碼恢復為舊值（best-effort，失敗只 log CRITICAL）
 func (h *AuthHandler) rollbackLDAP(userDN, oldPassword, ownerEmail, reason string) {
 	if err := h.pwChanger.ChangePassword(userDN, oldPassword); err != nil {
-		log.Printf("[CRITICAL][PWCHANGE] %s for %s AND LDAP rollback failed: %v — 用戶需以新密碼登入或聯絡管理員", reason, ownerEmail, err) // lgtm[go/clear-text-logging] - error contains only scheme/error code, not password
+		log.Printf("[CRITICAL][PWCHANGE] %s for %s AND LDAP rollback failed: %v — 用戶需以新密碼登入或聯絡管理員", reason, ownerEmail, err) // codeql[go/clear-text-logging] - err contains only result code, not password
 		return
 	}
 	log.Printf("[PWCHANGE] %s for %s; LDAP password rolled back to old value", reason, ownerEmail)
