@@ -4,11 +4,13 @@ import (
 	"crypto/rand"
 	"crypto/sha1" //nolint:gosec // {SSHA} 格式由 OpenBSD ldapd 規範指定
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -44,13 +46,33 @@ func New(opts config.LDAPConfig) *Client {
 	return c
 }
 
+// tlsConfig 按 opts 組裝 TLS 設定（支援自簽 RootCA）
+func (c *Client) tlsConfig() (*tls.Config, error) {
+	cfg := &tls.Config{InsecureSkipVerify: c.opts.AllowInsecureTLS} //nolint:gosec // 僅顯式 LDAP_ALLOW_INSECURE_TLS 時生效
+	if c.opts.CAFile == "" {
+		return cfg, nil
+	}
+	pemData, err := os.ReadFile(c.opts.CAFile)
+	if err != nil {
+		return nil, fmt.Errorf("read LDAP CA %q failed: %w", c.opts.CAFile, err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemData) {
+		return nil, fmt.Errorf("parse LDAP CA %q failed: no valid PEM", c.opts.CAFile)
+	}
+	cfg.RootCAs = pool
+	return cfg, nil
+}
+
 // dialConn 依 opts 建立已加密的 LDAP 連線（ldaps:// 直連，ldap:// 可配 STARTTLS）
 func (c *Client) dialConn() (Conn, error) {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	tlsCfg := &tls.Config{InsecureSkipVerify: c.opts.AllowInsecureTLS} //nolint:gosec // 僅在顯式 LDAP_ALLOW_INSECURE_TLS 時生效
+	tlsCfg, err := c.tlsConfig()
+	if err != nil {
+		return nil, err
+	}
 
 	var conn *goldap.Conn
-	var err error
 	if strings.HasPrefix(strings.ToLower(c.opts.URL), "ldaps://") {
 		conn, err = goldap.DialURL(c.opts.URL, goldap.DialWithDialer(dialer), goldap.DialWithTLSConfig(tlsCfg))
 	} else {

@@ -45,8 +45,12 @@ services:
       # - LDAP_ROOT_DN=cn=e2mail,dc=example,dc=com
       # - LDAP_ROOT_PW=${LDAP_ROOT_PW:-}      # ⚠️ 敏感：用 env/secret，唔好寫死喺呢度
       # - LDAP_USER_DN_TEMPLATE=uid=%s,ou=people,dc=example,dc=com
+      # - LDAP_CA_FILE=/certs/rootCA.crt         # 自簽 RootCA 容器內路徑（需配合 volumes 掛載）
+      # - LDAP_ALLOW_INSECURE_TLS=false
     volumes:
       - e2mail-data:/data
+      # 自簽 CA 例子（將宿主機 ./certs/rootCA.crt 掛到容器 /certs/rootCA.crt）：
+      # - ./certs/rootCA.crt:/certs/rootCA.crt:ro
     networks:
       - e2mail-net
 

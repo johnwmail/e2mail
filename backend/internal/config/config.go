@@ -29,7 +29,8 @@ type LDAPConfig struct {
 	RootPW           string // 服務帳號密碼 —— 只由 env/secret 注入，永不 log
 	UserDNTemplate   string // 例 "uid=%s,ou=people,dc=example,dc=com"；%s=全 email，%u=local part
 	PasswordScheme   string // v1 僅 "ssha"
-	AllowInsecureTLS bool   // 自簽憑證（僅開發）
+	AllowInsecureTLS bool   // 自簽憑證（僅開發，跳過校驗）
+	CAFile           string // 自簽 RootCA 路徑（例 /certs/rootCA.crt）；有值時用佢做信任庫
 }
 
 // Ready 判斷 LDAP 變更密碼是否配置完整可用（nil-safe）
@@ -101,6 +102,11 @@ func loadLDAP() *LDAPConfig {
 	}
 	if v := os.Getenv("LDAP_ALLOW_INSECURE_TLS"); v != "" {
 		l.AllowInsecureTLS = parseBool(v)
+	}
+	if v := os.Getenv("LDAP_CA_FILE"); v != "" {
+		l.CAFile = v
+	} else if v := os.Getenv("LDAP_CA_CRT"); v != "" {
+		l.CAFile = v
 	}
 	return l
 }
