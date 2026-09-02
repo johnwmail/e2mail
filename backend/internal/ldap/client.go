@@ -161,7 +161,7 @@ func HashSSHA(password string) (string, error) {
 
 // formatSSHA 以指定 salt 產生 SSHA（拆出以便測試向量斷言）
 func formatSSHA(password string, salt []byte) string {
-	h := sha1.New() //nolint:gosec // {SSHA} 格式指定 SHA-1
+	h := sha1.New() //nolint:gosec // lgtm[go/weak-cryptographic-algorithm] - {SSHA} 格式由 OpenBSD ldapd 規範指定為 SHA-1，非通用密碼雜湊
 	h.Write([]byte(password))
 	h.Write(salt)
 	digest := append(h.Sum(nil), salt...)
