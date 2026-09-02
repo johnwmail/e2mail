@@ -371,7 +371,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
       <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh] max-h-[90dvh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Modal 頂部標題 */}
-        <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
+        <div className="flex items-center justify-between shrink-0 px-4 md:px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
           <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm md:text-base min-w-0">
             <Key className="w-5 h-5 text-blue-600 shrink-0" />
             <span className="truncate">PGP / GPG 端到端加密金鑰管理</span>
@@ -382,7 +382,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
         </div>
 
         {/* 分頁選單 */}
-        <div className="flex border-b border-slate-200 dark:border-slate-800 md:px-6 px-2 gap-3 md:gap-6 text-xs font-semibold overflow-x-auto">
+        <div className="flex shrink-0 border-b border-slate-200 dark:border-slate-800 md:px-6 px-2 gap-3 md:gap-6 text-xs font-semibold overflow-x-auto overflow-y-hidden">
           <button
             onClick={() => {
               setActiveTab('mykey');
@@ -746,7 +746,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-1 text-xs text-blue-600 hover:underline font-semibold shrink-0"
+                    className="flex items-center gap-1 text-xs text-blue-600 hover:underline font-semibold shrink-0 whitespace-nowrap"
                   >
                     <Upload className="w-3.5 h-3.5" />
                     上傳 .asc / .pub 檔案
