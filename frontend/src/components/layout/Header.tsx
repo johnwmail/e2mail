@@ -10,7 +10,14 @@ import { FolderInfo } from '../../types/api';
 
 export const Header: React.FC = () => {
   const { session, logout } = useAuthStore();
-  const { searchQuery, searchInput, setSearchQuery, setSearchInput, clearSearch, openComposer, toggleSidebar, selectedUID, currentFolder, setActiveAccountId, unreadView, setUnreadView, listMode, setListMode } = useMailStore();
+  const { searchQuery, searchInput, setSearchQuery, setSearchInput, clearSearch, openComposer, toggleSidebar, selectedUID, setSelectedUID, currentFolder, setCurrentFolder, setActiveAccountId, unreadView, setUnreadView, listMode, setListMode, setView } = useMailStore();
+  const goHome = () => {
+    clearSearch();
+    setSelectedUID(null);
+    setView('mail');
+    setUnreadView(false);
+    if (currentFolder !== 'INBOX') setCurrentFolder('INBOX');
+  };
   const activeAccount = useActiveAccount();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -155,7 +162,13 @@ export const Header: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={goHome}
+                className="flex items-center gap-2 hover:opacity-80 active:opacity-60 transition text-left"
+                title="返回主頁"
+                aria-label="返回主頁"
+              >
                 <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-sm shrink-0">
                   <Mail className="w-4 h-4" />
                 </div>
@@ -167,7 +180,7 @@ export const Header: React.FC = () => {
                     {unreadView ? '未讀' : getFolderDisplayName(currentFolder)}
                   </span>
                 </div>
-              </div>
+              </button>
             </div>
 
             {/* 中間搜尋欄 (Desktop 顯示) */}
