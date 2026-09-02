@@ -18,6 +18,7 @@ import (
 	"github.com/johnwmail/e2mail/backend/internal/api/handler"
 	"github.com/johnwmail/e2mail/backend/internal/config"
 	"github.com/johnwmail/e2mail/backend/internal/imap"
+	ldapint "github.com/johnwmail/e2mail/backend/internal/ldap"
 	"github.com/johnwmail/e2mail/backend/internal/session"
 	"github.com/johnwmail/e2mail/backend/internal/smtp"
 	"github.com/johnwmail/e2mail/backend/internal/storage"
@@ -33,9 +34,10 @@ var (
 
 // sensitiveEnvVars 唔會 print 出嚟嘅敏感/機密環境變數
 var sensitiveEnvVars = map[string]bool{
-	"SESSION_SECRET": true,
-	"SECRET_KEY":     true,
+	"SESSION_SECRET":  true,
+	"SECRET_KEY":      true,
 	"DOCKER_PASSWORD": true,
+	"LDAP_ROOT_PW":    true,
 }
 
 // printDefinedEnv 啟動時打印所有已定義嘅環境變數（過濾敏感 key）
@@ -117,6 +119,12 @@ func main() {
 	}
 
 	authHandler := handler.NewAuthHandler(sessionStore, store, poolManager, idleManager, serverConfig, sessionTTL)
+	if serverConfig.LDAP.Ready() {
+		authHandler.SetPasswordChanger(ldapint.New(*serverConfig.LDAP))
+		log.Printf("🔐 LDAP change-password enabled (url: %s)", serverConfig.LDAP.URL)
+	} else if serverConfig.LDAP.Enabled {
+		log.Printf("⚠️  LDAP_ENABLED=true 但設定不完整（LDAP_URL / LDAP_ROOT_DN / LDAP_ROOT_PW / LDAP_USER_DN_TEMPLATE），change-password 保持停用")
+	}
 	mailHandler := handler.NewMailHandler(poolManager, smtpSender)
 	eventsHandler := handler.NewEventsHandler(idleManager)
 	pgpHandler := handler.NewPGPHandler(store)
