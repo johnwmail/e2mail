@@ -14,6 +14,18 @@
 > **Also (v0.1.45):** removing `user-scalable=no` exposed iOS Safari's focus auto-zoom on <16px
 > inputs (whole page zooms on tap of `text-xs` fields). Fixed in `index.css` by forcing
 > `input/select/textarea{font-size:16px}` below `md` + `touch-action: manipulation` on buttons/links.
+>
+> **Update (v0.2.3, real eMPF RFC822 forensics):** eMPF mails are built as **fixed layout
+> tables** (cols `width=56/266/416/56` = 794px design, `min-width` classes) with a trailing
+> `<td width="100%">` **filler column**. The earlier `table/div/td{max-width:100% !important}`
+> clamp + `.email-content{max-width:720px}` *crushed* the 794px design into 720px (columns
+> re-wrapped to ribbons, filler column stretched into the visible "empty right side"). Clamps
+> removed: content now renders at **natural design width**, `.email-content`'s 720px cap is
+> lifted by the parent when content overflows it, then the measured design width (e.g. 866px)
+> is scaled to the pane. Verified headless: 375px pane → scale 0.45 (design intact);
+> 850px desktop → scale 1, Outlook-faithful. Lesson: *measure at natural width first, never
+> reflow-clamp a table's design — Apple/Gmail/Outlook all scale, not squeeze.*
+
 
 > Issue: HTML emails on mobile render pinned to the **left**, leaving a large **empty area on the
 > right**, and never reflow to use the full available width/height. Goal: the mail body should
