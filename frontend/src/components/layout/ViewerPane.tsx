@@ -120,17 +120,46 @@ export const ViewerPane: React.FC = () => {
           }
         }
       } else {
-        // 嘗試攞當前資料夾嘅 messages/thread cache
-        const keyMessages: readonly unknown[] = ['messages', accountId, detailFolder, page, limit, searchQuery, listMode === 'threads'];
-        const cached = queryClient.getQueryData<MessageListResult>(keyMessages as any) as MessageListResult | undefined;
+        // 嘗試攞當前資料夾嘅 messages/thread cache（key 必須同 MessageList 完全一致：listMode 係字串）
+        const tryKeys: (readonly unknown[])[] = [
+          ['messages', accountId, detailFolder, page, limit, searchQuery, listMode],
+          // 兼容舊 key（曾用 boolean）避免 cache miss
+          ['messages', accountId, detailFolder, page, limit, searchQuery, listMode === 'threads'],
+        ];
+        let cached: MessageListResult | undefined;
+        for (const k of tryKeys) {
+          cached = queryClient.getQueryData<MessageListResult>(k as any) as MessageListResult | undefined;
+          if (cached) break;
+        }
+        // 最壞情況：遍歷所有 messages cache 搵對應資料夾嘅最新一頁
+        if (!cached) {
+          const all = queryClient.getQueriesData<MessageListResult>({ queryKey: ['messages', accountId, detailFolder] });
+          for (const [, v] of all) if (v) { cached = v; break; }
+        }
         if (cached) {
           if (cached.mode === 'threads' && cached.threads) {
             const tIdx = cached.threads.findIndex((t) => t.messages.some((m) => m.uid === uid));
             if (tIdx !== -1) {
-              const candThread = cached.threads[tIdx + 1] ?? cached.threads[tIdx - 1] ?? null;
-              if (candThread) {
-                const newest = candThread.messages.reduce((a: any, b: any) => (new Date(a.date) >= new Date(b.date) ? a : b), candThread.messages[0]);
+              const curThread = cached.threads[tIdx];
+              const remainInThread = curThread ? curThread.messages.filter((m) => m.uid !== uid) : [];
+              if (remainInThread.length > 0) {
+                // 同一 thread 仲有其他 message，留喺同一 thread（同 MessageList 行為一致）
+                const newest = remainInThread.reduce((a: any, b: any) => (new Date(a.date) >= new Date(b.date) ? a : b), remainInThread[0]);
                 nextUID = newest.uid;
+              } else {
+                const candThread = cached.threads[tIdx + 1] ?? cached.threads[tIdx - 1] ?? null;
+                if (candThread) {
+                  const newest = candThread.messages.reduce((a: any, b: any) => (new Date(a.date) >= new Date(b.date) ? a : b), candThread.messages[0]);
+                  nextUID = newest.uid;
+                } else {
+                  // 搵第一個非空 thread
+                  const remainThreads = cached.threads.filter((t) => !t.messages.every((m) => m.uid === uid));
+                  const fallback = remainThreads[0];
+                  if (fallback) {
+                    const newest = fallback.messages.reduce((a: any, b: any) => (new Date(a.date) >= new Date(b.date) ? a : b), fallback.messages[0]);
+                    nextUID = newest.uid;
+                  }
+                }
               }
             }
           } else if (cached.messages) {
@@ -138,6 +167,14 @@ export const ViewerPane: React.FC = () => {
             if (idx !== -1) {
               const cand = cached.messages[idx + 1] ?? cached.messages[idx - 1] ?? null;
               if (cand) nextUID = cand.uid;
+              else {
+                const remain = cached.messages.filter((m) => m.uid !== uid);
+                if (remain[0]) nextUID = remain[0].uid;
+              }
+            } else {
+              // uid 唔喺當前頁（可能已翻頁）→ 直接揀第一封非已刪
+              const remain = cached.messages.filter((m) => m.uid !== uid);
+              if (remain[0]) nextUID = remain[0].uid;
             }
           }
         }
