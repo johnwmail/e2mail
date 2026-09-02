@@ -39,6 +39,12 @@ services:
       # - DEFAULT_SMTP_HOST=mail.example.com
       # - DEFAULT_SMTP_PORT=587
       # - DEFAULT_ALLOW_INSECURE_TLS=false    # 預設為 false；僅在自簽憑證環境顯式設為 true
+      # === LDAP 變更密碼（OpenBSD ldapd；詳見 LDAP.md；建議放 .env / secret 注入） ===
+      # - LDAP_ENABLED=true
+      # - LDAP_URL=ldaps://ldap.example.com:636
+      # - LDAP_ROOT_DN=cn=e2mail,dc=example,dc=com
+      # - LDAP_ROOT_PW=${LDAP_ROOT_PW:-}      # ⚠️ 敏感：用 env/secret，唔好寫死喺呢度
+      # - LDAP_USER_DN_TEMPLATE=uid=%s,ou=people,dc=example,dc=com
     volumes:
       - e2mail-data:/data
     networks:

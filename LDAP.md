@@ -1,7 +1,6 @@
 # LDAP Password Change (branch: `ldap`)
 
-Status: design / planning. Implementation lives on the **`ldap`** branch only.
-`main` is never modified by this feature.
+Status: implemented on the **`ldap`** branch. `main` is never modified by this feature.
 
 ## Goal
 
