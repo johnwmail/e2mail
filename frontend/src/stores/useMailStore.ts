@@ -5,6 +5,7 @@ interface MailState {
   currentFolder: string;
   activeAccountId: string | null;
   selectedUID: number | null;
+  selectedFolder: string | null;
   searchQuery: string;
   searchInput: string;
   unreadView: boolean;
@@ -21,6 +22,7 @@ interface MailState {
   setCurrentFolder: (folder: string) => void;
   setActiveAccountId: (id: string | null) => void;
   setSelectedUID: (uid: number | null) => void;
+  setSelectedFolder: (folder: string | null) => void;
   setSearchQuery: (q: string) => void;
   setSearchInput: (input: string) => void;
   clearSearch: () => void;
@@ -39,6 +41,7 @@ export const useMailStore = create<MailState>((set) => ({
   currentFolder: 'INBOX',
   activeAccountId: null,
   selectedUID: null,
+  selectedFolder: null,
   searchQuery: '',
   searchInput: '',
   unreadView: false,
@@ -53,21 +56,24 @@ export const useMailStore = create<MailState>((set) => ({
   listMode: (localStorage.getItem('webmail_list_mode') === 'threads' ? 'threads' : 'messages'),
 
   setCurrentFolder: (folder) =>
-    set({ currentFolder: folder, selectedUID: null, page: 1, isSidebarOpen: false, unreadView: false }),
+    set({ currentFolder: folder, selectedUID: null, selectedFolder: null, page: 1, isSidebarOpen: false, unreadView: false }),
 
   setActiveAccountId: (id) =>
-    set({ activeAccountId: id, currentFolder: 'INBOX', selectedUID: null, page: 1, inboxUnread: 0, unreadView: false }),
+    set({ activeAccountId: id, currentFolder: 'INBOX', selectedUID: null, selectedFolder: null, page: 1, inboxUnread: 0, unreadView: false }),
 
-  setSelectedUID: (uid) => set({ selectedUID: uid }),
+  setSelectedUID: (uid) =>
+    set((s) => ({ selectedUID: uid, selectedFolder: uid === null ? null : s.selectedFolder })),
 
-  setSearchQuery: (q) => set({ searchQuery: q, page: 1, selectedUID: null }),
+  setSelectedFolder: (folder) => set({ selectedFolder: folder }),
+
+  setSearchQuery: (q) => set({ searchQuery: q, page: 1, selectedUID: null, selectedFolder: null }),
 
   setSearchInput: (input) => set({ searchInput: input }),
 
   clearSearch: () =>
-    set({ searchInput: '', searchQuery: '', page: 1, selectedUID: null }),
+    set({ searchInput: '', searchQuery: '', page: 1, selectedUID: null, selectedFolder: null }),
 
-  setUnreadView: (flag) => set({ unreadView: flag, page: 1, selectedUID: null }),
+  setUnreadView: (flag) => set({ unreadView: flag, page: 1, selectedUID: null, selectedFolder: null }),
 
   setPage: (page) => set({ page }),
 
@@ -87,7 +93,7 @@ export const useMailStore = create<MailState>((set) => ({
 
   setListMode: (mode) => {
     localStorage.setItem('webmail_list_mode', mode);
-    set({ listMode: mode, page: 1, selectedUID: null });
+    set({ listMode: mode, page: 1, selectedUID: null, selectedFolder: null });
     // 同步到 DB（後台，失敗唔阻塞 UI）
     void import('../api/prefs').then(({ prefsApi }) =>
       prefsApi.set('listMode', mode).catch(() => {})
