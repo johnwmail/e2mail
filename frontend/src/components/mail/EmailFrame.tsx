@@ -55,20 +55,40 @@ const measureStable = (root: HTMLElement): Promise<{ w: number; h: number }> =>
 // DOMPurify 喺 fragment mode（WHOLE_DOCUMENT:false）會剷走所有 <style> tag，
 // 而 email 佈局（eMPF 嗰類 border / min-width 欄寬 class）全靠佢哋 → 必須喺
 // sanitize 前提取出来，再注入返去 srcDoc head（排喺我哋 own CSS 之後）。
+// CodeQL js/incomplete-multi-character-sanitization #9：單次 replace(/<style...>/g,"")
+// 可被 "<sty<style>le>" 呢類嵌套繞過，必須循環至穩定；css 注入前亦需阻斷 </style> breakout。
 const extractMailStyles = (html: string): { css: string; rest: string } => {
   const blocks: string[] = [];
-  const rest = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, (m) => {
-    const inner = m
-      .replace(/^<style\b[^>]*>/i, '')
-      .replace(/<\/style>\s*$/i, '')
-      .replace(/@import[^;}]*;?/gi, '') // 外部 CSS = 追蹤 vector
-      .replace(/url\(\s*['"]?https?:[^)'"]*['"]?\s*\)/gi, 'none') // CSS 內遠端圖/font
-      .replace(/expression\s*\(/gi, 'expr(') // legacy IE script vector
-      .slice(0, 60000);
-    if (inner.trim()) blocks.push(inner);
-    return '';
-  });
-  return { css: blocks.join('\n'), rest };
+  let rest = html;
+  let prev: string;
+  do {
+    prev = rest;
+    rest = rest.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, (m) => {
+      const inner = m
+        .replace(/^<style\b[^>]*>/i, '')
+        .replace(/<\/style>\s*$/i, '')
+        .replace(/@import[^;}]*;?/gi, '') // 外部 CSS = 追蹤 vector
+        .replace(/url\(\s*['"]?https?:[^)'"]*['"]?\s*\)/gi, 'none') // CSS 內遠端圖/font
+        .replace(/expression\s*\(/gi, 'expr(') // legacy IE script vector
+        .slice(0, 60000);
+      if (inner.trim()) blocks.push(inner);
+      return '';
+    });
+  } while (rest !== prev);
+
+  // 防止透過 CSS 內容 breakout 再注入 HTML（例如 "}</style><script>…"）
+  let css = blocks.join('\n');
+  let prevCss: string;
+  do {
+    prevCss = css;
+    css = css.replace(/<\/style/gi, '');
+  } while (css !== prevCss);
+  do {
+    prevCss = css;
+    css = css.replace(/<style/gi, '');
+  } while (css !== prevCss);
+  css = css.slice(0, 60000);
+  return { css, rest };
 };
 
 // 郵件內所有連結強制新分頁（http/https/其他一般 URL）；mailto:/tel: 交返俾系統處理。
