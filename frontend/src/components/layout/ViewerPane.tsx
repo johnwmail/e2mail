@@ -29,7 +29,7 @@ export const ViewerPane: React.FC = () => {
   const queryClient = useQueryClient();
   const activeAccount = useActiveAccount();
   const accountId = activeAccount?.id;
-  const { currentFolder, selectedUID, selectedFolder, unreadView, setSelectedUID, openComposer } = useMailStore();
+  const { currentFolder, selectedUID, selectedFolder, unreadView, setSelectedUID, setSelectedFolder, openComposer, page, limit, searchQuery, listMode } = useMailStore();
   const detailFolder = unreadView && selectedFolder ? selectedFolder : currentFolder;
 
   const { data: message, isLoading } = useQuery({
@@ -102,8 +102,55 @@ export const ViewerPane: React.FC = () => {
 
   const deleteMutation = useMutation({
     mutationFn: (uid: number) => mailApi.deleteMessages(detailFolder, [uid], false, accountId),
-    onSuccess: () => {
-      setSelectedUID(null);
+    onSuccess: (_data, uid) => {
+      // 自動揀下一封，唔留空
+      let nextUID: number | null = null;
+      let nextFolder: string | null = null;
+      if (unreadView) {
+        const agg = queryClient.getQueryData<MessageListResult>(['unread-aggregate', accountId, page, limit]) as MessageListResult | undefined;
+        const list = agg?.messages ?? [];
+        const idx = list.findIndex((m) => m.uid === uid && (!selectedFolder || (m as any).folder === selectedFolder || !(m as any).folder));
+        // fallback: 單靠 uid
+        const realIdx = idx !== -1 ? idx : list.findIndex((m) => m.uid === uid);
+        if (realIdx !== -1) {
+          const cand = list[realIdx + 1] ?? list[realIdx - 1] ?? null;
+          if (cand) {
+            nextUID = cand.uid;
+            nextFolder = (cand as any).folder ?? null;
+          }
+        }
+      } else {
+        // 嘗試攞當前資料夾嘅 messages/thread cache
+        const keyMessages: readonly unknown[] = ['messages', accountId, detailFolder, page, limit, searchQuery, listMode === 'threads'];
+        const cached = queryClient.getQueryData<MessageListResult>(keyMessages as any) as MessageListResult | undefined;
+        if (cached) {
+          if (cached.mode === 'threads' && cached.threads) {
+            const tIdx = cached.threads.findIndex((t) => t.messages.some((m) => m.uid === uid));
+            if (tIdx !== -1) {
+              const candThread = cached.threads[tIdx + 1] ?? cached.threads[tIdx - 1] ?? null;
+              if (candThread) {
+                const newest = candThread.messages.reduce((a: any, b: any) => (new Date(a.date) >= new Date(b.date) ? a : b), candThread.messages[0]);
+                nextUID = newest.uid;
+              }
+            }
+          } else if (cached.messages) {
+            const idx = cached.messages.findIndex((m) => m.uid === uid);
+            if (idx !== -1) {
+              const cand = cached.messages[idx + 1] ?? cached.messages[idx - 1] ?? null;
+              if (cand) nextUID = cand.uid;
+            }
+          }
+        }
+        // 後備：用 unreadView false 時嘅 detailFolder 唔需要 folder
+        nextFolder = null;
+      }
+      if (nextUID != null) {
+        if (unreadView && nextFolder) setSelectedFolder(nextFolder);
+        else if (!unreadView) setSelectedFolder(null);
+        setSelectedUID(nextUID);
+      } else {
+        setSelectedUID(null);
+      }
       queryClient.invalidateQueries({ queryKey: ['messages', accountId, detailFolder] });
       queryClient.invalidateQueries({ queryKey: ['unread-aggregate', accountId] });
       queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
