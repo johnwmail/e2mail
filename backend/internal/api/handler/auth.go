@@ -664,7 +664,12 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		response.InternalServerError(w, "failed to derive credentials")
 		return
 	}
-	newEncPass, err := crypto.Encrypt(authCtx.DEK, []byte(req.NewPassword))
+	newEncIMAP, err := crypto.Encrypt(authCtx.DEK, []byte(req.NewPassword))
+	if err != nil {
+		response.InternalServerError(w, "failed to encrypt credentials")
+		return
+	}
+	newEncSMTP, err := crypto.Encrypt(authCtx.DEK, []byte(req.NewPassword))
 	if err != nil {
 		response.InternalServerError(w, "failed to encrypt credentials")
 		return
@@ -699,8 +704,8 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	accUpdated := false
 	if targetIdx >= 0 {
 		origAcc = accounts[targetIdx] // 回滾用副本
-		accounts[targetIdx].EncIMAPPassword = newEncPass
-		accounts[targetIdx].EncSMTPPassword = newEncPass
+		accounts[targetIdx].EncIMAPPassword = newEncIMAP
+		accounts[targetIdx].EncSMTPPassword = newEncSMTP
 		if err := h.storage.UpdateAccount(&accounts[targetIdx]); err != nil {
 			log.Printf("[PWCHANGE] update account failed for %s: %v", ownerEmail, err)
 			accounts[targetIdx] = origAcc
