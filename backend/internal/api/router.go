@@ -55,6 +55,7 @@ func NewRouter(
 			// 會話與使用者狀態
 			protected.Post("/auth/logout", authH.Logout)
 			protected.Get("/auth/me", authH.Me)
+			protected.Post("/auth/change-password", authH.ChangePassword)
 
 			// 兩步驟驗證 (2FA) 管理
 			protected.Get("/2fa/status", authH.TwoFAStatus)
