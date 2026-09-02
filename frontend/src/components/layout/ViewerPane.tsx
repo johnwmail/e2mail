@@ -29,11 +29,12 @@ export const ViewerPane: React.FC = () => {
   const queryClient = useQueryClient();
   const activeAccount = useActiveAccount();
   const accountId = activeAccount?.id;
-  const { currentFolder, selectedUID, setSelectedUID, openComposer } = useMailStore();
+  const { currentFolder, selectedUID, selectedFolder, unreadView, setSelectedUID, openComposer } = useMailStore();
+  const detailFolder = unreadView && selectedFolder ? selectedFolder : currentFolder;
 
   const { data: message, isLoading } = useQuery({
-    queryKey: ['message', accountId, currentFolder, selectedUID],
-    queryFn: () => (selectedUID ? mailApi.getMessageDetail(selectedUID, currentFolder, accountId) : null),
+    queryKey: ['message', accountId, detailFolder, selectedUID],
+    queryFn: () => (selectedUID ? mailApi.getMessageDetail(selectedUID, detailFolder, accountId) : null),
     enabled: !!selectedUID,
     staleTime: 60000,
   });
@@ -42,7 +43,7 @@ export const ViewerPane: React.FC = () => {
   useEffect(() => {
     if (selectedUID != null && message) {
       queryClient.setQueriesData<MessageListResult>(
-        { queryKey: ['messages', accountId, currentFolder] },
+        { queryKey: ['messages', accountId, detailFolder] },
         (old) => {
           if (!old) return old;
           if (old.mode === 'threads' && old.threads) {
@@ -72,26 +73,50 @@ export const ViewerPane: React.FC = () => {
           };
         }
       );
+      // 未讀彙總列表：立即將已讀郵件移出，返去未讀清單唔再顯示藍點
+      queryClient.setQueriesData<MessageListResult>(
+        { queryKey: ['unread-aggregate', accountId] },
+        (old) => {
+          if (!old || !('messages' in old) || !old.messages) return old;
+          const before = old.messages.length;
+          const filtered = old.messages.filter((m) => {
+            if (m.uid !== selectedUID) return true;
+            // UID 可能跨 folder 重複，有 folder 就一併比對
+            if ((m as any).folder && detailFolder) return (m as any).folder !== detailFolder;
+            return false;
+          });
+          if (filtered.length === before) return old;
+          return {
+            ...old,
+            messages: filtered,
+            total: Math.max(0, (old.total ?? before) - (before - filtered.length)),
+            totalPages: Math.max(1, Math.ceil(Math.max(0, (old.total ?? before) - (before - filtered.length)) / (old.limit || 50))),
+          };
+        }
+      );
       // 同步 sidebar folders unreadCount（讀咗一封 → 該 folder unread -1）
       queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
+      queryClient.invalidateQueries({ queryKey: ['unread-aggregate', accountId] });
     }
-  }, [message, selectedUID, accountId, currentFolder, queryClient]);
+  }, [message, selectedUID, accountId, currentFolder, detailFolder, queryClient]);
 
   const deleteMutation = useMutation({
-    mutationFn: (uid: number) => mailApi.deleteMessages(currentFolder, [uid], false, accountId),
+    mutationFn: (uid: number) => mailApi.deleteMessages(detailFolder, [uid], false, accountId),
     onSuccess: () => {
       setSelectedUID(null);
-      queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
+      queryClient.invalidateQueries({ queryKey: ['messages', accountId, detailFolder] });
+      queryClient.invalidateQueries({ queryKey: ['unread-aggregate', accountId] });
       queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
     },
   });
 
   const flagMutation = useMutation({
     mutationFn: ({ flags, op }: { flags: string[]; op: 'add' | 'remove' }) =>
-      selectedUID ? mailApi.setFlags(currentFolder, [selectedUID], flags, op, accountId) : Promise.resolve(),
+      selectedUID ? mailApi.setFlags(detailFolder, [selectedUID], flags, op, accountId) : Promise.resolve(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['message', accountId, currentFolder, selectedUID] });
-      queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
+      queryClient.invalidateQueries({ queryKey: ['message', accountId, detailFolder, selectedUID] });
+      queryClient.invalidateQueries({ queryKey: ['messages', accountId, detailFolder] });
+      queryClient.invalidateQueries({ queryKey: ['unread-aggregate', accountId] });
     },
   });
 
@@ -108,10 +133,11 @@ export const ViewerPane: React.FC = () => {
 
   const moveToJunkMutation = useMutation({
     mutationFn: (uid: number) =>
-      junkFolder ? mailApi.moveMessages(currentFolder, [uid], junkFolder, accountId) : Promise.resolve(),
+      junkFolder ? mailApi.moveMessages(detailFolder, [uid], junkFolder, accountId) : Promise.resolve(),
     onSuccess: () => {
       setSelectedUID(null);
-      queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
+      queryClient.invalidateQueries({ queryKey: ['messages', accountId, detailFolder] });
+      queryClient.invalidateQueries({ queryKey: ['unread-aggregate', accountId] });
       queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
     },
   });
@@ -165,7 +191,7 @@ export const ViewerPane: React.FC = () => {
     setShowRaw(true);
     setRawLoading(true);
     try {
-      const raw = await mailApi.getRawMessage(message.uid, currentFolder, accountId);
+      const raw = await mailApi.getRawMessage(message.uid, detailFolder, accountId);
       setRawContent(raw);
     } catch (e: any) {
       setRawContent(`載入失敗: ${e?.message || String(e)}`);
@@ -422,7 +448,7 @@ export const ViewerPane: React.FC = () => {
             {message.attachments.map((att) => (
               <a
                 key={att.id}
-                href={mailApi.getAttachmentUrl(message.uid, att.id, currentFolder)}
+                href={mailApi.getAttachmentUrl(message.uid, att.id, detailFolder)}
                 target="_blank"
                 rel="noreferrer"
                 download={att.filename}
@@ -444,7 +470,7 @@ export const ViewerPane: React.FC = () => {
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 md:p-6 bg-slate-50/40 dark:bg-slate-950/40 min-w-0">
         <EmailFrame
           uid={message.uid}
-          folder={currentFolder}
+          folder={detailFolder}
           htmlBody={message.htmlBody}
           textBody={message.textBody}
           attachments={message.attachments}

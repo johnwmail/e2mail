@@ -303,6 +303,7 @@ export const MessageList: React.FC = () => {
     setCurrentFolder,
     selectedUID,
     setSelectedUID,
+    setSelectedFolder,
     searchQuery,
     searchInput,
     clearSearch,
@@ -703,11 +704,14 @@ export const MessageList: React.FC = () => {
       return;
     }
 
-    // 普通 click: 開 viewer —— 未讀虛擬列表要跳去嗰封嘅真 folder 先開得
+    // 普通 click: 開 viewer —— 未讀虛擬列表用訊息本身嘅真 folder 開，保持喺未讀檢視
     lastClickedIndexRef.current = index;
     if (isUnreadView) {
       const f = folderForUID(msg.uid);
-      if (f) setCurrentFolder(f);
+      if (f) setSelectedFolder(f);
+      else setSelectedFolder(null);
+    } else {
+      setSelectedFolder(null);
     }
     setSelectedUID(msg.uid);
   };
