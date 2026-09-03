@@ -12,14 +12,16 @@ import (
 	"encoding/base64"
 	"math/big"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// fakeDovecot 模擬 Dovecot Pigeonhole ManageSieve：
-// 明文 banner（"STARTTLS" 帶引號、"SASL" ""）→ STARTTLS → TLS banner（"SASL" "PLAIN"）→ AUTH → LISTSCRIPTS
+// fakeDovecot 模擬真實 Dovecot managesieve-login 的「無 tag」行協議：
+// 明文 banner（"STARTTLS" 帶引號、"SASL" ""）→ STARTTLS → 等 CAPABILITY
+// → TLS banner（"SASL" "PLAIN"）→ AUTH → LISTSCRIPTS
 func fakeDovecot(t *testing.T) (addr string, creds func() (string, string)) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -42,8 +44,14 @@ func fakeDovecot(t *testing.T) (addr string, creds func() (string, string)) {
 				_, _ = conn.Write([]byte(l + "\r\n"))
 			}
 		}
+		recv := func() []string {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return nil
+			}
+			return strings.Fields(strings.TrimSpace(line))
+		}
 
-		// 1) 明文 banner（用戶 telnet 所見：全部帶引號，SASL 空）
 		send(
 			`"IMPLEMENTATION" "Dovecot Pigeonhole"`,
 			`"SIEVE" "fileinto reject envelope vacation spamtest"`,
@@ -54,17 +62,12 @@ func fakeDovecot(t *testing.T) (addr string, creds func() (string, string)) {
 			`OK "Dovecot ready."`,
 		)
 
-		// 2) 等 STARTTLS
-		line, err := r.ReadString('\n')
-		if err != nil {
+		// STARTTLS（無 tag）
+		f := recv()
+		if len(f) == 0 || !strings.EqualFold(f[0], "STARTTLS") {
 			return
 		}
-		fields := strings.Fields(strings.TrimSpace(line))
-		if len(fields) < 2 || !strings.EqualFold(fields[1], "STARTTLS") {
-			send(fields[0] + ` BAD "Unknown command"` + "\r\n")
-			return
-		}
-		send(fields[0] + ` OK "Begin TLS negotiation now."`)
+		send(`OK "Begin TLS negotiation now."`)
 
 		tlsConn := tls.Server(conn, &tls.Config{Certificates: []tls.Certificate{cert}})
 		if err := tlsConn.Handshake(); err != nil {
@@ -73,62 +76,43 @@ func fakeDovecot(t *testing.T) (addr string, creds func() (string, string)) {
 		conn = tlsConn
 		r = bufio.NewReader(conn)
 
-		// 2.5) 按 RFC 5804：TLS 後等 client 主動發 CAPABILITY（唔會 push banner）
-		line, err = r.ReadString('\n')
-		if err != nil {
-			return
-		}
-		fields = strings.Fields(strings.TrimSpace(line))
-		if len(fields) < 2 || !strings.EqualFold(fields[1], "CAPABILITY") {
-			return
-		}
-		send(`"SASL" "PLAIN"`)
-		send(fields[0] + ` OK "CAPABILITY completed."`)
+		// 真實 Dovecot：TLS 完成後自動推送新 capabilities banner（等唔需要 client 發 CAPABILITY）
+		send(
+			`"IMPLEMENTATION" "Dovecot Pigeonhole"`,
+			`"SIEVE" "fileinto reject envelope vacation spamtest"`,
+			`"NOTIFY" "mailto"`,
+			`"SASL" "PLAIN"`,
+			`"VERSION" "1.0"`,
+			`OK "TLS negotiation successful."`,
+		)
 
-		// 3) AUTHENTICATE "PLAIN" "base64"
-		line, err = r.ReadString('\n')
-		if err != nil {
+		// AUTHENTICATE "PLAIN" "<base64>"
+		f = recv()
+		if len(f) < 3 || !strings.EqualFold(f[0], "AUTHENTICATE") {
 			return
 		}
-		fields = strings.Fields(strings.TrimSpace(line))
-		if len(fields) < 4 || !strings.EqualFold(fields[1], "AUTHENTICATE") {
-			if len(fields) > 0 {
-				send(fields[0] + ` NO "Expected AUTHENTICATE, got garbage"` + "\r\n")
-			}
-			return
-		}
-		b64 := strings.Trim(fields[3], `"`)
-		// base40（RFC 5804）：若以 '=' 結尾，先剝掉一個多餘的 '='
-		if strings.HasSuffix(b64, "=") {
-			b64 = strings.TrimSuffix(b64, "=")
-		}
+		b64 := strings.Trim(f[2], `"`)
 		raw, err := base64.StdEncoding.DecodeString(b64)
 		if err != nil {
-			send(fields[0] + ` NO "bad base64"` + "\r\n")
+			send(`NO "bad base64"`)
 			return
 		}
-		parts := strings.Split(string(raw), "\x00") // ["", user, pass]
+		parts := strings.Split(string(raw), "\x00")
 		if len(parts) != 3 {
-			send(fields[0] + ` NO "bad PLAIN token"` + "\r\n")
+			send(`NO "bad PLAIN token"`)
 			return
 		}
 		gotUser, gotPass = parts[1], parts[2]
-		send(fields[0] + ` OK "Logged in."`)
+		send(`OK "Logged in."`)
 
-		// 4) LISTSCRIPTS
-		line, err = r.ReadString('\n')
-		if err != nil {
+		// LISTSCRIPTS
+		f = recv()
+		if len(f) == 0 || !strings.EqualFold(f[0], "LISTSCRIPTS") {
 			return
 		}
-		fields = strings.Fields(strings.TrimSpace(line))
-		if len(fields) < 2 || !strings.EqualFold(fields[1], "LISTSCRIPTS") {
-			return
-		}
-		send(`"managesieve.sieve"`)
-		send(`"test.sieve" ACTIVE`)
-		send(fields[0] + ` OK "LISTSCRIPTS complete."`)
-
-		// 5) LOGOUT / 結束
+		send(`"managesieve"`)
+		send(`"test" ACTIVE`)
+		send(`OK "Listscripts completed."`)
 	}()
 
 	return ln.Addr().String(), func() (string, string) { return gotUser, gotPass }
@@ -170,8 +154,8 @@ func splitHostPort(t *testing.T, addr string) (string, int) {
 	return host, port
 }
 
-// TestDialQuotedSTARTTLS 重現真實故障：Dovecot 以「帶引號」形式發送 "STARTTLS"，
-// 舊版 parseCapLine 不會設 tlsCap → 客戶端跳過 STARTTLS → 永遠收不到 SASL 機制。
+// TestDialQuotedSTARTTLS 重現真實故障場景：Dovecot 帶引號 "STARTTLS" +
+// 無 tag 協議；客戶端必須正確 STARTTLS 並完成認證與列表。
 func TestDialQuotedSTARTTLS(t *testing.T) {
 	addr, creds := fakeDovecot(t)
 	host, port := splitHostPort(t, addr)
@@ -180,7 +164,7 @@ func TestDialQuotedSTARTTLS(t *testing.T) {
 		Host:             host,
 		Port:             port,
 		UseTLS:           true,
-		AllowInsecureTLS: true, // 自簽
+		AllowInsecureTLS: true,
 		Username:         "johnw@example.com",
 		Password:         "s3cret",
 	})
@@ -207,8 +191,8 @@ func TestDialQuotedSTARTTLS(t *testing.T) {
 			active = s.Name
 		}
 	}
-	if active != "test.sieve" {
-		t.Fatalf("expected active test.sieve, got %q (scripts=%v)", active, scripts)
+	if active != "test" {
+		t.Fatalf("expected active test, got %q (scripts=%v)", active, scripts)
 	}
 }
 
@@ -216,7 +200,7 @@ func TestParseCapLineQuotedVariants(t *testing.T) {
 	c := &Client{caps: map[string]string{}}
 	parseCapLine(c, `"STARTTLS"`)
 	if !c.tlsCap {
-		t.Fatal("quoted \"STARTTLS\" must set tlsCap")
+		t.Fatal(`quoted "STARTTLS" must set tlsCap`)
 	}
 	c2 := &Client{caps: map[string]string{}}
 	parseCapLine(c2, "STARTTLS")
@@ -232,5 +216,79 @@ func TestParseCapLineQuotedVariants(t *testing.T) {
 	parseCapLine(c4, `"SASL" "PLAIN"`)
 	if len(c4.sasl) != 1 || c4.sasl[0] != "PLAIN" {
 		t.Fatalf("SASL parse failed: %v", c4.sasl)
+	}
+}
+
+func TestIsFinalLine(t *testing.T) {
+	ok := []string{"OK \"ready.\"", "NO (NONEXISTENT) \"x\"", "BAD bad", "OK [CAPABILITY] done"}
+	notOK := []string{`"dummy" ACTIVE`, `"SIEVE" "fileinto"`, "+ cGxhaW4", ""}
+	for _, s := range ok {
+		if !isFinalLine(s) {
+			t.Errorf("isFinalLine(%q) = false, want true", s)
+		}
+	}
+	for _, s := range notOK {
+		if isFinalLine(s) {
+			t.Errorf("isFinalLine(%q) = true, want false", s)
+		}
+	}
+}
+
+// TestAgainstRealDovecot 只在有本地 Dovecot 容器時執行：
+//
+//	SIEVE_IT_HOST=127.0.0.1 SIEVE_IT_PORT=14190 SIEVE_IT_USER=.. SIEVE_IT_PASS=.. go test ./internal/sieve/ -run RealDovecot
+func TestAgainstRealDovecot(t *testing.T) {
+	host := os.Getenv("SIEVE_IT_HOST")
+	if host == "" {
+		t.Skip("SIEVE_IT_HOST not set")
+	}
+	port, _ := strconv.Atoi(os.Getenv("SIEVE_IT_PORT"))
+	client, err := Dial(context.Background(), Config{
+		Host:             host,
+		Port:             port,
+		UseTLS:           true,
+		AllowInsecureTLS: true,
+		Username:         os.Getenv("SIEVE_IT_USER"),
+		Password:         os.Getenv("SIEVE_IT_PASS"),
+		Debug:            true,
+	})
+	if err != nil {
+		t.Fatalf("Dial against real Dovecot failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	script := "if header :contains \"Subject\" \"x\" {\n  stop;\n}\n"
+	if err := client.PutScript("e2mailit", script); err != nil {
+		t.Fatalf("PutScript failed: %v", err)
+	}
+	if err := client.SetActive("e2mailit"); err != nil {
+		t.Fatalf("SetActive failed: %v", err)
+	}
+	scripts, err := client.ListScripts()
+	if err != nil {
+		t.Fatalf("ListScripts failed: %v", err)
+	}
+	found := false
+	for _, s := range scripts {
+		if s.Name == "e2mailit" && s.Active {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("e2mailit not active in %v", scripts)
+	}
+	got, err := client.GetScript("e2mailit")
+	if err != nil {
+		t.Fatalf("GetScript failed: %v", err)
+	}
+	if got != script {
+		t.Fatalf("GetScript mismatch: %q", got)
+	}
+	// Dovecot 拒絕刪除 active 腳本（NO (ACTIVE)），必須先停用
+	if err := client.SetActive(""); err != nil {
+		t.Fatalf("SetActive(\"\") failed: %v", err)
+	}
+	if err := client.DeleteScript("e2mailit"); err != nil {
+		t.Fatalf("DeleteScript failed: %v", err)
 	}
 }

@@ -82,16 +82,20 @@ export const SievePage: React.FC = () => {
   const isUnsupported = !isLoading && scriptsError && capError === undefined;
 
   const handleCreate = async () => {
-    const name = newScriptName.trim();
-    if (!name) return;
-    const safe = name.endsWith('.sieve') ? name : `${name}.sieve`;
-    // 檢查重名
+    const raw = newScriptName.trim();
+    if (!raw) return;
+    // Dovecot ManageSieve：PUTSCRIPT "x" 會存成 ~/sieve/x.sieve，
+    // LISTSCRIPTS 再返回去掉 .sieve 的名字；前端若自行補 .sieve 會變成 x.sieve.sieve
+    const safe = raw.replace(/\.sieve$/i, '');
+    if (!safe) {
+      toast('腳本名稱無效');
+      return;
+    }
     if (scripts?.some((s) => s.name === safe)) {
       toast('已存在同名腳本');
       return;
     }
     try {
-      // 建空腳本
       const init = mode === 'rules' ? rulesToSieve([]) : '# New sieve script\n';
       await sieveApi.put(safe, init, accountId);
       queryClient.invalidateQueries({ queryKey: ['sieveScripts', accountId] });
@@ -106,6 +110,11 @@ export const SievePage: React.FC = () => {
 
   const handleDelete = async (name: string) => {
     try {
+      const target = scripts?.find((s) => s.name === name);
+      if (target?.active) {
+        // Dovecot 拒絕刪除 active 腳本（NO (ACTIVE)），先停用
+        await sieveApi.deactivate(accountId);
+      }
       await sieveApi.remove(name, accountId);
       queryClient.invalidateQueries({ queryKey: ['sieveScripts', accountId] });
       setDeleteTarget(null);

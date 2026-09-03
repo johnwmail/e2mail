@@ -110,7 +110,7 @@ func (h *SieveHandler) Capability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer cleanup()
-	caps := client.Capability()
+	caps := client.CapabilityMap()
 	log.Printf("[SIEVE] capability ok account=%s caps=%v", accID(acc), caps)
 	response.Success(w, caps)
 }
