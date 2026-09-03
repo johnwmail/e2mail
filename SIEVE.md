@@ -264,6 +264,8 @@ type Rule = {
 
 UI：仿 Roundcube 每條規則一卡片，含「若…則…」表單（header 下拉含 `Subject/From/To` 預設來自 `$config['managesieve_default_headers']` + 自定義）、集合關係（全部/任一）、動作列表（移至資料夾/轉寄/拒絕/捨棄/停止）。支援新增/刪除/拖曳排序、啟用開關。
 
+**資料夾下拉**：`fileinto` 動作的信箱欄位用 `<datalist>`（`sieve-folder-options`）串接真實 IMAP 資料夾清單（`useQuery(['folders', accountId], mailApi.getFolders)`），可下拉選取亦可自填新名（逗號分隔多個）；`setflag` 等亦有 `\Seen`/`\Flagged` 常用旗標 datalist。
+
 **雙向轉換**（`utils/sieveGenerator.ts`，token 化 + 遞迴下降解析器）：
 
 *   `rulesToSieve(rules: Rule[]): string`：生成完整 `.sieve`（頭部 `require ["fileinto","imap4flags","copy","reject"]` 自動推斷，`if allof/anyof(...){ ... }`）。終止動作自動補 `stop;`（已有則不重複）。

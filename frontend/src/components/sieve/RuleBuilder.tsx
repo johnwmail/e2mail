@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
 import { SieveRule, SieveCondition, SieveAction, SieveActionType } from '../../types/sieve';
 import { rulesToSieve } from '../../utils/sieveGenerator';
 import { sieveApi } from '../../api/sieve';
+import { mailApi } from '../../api/mail';
 
 interface Props {
   accountId: string;
@@ -35,6 +37,20 @@ const FLAG_OPTIONS = ['\\Seen', '\\Flagged', '\\Answered', '$Junk', '$NotJunk'];
 export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, setRules, onSaved }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // fileinto 用：由 IMAP 取得真實資料夾清單（可下拉選亦可自填新名）
+  const { data: folders } = useQuery({
+    queryKey: ['folders', accountId],
+    queryFn: () => mailApi.getFolders(accountId),
+    staleTime: 60000,
+    enabled: !!accountId,
+  });
+  const folderNames = React.useMemo(() => {
+    const names = (folders ?? []).map((f) => f.name);
+    return Array.from(new Set(names)).sort((a, b) =>
+      /^inbox$/i.test(a) ? -1 : /^inbox$/i.test(b) ? 1 : a.localeCompare(b)
+    );
+  }, [folders]);
 
   const addRule = () =>
     setRules((prev) => [
@@ -238,7 +254,13 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
                   </select>
                   {a.type === 'fileinto' && (
                     <>
-                      <input value={a.mailbox || ''} onChange={(e) => updateAction(rule.id, a.id, { mailbox: e.target.value })} className={`${inCls} flex-1 min-w-[100px]`} placeholder="Junk,News" />
+                      <input
+                        list="sieve-folder-options"
+                        value={a.mailbox || ''}
+                        onChange={(e) => updateAction(rule.id, a.id, { mailbox: e.target.value })}
+                        className={`${inCls} flex-1 min-w-[120px]`}
+                        placeholder="選或輸入資料夾（逗號分隔多個）"
+                      />
                       <label className="flex items-center gap-1 text-[11px] text-slate-500" title="保留副本">
                         <input type="checkbox" checked={!!a.copy} onChange={(e) => updateAction(rule.id, a.id, { copy: e.target.checked })} className="w-3.5 h-3.5" />
                         副本
@@ -273,6 +295,13 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
       {/* 常用旗標 datalist */}
       <datalist id="flags-common">
         {FLAG_OPTIONS.map((f) => (
+          <option key={f} value={f} />
+        ))}
+      </datalist>
+
+      {/* fileinto 資料夾 datalist（真實 IMAP 資料夾名） */}
+      <datalist id="sieve-folder-options">
+        {folderNames.map((f) => (
           <option key={f} value={f} />
         ))}
       </datalist>
