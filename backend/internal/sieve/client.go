@@ -95,10 +95,13 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 			_ = c.Close()
 			return nil, fmt.Errorf("sieve STARTTLS failed: %w", err)
 		}
-		// STARTTLS 後需重新讀 CAPABILITY
-		if err := c.doCapability(); err != nil {
+		// Dovecot 在 STARTTLS 後會主動推送新 banner（含 SASL "PLAIN LOGIN"），直接重讀 banner
+		c.caps = make(map[string]string)
+		c.sasl = nil
+		c.tlsCap = false
+		if err := c.readBanner(); err != nil {
 			_ = c.Close()
-			return nil, err
+			return nil, fmt.Errorf("sieve post-STARTTLS banner failed: %w", err)
 		}
 	}
 
@@ -242,40 +245,40 @@ func (c *Client) authenticate(username, password string) error {
 	if username == "" || password == "" {
 		return fmt.Errorf("sieve username/password required")
 	}
-	// AUTHENTICATE "PLAIN" "base64(\0user\0pass)"
 	raw := "\x00" + username + "\x00" + password
 	enc := base64.StdEncoding.EncodeToString([]byte(raw))
 	id := nextTag()
-	// ManageSieve: AUTHENTICATE "PLAIN" "b64"
+	// 先嘗試帶 initial-response 的 PLAIN
 	if err := c.tp.PrintfLine("%s AUTHENTICATE \"PLAIN\" \"%s\"", id, enc); err != nil {
 		return err
 	}
-	// 可能返回挑戰，需處理；但 PLAIN 直接 OK/NO
 	for {
 		line, err := c.tp.ReadLine()
 		if err != nil {
 			return fmt.Errorf("sieve auth read failed: %w", err)
 		}
-		line = strings.TrimSpace(line)
-		if line == "" {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
 			continue
 		}
-		if strings.HasPrefix(line, id+" ") {
-			upper := strings.ToUpper(line)
+		// 伺服器挑戰：單獨的 "+" 或 "+ base64"（RFC5804 SASL challenge）
+		if strings.HasPrefix(trimmed, "+") {
+			// 若是空挑戰，補發憑證
+			// Dovecot 在 PLAIN 無 initial-response 時會發 "+"，此時需回覆 base64
+			if err := c.tp.PrintfLine("%s", enc); err != nil {
+				return err
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, id+" ") {
+			upper := strings.ToUpper(trimmed)
 			if strings.Contains(upper, " OK") {
-				// 認證成功，後面會跟新的 CAPABILITY（自動推送）
-				// 讀直到下一個 OK 的 capabilities
-				// 有些服務器在 AUTH 後主動推送 capability，需把殘留的 capability 行讀完
-				// 簡化：不額外讀，後續 LISTSCRIPTS 會重新協商
 				break
 			}
-			return fmt.Errorf("sieve authentication failed: %s", line)
+			return fmt.Errorf("sieve authentication failed: %s", trimmed)
 		}
-		// 中間的 capability 推送
-		parseCapLine(c, line)
-		// 若伺服器返回挑戰（以 base64），暫不支援除 PLAIN 以外
+		parseCapLine(c, trimmed)
 	}
-	// 清空可能殘留的 capability 推送（直到 OK 已處理）
 	return nil
 }
 
