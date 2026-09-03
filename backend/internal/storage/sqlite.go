@@ -140,7 +140,7 @@ type Store interface {
 	CreateUserCredential(cred *UserCredential) error
 	UpdateUserCredential(cred *UserCredential) error
 
-	// Folder display prefs (WebMail-only, per account; not IMAP subscription)
+	// Folder display prefs (e2Mail-only, per account; not IMAP subscription)
 	ListFolderPrefs(userEmail, accountID string) (map[string]bool, error)
 	SetFolderPref(userEmail, accountID, folderName string, visible bool) error
 
@@ -813,7 +813,7 @@ func (s *SQLiteStore) DeleteTwoFA(ownerEmail string) error {
 	return nil
 }
 
-// ===== Folder display prefs (WebMail-only) =====
+// ===== Folder display prefs (e2Mail-only) =====
 
 // ListFolderPrefs 返回帳號各 folder 嘅顯示偏好（visible map）；無記錄嘅 folder 唔喺 map 入面（視作 default）
 func (s *SQLiteStore) ListFolderPrefs(userEmail, accountID string) (map[string]bool, error) {

@@ -62,7 +62,7 @@ const FolderManagerModal: React.FC<{
     staleTime: 30000,
   });
 
-  // WebMail-only folder 顯示偏好（唔影響 IMAP subscription）
+  // e2Mail-only folder 顯示偏好（唔影響 IMAP subscription）
   const { data: prefs, refetch: refetchPrefs } = useQuery({
     queryKey: ['folderPrefs', account.id],
     queryFn: () => accountsApi.getFolderPrefs(account.id),
@@ -74,7 +74,7 @@ const FolderManagerModal: React.FC<{
 
   const toggle = async (folder: FolderInfo) => {
     const next = !isVisible(folder);
-    // 寫入 WebMail 專屬偏好（唔 send IMAP subscribe/unsubscribe）
+    // 寫入 e2Mail 專屬偏好（唔 send IMAP subscribe/unsubscribe）
     setPending((p) => ({ ...p, [folder.name]: true }));
     try {
       await accountsApi.setFolderPref(account.id, folder.name, next);

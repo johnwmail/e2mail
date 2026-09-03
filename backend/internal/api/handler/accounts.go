@@ -146,7 +146,7 @@ func (h *AccountsHandler) EnsureJunkFolder(w http.ResponseWriter, r *http.Reques
 	response.Success(w, map[string]string{"junkFolder": junkFolder})
 }
 
-// GetFolderPrefs 取得帳號嘅 WebMail 專屬 folder 顯示偏好
+// GetFolderPrefs 取得帳號嘅 e2Mail 專屬 folder 顯示偏好
 func (h *AccountsHandler) GetFolderPrefs(w http.ResponseWriter, r *http.Request) {
 	authCtx := middleware.GetAccountContext(r.Context())
 	if authCtx == nil || authCtx.Session == nil {
@@ -162,7 +162,7 @@ func (h *AccountsHandler) GetFolderPrefs(w http.ResponseWriter, r *http.Request)
 	response.Success(w, prefs)
 }
 
-// SetFolderPref 設定帳號嘅 WebMail 專屬 folder 顯示偏好（唔影響 IMAP subscription）
+// SetFolderPref 設定帳號嘅 e2Mail 專屬 folder 顯示偏好（唔影響 IMAP subscription）
 func (h *AccountsHandler) SetFolderPref(w http.ResponseWriter, r *http.Request) {
 	authCtx := middleware.GetAccountContext(r.Context())
 	if authCtx == nil || authCtx.Session == nil {

@@ -69,7 +69,7 @@ const getFolderDisplayName = (folder: FolderInfo) => {
   }
 };
 
-// 只有 INBOX 或「WebMail 偏好設為顯示」嘅 folder 先顯示喺側邊欄（唔依賴 IMAP subscription）
+// 只有 INBOX 或「e2Mail 偏好設為顯示」嘅 folder 先顯示喺側邊欄（唔依賴 IMAP subscription）
 const isVisibleFolder = (f: FolderInfo, prefs: Record<string, boolean> | undefined) =>
   f.specialUse === 'inbox' || f.name.toUpperCase() === 'INBOX' || (prefs?.[f.name] ?? true);
 
@@ -261,7 +261,7 @@ const AccountFolders: React.FC<{
     setInboxUnread(inbox?.unreadCount ?? 0);
   }, [folders, isActiveAccount, setInboxUnread]);
 
-  // WebMail-only folder 顯示偏好（唔影響 IMAP subscription）
+  // e2Mail-only folder 顯示偏好（唔影響 IMAP subscription）
   const { data: folderPrefs } = useQuery({
     queryKey: ['folderPrefs', account.id],
     queryFn: () => accountsApi.getFolderPrefs(account.id),
