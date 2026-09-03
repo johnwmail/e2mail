@@ -21,6 +21,7 @@ type Config struct {
 	AllowInsecureTLS bool
 	Username         string
 	Password         string
+	Debug            bool // SIEVE_DEBUG=true 時記錄 raw 協議往來
 }
 
 // ScriptInfo 單一 Sieve 腳本資訊
@@ -37,6 +38,62 @@ type Client struct {
 	caps   map[string]string
 	sasl   []string
 	tlsCap bool
+	debug  bool
+}
+
+// cfmtf 記錄並發送一行協議命令（debug 模式）
+func (c *Client) cfmtf(format string, args ...any) error {
+	line := fmt.Sprintf(format, args...)
+	if c.debug {
+		// 避免洩漏 base64 憑證內容
+		if idx := strings.Index(line, "AUTHENTICATE"); idx >= 0 {
+			log.Printf("[SIEVE-C] %s <redacted>", line[:idx+len("AUTHENTICATE")])
+		} else {
+			log.Printf("[SIEVE-C] %s", line)
+		}
+	}
+	return c.tp.PrintfLine("%s", line)
+}
+
+// cline 讀取一行回應（debug 模式記錄）
+func (c *Client) cline() (string, error) {
+	line, err := c.tp.ReadLine()
+	if err != nil {
+		if c.debug {
+			log.Printf("[SIEVE-S] <read error: %v>", err)
+		}
+		return line, err
+	}
+	if c.debug {
+		log.Printf("[SIEVE-S] %s", line)
+	}
+	return line, nil
+}
+
+// writeRaw 直接寫入底層連線（textproto.Writer 每次 PrintfLine 即 flush，
+// 故與 raw 寫入交錯順序安全）
+func (c *Client) writeRaw(s string) error {
+	_, err := c.conn.Write([]byte(s))
+	return err
+}
+
+// drainTo 讀到指定 tag 的最終回複為止，丟棄殘留行（供重試前清場）
+func (c *Client) drainTo(id string) error {
+	deadline := time.Now().Add(3 * time.Second)
+	_ = c.conn.SetDeadline(deadline)
+	for {
+		line, err := c.cline()
+		if err != nil {
+			return err
+		}
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, id+" ") {
+			return nil
+		}
+	}
 }
 
 // Dial 建立並認證 ManageSieve 連線
@@ -68,7 +125,7 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 
 	tp := textproto.NewConn(conn)
-	c := &Client{conn: conn, tp: tp, caps: make(map[string]string)}
+	c := &Client{conn: conn, tp: tp, caps: make(map[string]string), debug: cfg.Debug}
 
 	// 讀 banner 與 CAPABILITY（直到 OK / NO）
 	if err := c.readBanner(); err != nil {
@@ -77,29 +134,35 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	}
 	log.Printf("[SIEVE] banner ok %s caps=%v sasl=%v tlsCap=%v", addr, c.caps, c.sasl, c.tlsCap)
 
-	// 若明文且伺服器宣告 STARTTLS 且 UseTLS=true，升級
-	if !isTLSConn(conn) && c.tlsCap && cfg.UseTLS {
+	// 若明文且伺服器宣告 STARTTLS：一律嘗試升級
+	// （Dovecot disable_plaintext_auth=yes 時 SASL 機制在 TLS 前顯示為空，
+	//   不升級則 AUTHENTICATE 永遠得不到回應）
+	if !isTLSConn(conn) && c.tlsCap {
 		log.Printf("[SIEVE] STARTTLS start %s", addr)
 		if err := c.doSTARTTLS(cfg); err != nil {
-			_ = c.Close()
-			return nil, fmt.Errorf("sieve STARTTLS failed %s: %w", addr, err)
+			if cfg.UseTLS {
+				_ = c.Close()
+				return nil, fmt.Errorf("sieve STARTTLS failed %s: %w", addr, err)
+			}
+			// UseTLS=false 時降級回明文繼續
+			log.Printf("[SIEVE] STARTTLS failed but UseTLS=false, continuing plain %s: %v", addr, err)
+		} else {
+			// RFC 5804 §1.4：TLS 後伺服器唔會再推 banner，client 應主動 CAPABILITY
+			c.caps = make(map[string]string)
+			c.sasl = nil
+			c.tlsCap = false
+			_ = c.conn.SetDeadline(time.Now().Add(20 * time.Second))
+			if err := c.doCapability(); err != nil {
+				_ = c.Close()
+				return nil, fmt.Errorf("sieve post-STARTTLS capability failed %s: %w", addr, err)
+			}
+			log.Printf("[SIEVE] post-STARTTLS capability ok %s sasl=%v", addr, c.sasl)
 		}
-		// Dovecot 在 STARTTLS 後會主動推送新 banner（含 SASL "PLAIN LOGIN"），直接重讀 banner
-		c.caps = make(map[string]string)
-		c.sasl = nil
-		c.tlsCap = false
-		// STARTTLS 後重設 deadline 並重讀 banner
-		_ = c.conn.SetDeadline(time.Now().Add(15 * time.Second))
-		if err := c.readBanner(); err != nil {
-			_ = c.Close()
-			return nil, fmt.Errorf("sieve post-STARTTLS banner failed %s: %w", addr, err)
-		}
-		log.Printf("[SIEVE] post-STARTTLS banner ok %s caps=%v sasl=%v", addr, c.caps, c.sasl)
 	} else if !isTLSConn(conn) && !c.tlsCap && cfg.UseTLS {
 		log.Printf("[SIEVE] STARTTLS not advertised but UseTLS=true, continuing plain %s", addr)
 	}
-	// 刷新 deadline 供認證階段
-	_ = c.conn.SetDeadline(time.Now().Add(15 * time.Second))
+	// 刷新 deadline 供認證階段（passdb 經 ldapd 時可能較慢，預留 25s）
+	_ = c.conn.SetDeadline(time.Now().Add(25 * time.Second))
 	log.Printf("[SIEVE] authenticate start %s user=%s sasl=%v", addr, cfg.Username, c.sasl)
 
 	// 認證
@@ -127,7 +190,7 @@ func (c *Client) readBanner() error {
 	// "VERSION" "1.0"
 	// OK "Dovecot ready."
 	for {
-		line, err := c.tp.ReadLine()
+		line, err := c.cline()
 		if err != nil {
 			return fmt.Errorf("sieve banner read failed: %w", err)
 		}
@@ -176,6 +239,10 @@ func parseCapLine(c *Client, line string) {
 			if strings.EqualFold(key, "SASL") {
 				c.sasl = strings.Fields(val)
 			}
+			// Dovecot 以帶引號形式發送 capabilities（"STARTTLS"），同樣要觸發 tlsCap
+			if strings.EqualFold(key, "STARTTLS") {
+				c.tlsCap = true
+			}
 			return
 		}
 	}
@@ -185,14 +252,14 @@ func parseCapLine(c *Client, line string) {
 	}
 }
 
-//nolint:unused // 保留作手動 CAPABILITY 探測（目前 Dial 改用 readBanner）
+// doCapability 取得 / 重新取得 capabilities（TLS 後按 RFC 5804 需 client 主動）
 func (c *Client) doCapability() error {
 	id := nextTag()
-	if err := c.tp.PrintfLine("%s CAPABILITY", id); err != nil {
+	if err := c.cfmtf("%s CAPABILITY", id); err != nil {
 		return err
 	}
 	for {
-		line, err := c.tp.ReadLine()
+		line, err := c.cline()
 		if err != nil {
 			return err
 		}
@@ -214,10 +281,10 @@ func (c *Client) doCapability() error {
 
 func (c *Client) doSTARTTLS(cfg Config) error {
 	id := nextTag()
-	if err := c.tp.PrintfLine("%s STARTTLS", id); err != nil {
+	if err := c.cfmtf("%s STARTTLS", id); err != nil {
 		return fmt.Errorf("STARTTLS write failed: %w", err)
 	}
-	line, err := c.tp.ReadLine()
+	line, err := c.cline()
 	if err != nil {
 		return fmt.Errorf("STARTTLS read failed: %w", err)
 	}
@@ -249,12 +316,21 @@ func (c *Client) doSTARTTLS(cfg Config) error {
 	return nil
 }
 
+// base40 按 RFC 5804：base64 若以 '=' 結尾，需再追加一個 '='（避免與 literal 混淆）
+func base40(data []byte) string {
+	enc := base64.StdEncoding.EncodeToString(data)
+	if strings.HasSuffix(enc, "=") {
+		enc += "="
+	}
+	return enc
+}
+
 func (c *Client) authenticate(username, password string) error {
 	if username == "" || password == "" {
 		return fmt.Errorf("sieve username/password required")
 	}
 	tryMechs := []string{"PLAIN"}
-	// 若 caps 顯示僅有 LOGIN，優先 LOGIN
+	// 依 advertised SASL 機制決定順序（Dovecot 通常 PLAIN；部分部署僅 LOGIN）
 	if len(c.sasl) > 0 {
 		hasPlain := false
 		hasLogin := false
@@ -266,12 +342,13 @@ func (c *Client) authenticate(username, password string) error {
 				hasLogin = true
 			}
 		}
-		if hasPlain && !hasLogin {
-			tryMechs = []string{"PLAIN"}
-		} else if !hasPlain && hasLogin {
-			tryMechs = []string{"LOGIN"}
-		} else if hasPlain && hasLogin {
+		switch {
+		case hasPlain && hasLogin:
 			tryMechs = []string{"PLAIN", "LOGIN"}
+		case hasLogin:
+			tryMechs = []string{"LOGIN"}
+		case hasPlain:
+			tryMechs = []string{"PLAIN"}
 		}
 	}
 
@@ -282,62 +359,112 @@ func (c *Client) authenticate(username, password string) error {
 		usernames = append(usernames, strings.Split(username, "@")[0])
 	}
 	for _, u := range usernames {
-		rawU := "\x00" + u + "\x00" + password
-		encU := base64.StdEncoding.EncodeToString([]byte(rawU))
 		for _, mech := range tryMechs {
-			encToUse := encU
-			id := nextTag()
-			if err := c.tp.PrintfLine("%s AUTHENTICATE \"%s\" \"%s\"", id, mech, encToUse); err != nil {
-				return err
-			}
-			// 重置 lastErr 為每機制嘗試
-			lastErr = nil
-			for {
-				line, err := c.tp.ReadLine()
-				if err != nil {
-					lastErr = fmt.Errorf("sieve auth read failed: %w", err)
-					break
-				}
-				trimmed := strings.TrimSpace(line)
-				if trimmed == "" {
-					continue
-				}
-				if strings.HasPrefix(trimmed, "+") {
-					if err := c.tp.PrintfLine("%s", encToUse); err != nil {
-						lastErr = err
-						break
-					}
-					continue
-				}
-				if strings.HasPrefix(trimmed, id+" ") {
-					upper := strings.ToUpper(trimmed)
-					if strings.Contains(upper, " OK") {
-						return nil
-					}
-					lastErr = fmt.Errorf("sieve authentication failed (%s as %s): %s", mech, u, trimmed)
-					break
-				}
-				parseCapLine(c, trimmed)
-			}
+			lastErr = c.tryAuthenticate(mech, u, password)
 			if lastErr == nil {
 				return nil
 			}
-			// PLAIN 失敗，嘗試同一使用者之 LOGIN
-			if mech == "PLAIN" && len(tryMechs) > 1 {
+			log.Printf("[SIEVE] auth %s as %s failed: %v", mech, u, lastErr)
+		}
+	}
+	return lastErr
+}
+
+// tryAuthenticate 以單一機制嘗試認證
+//   PLAIN: AUTHENTICATE "PLAIN" "<b64(\0user\0pass)>"（無挑战直接 OK/NO；部分 server 回 "+" 再發一次）
+//   LOGIN: AUTHENTICATE "LOGIN" → 伺服器 "+ …" → base64(user) → "+ …" → base64(pass) → tagged OK/NO
+func (c *Client) tryAuthenticate(mech, username, password string) error {
+	id := nextTag()
+	_ = c.conn.SetDeadline(time.Now().Add(25 * time.Second))
+
+	plainToken := base40([]byte("\x00" + username + "\x00" + password))
+	loginUser := base40([]byte(username))
+	loginPass := base40([]byte(password))
+
+	if strings.EqualFold(mech, "LOGIN") {
+		if err := c.cfmtf("%s AUTHENTICATE \"%s\"", id, mech); err != nil {
+			return err
+		}
+		step := 0
+		for {
+			line, err := c.cline()
+			if err != nil {
+				return fmt.Errorf("sieve auth read failed: %w", err)
+			}
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
 				continue
 			}
-			break
+			if strings.HasPrefix(trimmed, "+") {
+				var resp string
+				switch step {
+				case 0:
+					resp = loginUser
+				case 1:
+					resp = loginPass
+				default:
+					return fmt.Errorf("sieve LOGIN got unexpected challenge count")
+				}
+				step++
+				if c.debug {
+					log.Printf("[SIEVE-C] <login resp #%d redacted>", step)
+				}
+				if err := c.writeRaw(resp + "\r\n"); err != nil {
+					return err
+				}
+				continue
+			}
+			return c.evalAuthReply(id, trimmed)
 		}
-		// 此使用者所有機制皆失敗，嘗試下一個使用者名稱（bare user）
-		if lastErr == nil {
+	}
+
+	// PLAIN（預設）
+	if c.debug {
+		log.Printf("[SIEVE-C] %s AUTHENTICATE \"PLAIN\" \"<redacted>\"", id)
+	}
+	if err := c.writeRaw(fmt.Sprintf("%s AUTHENTICATE \"PLAIN\" \"%s\"\r\n", id, plainToken)); err != nil {
+		return err
+	}
+	for {
+		line, err := c.cline()
+		if err != nil {
+			return fmt.Errorf("sieve auth read failed: %w", err)
+		}
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "+") {
+			// 伺服器不接受 initial-response，改以挑戰回覆憑證
+			if c.debug {
+				log.Printf("[SIEVE-C] <plain resp redacted>")
+			}
+			if err := c.writeRaw(plainToken + "\r\n"); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := c.evalAuthReply(id, trimmed); err != nil {
+			// tagged 回複已收；清走可能殘留嘅 capability 推送行
+			_ = c.drainTo(id)
+			return err
+		}
+		return nil
+	}
+}
+
+// evalAuthReply 判斷一行是否本 tag 嘅最終回複；非本 tag 則記錄能力後回傳 nil-ish error 由 caller 繼續
+func (c *Client) evalAuthReply(id, trimmed string) error {
+	if strings.HasPrefix(trimmed, id+" ") {
+		upper := strings.ToUpper(trimmed)
+		if strings.Contains(upper, " OK") {
 			return nil
 		}
-		// 繼續下一個 u
+		return fmt.Errorf("sieve authentication failed: %s", trimmed)
 	}
-	if lastErr != nil {
-		return lastErr
-	}
-	return fmt.Errorf("sieve authentication failed: no mechanism succeeded")
+	// 未預期的行（例如多推送嘅 capability）：記錄後當作未完成
+	parseCapLine(c, trimmed)
+	return fmt.Errorf("sieve auth unexpected reply: %s", trimmed)
 }
 
 // Capability 返回當前能力映射
@@ -352,13 +479,13 @@ func (c *Client) Capability() map[string]string {
 // ListScripts 列出腳本
 func (c *Client) ListScripts() ([]ScriptInfo, error) {
 	id := nextTag()
-	if err := c.tp.PrintfLine("%s LISTSCRIPTS", id); err != nil {
+	if err := c.cfmtf("%s LISTSCRIPTS", id); err != nil {
 		return nil, err
 	}
 	var scripts []ScriptInfo
 	var activeName string
 	for {
-		line, err := c.tp.ReadLine()
+		line, err := c.cline()
 		if err != nil {
 			return nil, err
 		}
@@ -424,7 +551,7 @@ func (c *Client) GetScript(name string) (string, error) {
 		return "", fmt.Errorf("script name required")
 	}
 	id := nextTag()
-	if err := c.tp.PrintfLine("%s GETSCRIPT \"%s\"", id, escape(name)); err != nil {
+	if err := c.cfmtf("%s GETSCRIPT \"%s\"", id, escape(name)); err != nil {
 		return "", err
 	}
 	// 回應： {123}\r\n<content>\r\n tag OK
@@ -432,7 +559,7 @@ func (c *Client) GetScript(name string) (string, error) {
 	var literalSize = -1
 	var buf strings.Builder
 	for {
-		line, err := c.tp.ReadLine()
+		line, err := c.cline()
 		if err != nil {
 			return "", err
 		}
@@ -491,7 +618,7 @@ func (c *Client) PutScript(name, content string) error {
 	}
 	id := nextTag()
 	literal := fmt.Sprintf("{%d+}", len(content))
-	if err := c.tp.PrintfLine("%s PUTSCRIPT \"%s\" %s", id, escape(name), literal); err != nil {
+	if err := c.cfmtf("%s PUTSCRIPT \"%s\" %s", id, escape(name), literal); err != nil {
 		return err
 	}
 	// 發送內容（若有）
@@ -507,7 +634,7 @@ func (c *Client) PutScript(name, content string) error {
 	// 刷新 textproto 的緩衝
 	// textproto 已有獨立 buf，需確保寫入已刷；直接讀回應
 	for {
-		line, err := c.tp.ReadLine()
+		line, err := c.cline()
 		if err != nil {
 			return err
 		}
@@ -531,11 +658,11 @@ func (c *Client) DeleteScript(name string) error {
 		return fmt.Errorf("script name required")
 	}
 	id := nextTag()
-	if err := c.tp.PrintfLine("%s DELETESCRIPT \"%s\"", id, escape(name)); err != nil {
+	if err := c.cfmtf("%s DELETESCRIPT \"%s\"", id, escape(name)); err != nil {
 		return err
 	}
 	for {
-		line, err := c.tp.ReadLine()
+		line, err := c.cline()
 		if err != nil {
 			return err
 		}
@@ -557,16 +684,16 @@ func (c *Client) DeleteScript(name string) error {
 func (c *Client) SetActive(name string) error {
 	id := nextTag()
 	if name == "" {
-		if err := c.tp.PrintfLine("%s SETACTIVE \"\"", id); err != nil {
+		if err := c.cfmtf("%s SETACTIVE \"\"", id); err != nil {
 			return err
 		}
 	} else {
-		if err := c.tp.PrintfLine("%s SETACTIVE \"%s\"", id, escape(name)); err != nil {
+		if err := c.cfmtf("%s SETACTIVE \"%s\"", id, escape(name)); err != nil {
 			return err
 		}
 	}
 	for {
-		line, err := c.tp.ReadLine()
+		line, err := c.cline()
 		if err != nil {
 			return err
 		}
@@ -588,7 +715,7 @@ func (c *Client) SetActive(name string) error {
 func (c *Client) CheckScript(content string) error {
 	id := nextTag()
 	literal := fmt.Sprintf("{%d+}", len(content))
-	if err := c.tp.PrintfLine("%s CHECKSCRIPT %s", id, literal); err != nil {
+	if err := c.cfmtf("%s CHECKSCRIPT %s", id, literal); err != nil {
 		return err
 	}
 	if len(content) > 0 {
@@ -600,7 +727,7 @@ func (c *Client) CheckScript(content string) error {
 		return err
 	}
 	for {
-		line, err := c.tp.ReadLine()
+		line, err := c.cline()
 		if err != nil {
 			return err
 		}
@@ -621,11 +748,11 @@ func (c *Client) CheckScript(content string) error {
 // HaveSpace 檢查配額（選用）
 func (c *Client) HaveSpace(name string, size int) error {
 	id := nextTag()
-	if err := c.tp.PrintfLine("%s HAVESPACE \"%s\" %d", id, escape(name), size); err != nil {
+	if err := c.cfmtf("%s HAVESPACE \"%s\" %d", id, escape(name), size); err != nil {
 		return err
 	}
 	for {
-		line, err := c.tp.ReadLine()
+		line, err := c.cline()
 		if err != nil {
 			return err
 		}

@@ -70,6 +70,7 @@ func (h *SieveHandler) resolveSieveConfig(acc *storage.Account) sieve.Config {
 		AllowInsecureTLS: allowInsecure,
 		Username:         acc.Username,
 		Password:         "", // 由 caller 填入
+		Debug:            h.cfg != nil && h.cfg.SieveDebug,
 	}
 }
 

@@ -17,6 +17,7 @@ type ServerConfig struct {
 	DefaultSievePort             int
 	DefaultSieveUseTLS           bool
 	DefaultSieveAllowInsecureTLS bool
+	SieveDebug                   bool
 	CookieSecure                 bool
 	Require2FA                   bool
 	RequirePGP                   bool
@@ -88,6 +89,9 @@ func Load() *ServerConfig {
 	}
 	if v := os.Getenv("DEFAULT_SIEVE_ALLOW_INSECURE_TLS"); v != "" {
 		cfg.DefaultSieveAllowInsecureTLS = parseBool(v)
+	}
+	if v := os.Getenv("SIEVE_DEBUG"); v != "" {
+		cfg.SieveDebug = parseBool(v)
 	}
 	if v := os.Getenv("COOKIE_SECURE"); v != "" {
 		cfg.CookieSecure = parseBool(v)
