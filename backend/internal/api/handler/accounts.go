@@ -39,18 +39,22 @@ func NewAccountsHandler(store session.Store, storageStore storage.Store, poolMgr
 
 // AccountRequest 帳號新增/編輯請求（密碼用臨時明文欄位，json:"password"）
 type AccountRequest struct {
-	Label                string `json:"label"`
-	Email                string `json:"email"`
-	IMAPHost             string `json:"imapHost"`
-	IMAPPort             int    `json:"imapPort"`
-	IMAPUseTLS           bool   `json:"imapUseTls"`
-	IMAPAllowInsecureTLS bool   `json:"imapAllowInsecureTls"`
-	SMTPHost             string `json:"smtpHost"`
-	SMTPPort             int    `json:"smtpPort"`
-	SMTPUseTLS           bool   `json:"smtpUseTls"`
-	SMTPAllowInsecureTLS bool   `json:"smtpAllowInsecureTls"`
-	Username             string `json:"username"`
-	Password             string `json:"password"`
+	Label                 string `json:"label"`
+	Email                 string `json:"email"`
+	IMAPHost              string `json:"imapHost"`
+	IMAPPort              int    `json:"imapPort"`
+	IMAPUseTLS            bool   `json:"imapUseTls"`
+	IMAPAllowInsecureTLS  bool   `json:"imapAllowInsecureTls"`
+	SMTPHost              string `json:"smtpHost"`
+	SMTPPort              int    `json:"smtpPort"`
+	SMTPUseTLS            bool   `json:"smtpUseTls"`
+	SMTPAllowInsecureTLS  bool   `json:"smtpAllowInsecureTls"`
+	SieveHost             string `json:"sieveHost"`
+	SievePort             int    `json:"sievePort"`
+	SieveUseTLS           bool   `json:"sieveUseTls"`
+	SieveAllowInsecureTLS bool   `json:"sieveAllowInsecureTls"`
+	Username              string `json:"username"`
+	Password              string `json:"password"`
 }
 
 // OnboardingStatus 返回使用者 onboarding 完成度（依 REQUIRE_2FA / REQUIRE_PGP 環境變數決定邊啲係必須）
@@ -142,7 +146,7 @@ func (h *AccountsHandler) EnsureJunkFolder(w http.ResponseWriter, r *http.Reques
 	response.Success(w, map[string]string{"junkFolder": junkFolder})
 }
 
-// GetFolderPrefs 取得帳號嘅 WebMail 專屬 folder 顯示偏好
+// GetFolderPrefs 取得帳號嘅 e2Mail 專屬 folder 顯示偏好
 func (h *AccountsHandler) GetFolderPrefs(w http.ResponseWriter, r *http.Request) {
 	authCtx := middleware.GetAccountContext(r.Context())
 	if authCtx == nil || authCtx.Session == nil {
@@ -158,7 +162,7 @@ func (h *AccountsHandler) GetFolderPrefs(w http.ResponseWriter, r *http.Request)
 	response.Success(w, prefs)
 }
 
-// SetFolderPref 設定帳號嘅 WebMail 專屬 folder 顯示偏好（唔影響 IMAP subscription）
+// SetFolderPref 設定帳號嘅 e2Mail 專屬 folder 顯示偏好（唔影響 IMAP subscription）
 func (h *AccountsHandler) SetFolderPref(w http.ResponseWriter, r *http.Request) {
 	authCtx := middleware.GetAccountContext(r.Context())
 	if authCtx == nil || authCtx.Session == nil {
@@ -283,22 +287,26 @@ func (h *AccountsHandler) CreateAccount(w http.ResponseWriter, r *http.Request) 
 	}
 
 	acc := &storage.Account{
-		UserEmail:            authCtx.Session.Email,
-		Label:                req.Label,
-		Email:                req.Email,
-		IMAPHost:             req.IMAPHost,
-		IMAPPort:             req.IMAPPort,
-		IMAPUseTLS:           req.IMAPUseTLS,
-		IMAPAllowInsecureTLS: req.IMAPAllowInsecureTLS,
-		SMTPHost:             req.SMTPHost,
-		SMTPPort:             req.SMTPPort,
-		SMTPUseTLS:           req.SMTPUseTLS,
-		SMTPAllowInsecureTLS: req.SMTPAllowInsecureTLS,
-		Username:             req.Username,
-		EncIMAPPassword:      imapEnc,
-		EncSMTPPassword:      smtpEnc,
-		IsDefault:            count == 0,
-		SortOrder:            count,
+		UserEmail:             authCtx.Session.Email,
+		Label:                 req.Label,
+		Email:                 req.Email,
+		IMAPHost:              req.IMAPHost,
+		IMAPPort:              req.IMAPPort,
+		IMAPUseTLS:            req.IMAPUseTLS,
+		IMAPAllowInsecureTLS:  req.IMAPAllowInsecureTLS,
+		SMTPHost:              req.SMTPHost,
+		SMTPPort:              req.SMTPPort,
+		SMTPUseTLS:            req.SMTPUseTLS,
+		SMTPAllowInsecureTLS:  req.SMTPAllowInsecureTLS,
+		SieveHost:             req.SieveHost,
+		SievePort:             req.SievePort,
+		SieveUseTLS:           req.SieveUseTLS,
+		SieveAllowInsecureTLS: req.SieveAllowInsecureTLS,
+		Username:              req.Username,
+		EncIMAPPassword:       imapEnc,
+		EncSMTPPassword:       smtpEnc,
+		IsDefault:             count == 0,
+		SortOrder:             count,
 	}
 	if acc.Label == "" {
 		acc.Label = acc.Email
@@ -308,6 +316,12 @@ func (h *AccountsHandler) CreateAccount(w http.ResponseWriter, r *http.Request) 
 	}
 	if acc.SMTPPort <= 0 {
 		acc.SMTPPort = 587
+	}
+	if acc.SievePort < 0 {
+		acc.SievePort = 0
+	}
+	if acc.SieveHost == "" && acc.SievePort == 0 && !acc.SieveUseTLS && !acc.SieveAllowInsecureTLS {
+		acc.SieveUseTLS = true
 	}
 
 	if err := h.storage.CreateAccount(acc); err != nil {
@@ -372,6 +386,12 @@ func (h *AccountsHandler) UpdateAccount(w http.ResponseWriter, r *http.Request) 
 	existing.IMAPAllowInsecureTLS = req.IMAPAllowInsecureTLS
 	existing.SMTPUseTLS = req.SMTPUseTLS
 	existing.SMTPAllowInsecureTLS = req.SMTPAllowInsecureTLS
+	existing.SieveHost = req.SieveHost
+	if req.SievePort >= 0 {
+		existing.SievePort = req.SievePort
+	}
+	existing.SieveUseTLS = req.SieveUseTLS
+	existing.SieveAllowInsecureTLS = req.SieveAllowInsecureTLS
 
 	// 若提供密碼則更新加密
 	if req.Password != "" {

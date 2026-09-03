@@ -11,6 +11,7 @@ import { ViewerPane } from './components/layout/ViewerPane';
 import { Composer } from './components/mail/Composer';
 import { AccountsPage } from './components/accounts/AccountsPage';
 import { ContactsPage } from './components/contacts/ContactsPage';
+import { SievePage } from './components/sieve/SievePage';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { Toast } from './components/ui/Toast';
 import { connectEvents } from './api/sse';
@@ -102,7 +103,7 @@ export const App: React.FC = () => {
   if (isLoading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-slate-900 text-white text-sm">
-        正在載入 WebMail...
+        正在載入 e2Mail...
       </div>
     );
   }
@@ -119,6 +120,8 @@ export const App: React.FC = () => {
           <AccountsPage />
         ) : view === 'contacts' ? (
           <ContactsPage />
+        ) : view === 'sieve' ? (
+          <SievePage />
         ) : (
           <>
             <Sidebar />

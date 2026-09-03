@@ -39,6 +39,10 @@ services:
       # - DEFAULT_SMTP_HOST=mail.example.com
       # - DEFAULT_SMTP_PORT=587
       # - DEFAULT_ALLOW_INSECURE_TLS=false    # 預設為 false；僅在自簽憑證環境顯式設為 true
+      # - DEFAULT_SIEVE_HOST=mail.example.com
+      # - DEFAULT_SIEVE_PORT=4190
+      # - DEFAULT_SIEVE_USE_TLS=true
+      # - DEFAULT_SIEVE_ALLOW_INSECURE_TLS=false
       # === LDAP 變更密碼（OpenBSD ldapd；詳見 LDAP.md；建議放 .env / secret 注入） ===
       # - LDAP_ENABLED=true
       # - LDAP_URL=ldaps://ldap.example.com:636

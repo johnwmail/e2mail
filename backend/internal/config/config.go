@@ -8,15 +8,20 @@ import (
 
 // ServerConfig 由環境變數載入的伺服器預設值，作為登入頁面之預填與強制預設
 type ServerConfig struct {
-	DefaultIMAPHost         string
-	DefaultIMAPPort         int
-	DefaultSMTPHost         string
-	DefaultSMTPPort         int
-	DefaultAllowInsecureTLS bool
-	CookieSecure            bool
-	Require2FA              bool
-	RequirePGP              bool
-	LDAP                    *LDAPConfig
+	DefaultIMAPHost              string
+	DefaultIMAPPort              int
+	DefaultSMTPHost              string
+	DefaultSMTPPort              int
+	DefaultAllowInsecureTLS      bool
+	DefaultSieveHost             string
+	DefaultSievePort             int
+	DefaultSieveUseTLS           bool
+	DefaultSieveAllowInsecureTLS bool
+	SieveDebug                   bool
+	CookieSecure                 bool
+	Require2FA                   bool
+	RequirePGP                   bool
+	LDAP                         *LDAPConfig
 }
 
 // LDAPConfig OpenBSD ldapd 連接設定（僅用於變更密碼；登入仍為 IMAP bind）。
@@ -42,12 +47,15 @@ func (l *LDAPConfig) Ready() bool {
 // Load 從環境變數載入設定；未設定的欄位採用安全預設值（IMAP 993 / SMTP 587 / 不容許自簽）
 func Load() *ServerConfig {
 	cfg := &ServerConfig{
-		DefaultIMAPPort:         993,
-		DefaultSMTPPort:         587,
-		DefaultAllowInsecureTLS: false,
-		CookieSecure:            true,
-		Require2FA:              true,
-		RequirePGP:              true,
+		DefaultIMAPPort:              993,
+		DefaultSMTPPort:               587,
+		DefaultSievePort:              4190,
+		DefaultSieveUseTLS:            true,
+		DefaultAllowInsecureTLS:       false,
+		DefaultSieveAllowInsecureTLS:  false,
+		CookieSecure:                 true,
+		Require2FA:                   true,
+		RequirePGP:                   true,
 	}
 	if v := os.Getenv("DEFAULT_IMAP_HOST"); v != "" {
 		cfg.DefaultIMAPHost = v
@@ -67,6 +75,23 @@ func Load() *ServerConfig {
 	}
 	if v := os.Getenv("DEFAULT_ALLOW_INSECURE_TLS"); v != "" {
 		cfg.DefaultAllowInsecureTLS = parseBool(v)
+	}
+	if v := os.Getenv("DEFAULT_SIEVE_HOST"); v != "" {
+		cfg.DefaultSieveHost = v
+	}
+	if v := os.Getenv("DEFAULT_SIEVE_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil && port > 0 {
+			cfg.DefaultSievePort = port
+		}
+	}
+	if v := os.Getenv("DEFAULT_SIEVE_USE_TLS"); v != "" {
+		cfg.DefaultSieveUseTLS = parseBool(v)
+	}
+	if v := os.Getenv("DEFAULT_SIEVE_ALLOW_INSECURE_TLS"); v != "" {
+		cfg.DefaultSieveAllowInsecureTLS = parseBool(v)
+	}
+	if v := os.Getenv("SIEVE_DEBUG"); v != "" {
+		cfg.SieveDebug = parseBool(v)
 	}
 	if v := os.Getenv("COOKIE_SECURE"); v != "" {
 		cfg.CookieSecure = parseBool(v)

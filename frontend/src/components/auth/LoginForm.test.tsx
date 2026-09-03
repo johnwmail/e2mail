@@ -33,7 +33,7 @@ describe('LoginForm', () => {
 
   it('renders the login form', () => {
     render(<LoginForm />);
-    expect(screen.getByRole('heading', { name: '登入 Webmail' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '登入 e2Mail' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '登入信箱' })).toBeInTheDocument();
   });
 

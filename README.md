@@ -1,6 +1,6 @@
 # e2mail
 
-Self-hosted, end-to-end encrypted webmail client. Speaks IMAP/SMTP to any mail
+Self-hosted, end-to-end encrypted e2Mail client. Speaks IMAP/SMTP to any mail
 provider, stores PGP key material in a single SQLite file, and serves the SPA
 and the API from a single Go binary in one container.
 
@@ -51,7 +51,7 @@ container runs a single process serving both the SPA and the API.
 
 | Service  | Tech                                            | Port (host) |
 |----------|-------------------------------------------------|-------------|
-| webmail  | Go 1.26 + chi + modernc.org/sqlite, embeds the Vite build | `8080`      |
+| e2Mail  | Go 1.26 + chi + modernc.org/sqlite, embeds the Vite build | `8080`      |
 
 ## Quick start
 
@@ -64,7 +64,7 @@ cd e2mail
 docker compose up -d --build
 
 # Open
-open http://localhost:8080      # webmail UI (SPA + API on one port)
+open http://localhost:8080      # e2Mail UI (SPA + API on one port)
 curl http://localhost:8080/health   # health probe
 ```
 
