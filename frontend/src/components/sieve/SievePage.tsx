@@ -167,9 +167,7 @@ export const SievePage: React.FC = () => {
           <AlertTriangle className="w-10 h-10 text-amber-500" />
           <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">無法連接 ManageSieve</div>
           <div className="text-xs text-slate-500 max-w-md">
-            {(scriptsError as any)?.message || '此帳號暫不支援 Sieve 過濾器。請檢查伺服器是否已開啟 ManageSieve (4190) 或 Sieve 主機設定。'}
-            <br />
-            <span className="text-[11px]">提示：你的 Dovecot 目前僅監聽 127.0.0.1:4190，若 e2mail 運行於 Docker，需將 Sieve 主機設為可達之主機名或將 Dovecot 改為 0.0.0.0。</span>
+            {(scriptsError as any)?.message || '此帳號暫不支援 Sieve 過濾器。請檢查伺服器是否已開啟 ManageSieve 或 Sieve 主機設定。'}
           </div>
           <button
             onClick={() => setView('accounts')}

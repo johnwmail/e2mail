@@ -2,7 +2,7 @@
 
 > 分支：`sieve`（不影響 `main`）| 狀態：✅ 已實作完成（待你審閱/測試）| 後端 `go vet`/`go test`、`前端 build/test` 皆通過
 
-> **重要運行提示（基於你方 `20-managesieve.conf`）：** `inet_listener sieve { address = 127.0.0.1 }` 僅監聽本機，e2mail 若以 Docker 運行會連不上 127.0.0.1:4190。需二選一：① 將 Dovecot 改為 `address = 0.0.0.0`（或 `*`）並重啟；② 或在 e2mail 帳號「Sieve 進階設定」中填可達之主機名，本分支已支援 per-account `sieveHost/sievePort` 覆蓋。
+> **運行提示：** 需確保 Dovecot Pigeonhole ManageSieve 已啟用並可從 e2mail 連達，本分支已支援 per-account `sieveHost/sievePort` 設定。
 
 ---
 

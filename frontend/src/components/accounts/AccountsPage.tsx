@@ -201,7 +201,7 @@ const AccountsForm: React.FC<{
           <input type="checkbox" checked={!!form.sieveAllowInsecureTls} onChange={(e) => set('sieveAllowInsecureTls', e.target.checked as any)} className="w-4 h-4 rounded" />
           允許自簽憑證 (Sieve)
         </label>
-        <div className="text-[11px] text-slate-500 mt-2">提示：你的 Dovecot 若僅監聽 127.0.0.1:4190，Sieve 主機需設為可從 e2mail 容器連達之主機名或 IP，或將 Dovecot 改為 0.0.0.0。</div>
+        <div className="text-[11px] text-slate-500 mt-2">提示：請確保 Sieve 主機可從 e2mail 連達。</div>
       </details>
 
       {testResult && (
