@@ -1,20 +1,38 @@
-export type SieveConditionOp = 'contains' | 'is' | 'matches' | 'exists' | 'notcontains' | 'notis';
+export type SieveTestType = 'header' | 'address' | 'exists' | 'true';
+
+export type SieveAddressPart = '' | 'domain' | 'localpart' | 'user';
+
+export type SieveConditionOp = 'contains' | 'is' | 'matches';
 
 export interface SieveCondition {
   id: string;
-  header: string; // e.g. Subject, From, To, custom header
+  test: SieveTestType;
+  part: SieveAddressPart; // 僅 address（或 header 用不上）
   op: SieveConditionOp;
+  negated: boolean; // not 修飾
+  header: string; // 逗號分隔多個標頭（header/address/exists）
   value: string;
 }
 
-export type SieveActionType = 'fileinto' | 'redirect' | 'reject' | 'discard' | 'keep' | 'stop';
+export type SieveActionType =
+  | 'fileinto'
+  | 'redirect'
+  | 'reject'
+  | 'discard'
+  | 'keep'
+  | 'stop'
+  | 'setflag'
+  | 'addflag'
+  | 'removeflag';
 
 export interface SieveAction {
   id: string;
   type: SieveActionType;
-  mailbox?: string; // fileinto
+  mailbox?: string; // fileinto（逗號分隔多個）
+  copy?: boolean; // fileinto :copy
   address?: string; // redirect
-  text?: string;    // reject
+  text?: string; // reject
+  flag?: string; // setflag/addflag/removeflag（逗號分隔，如 \Seen）
 }
 
 export interface SieveRule {

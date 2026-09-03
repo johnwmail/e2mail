@@ -264,10 +264,14 @@ type Rule = {
 
 UI：仿 Roundcube 每條規則一卡片，含「若…則…」表單（header 下拉含 `Subject/From/To` 預設來自 `$config['managesieve_default_headers']` + 自定義）、集合關係（全部/任一）、動作列表（移至資料夾/轉寄/拒絕/捨棄/停止）。支援新增/刪除/拖曳排序、啟用開關。
 
-**雙向轉換**：
+**雙向轉換**（`utils/sieveGenerator.ts`，token 化 + 遞迴下降解析器）：
 
-*   `rulesToSieve(rules: Rule[]): string`：生成完整 `.sieve`（頭部 `require ["fileinto","copy","reject",...]` 自動推斷，`if allof(...){ fileinto ...; }`）。`require` 去重，`stop;` 自動處理。
-*   `sieveToRules(sieve: string): Rule[] | null`：簡單解析器（正則 `if\s+(allof|anyof)\s*\(` + `header :contains`/`address`），覆蓋常見生成結果；若解析失敗（手寫複雜 sieve）→ 提示「此腳本含進階語法，僅能在原始碼模式編輯」並自動切 Raw。
+*   `rulesToSieve(rules: Rule[]): string`：生成完整 `.sieve`（頭部 `require ["fileinto","imap4flags","copy","reject"]` 自動推斷，`if allof/anyof(...){ ... }`）。終止動作自動補 `stop;`（已有則不重複）。
+*   `sieveToRules(sieve: string): Rule[] | null`：支援 **Roundcube / Dovecot 常見語法**——
+    *   測試：`header` / `address`（含 `:domain` `:localpart` `:user` / `:all`）、`exists`、`true`，比較符 `:contains` `:is` `:matches`（`:comparator` 自動忽略）、`not`（限簡單測試）、`allof(...)` / `anyof(...)`、隱式 anyof（多值 string-list 展開）、標頭/信箱多值 list、同行或隔行大括號
+    *   動作：`fileinto`（含 `:copy` 與多資料夾）、`redirect`、`reject`/`ereject`、`discard`、`keep`、`stop`、`setflag`/`addflag`/`removeflag`（imap4flags）
+    *   註解 `# rule:[名稱]` 作為規則名（與 Roundcube 格式互通）
+    *   不支援（`vacation`、`envelope`、`body`、`currentdate`、`variables`/`set`、`elsif`/`else`、巢狀 `if`、混層 group 語義不安全展開）→ 回傳 `null`，UI 自動提示「此腳本含進階語法，僅能在原始碼模式編輯」並切 Raw
 
 **模式切換**：頂部 `SegmentedControl`（規則 / 原始碼），切換時彈 `ConfirmDialog` 若未儲存；規則→原始碼 實時生成預覽；原始碼→規則 嘗試解析。
 

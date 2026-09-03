@@ -94,7 +94,7 @@ export const SieveEditor: React.FC<Props> = ({ accountId, scriptName, initialCon
           value={content}
           onChange={(e) => setContent(e.target.value)}
           spellCheck={false}
-          className="flex-1 w-full font-mono text-xs leading-5 p-3 bg-slate-900 text-slate-100 rounded-lg border border-slate-700 outline-none focus:ring-2 focus:ring-blue-500 resize-none min-h-[300px]"
+          className="flex-1 w-full font-mono text-xs leading-5 p-3 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-lg border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-blue-500 resize-none min-h-[300px]"
           placeholder={'require ["fileinto"];\n# e.g.\nif header :contains "Subject" "spam" {\n  fileinto "Junk";\n  stop;\n}'}
         />
         <div className="text-[10px] text-slate-400 mt-1">支援 Dovecot Pigeonhole：fileinto, reject, redirect, copy, spamtest 等（依伺服器能力）</div>
