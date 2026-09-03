@@ -77,7 +77,7 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 		}
 	}
 
-	// 設置整體 deadline
+	// 設置整體 deadline（每階段 15s，總體 30s）
 	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 
 	tp := textproto.NewConn(conn)
@@ -99,11 +99,15 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 		c.caps = make(map[string]string)
 		c.sasl = nil
 		c.tlsCap = false
+		// STARTTLS 後重設 deadline 並重讀 banner
+		_ = c.conn.SetDeadline(time.Now().Add(15 * time.Second))
 		if err := c.readBanner(); err != nil {
 			_ = c.Close()
 			return nil, fmt.Errorf("sieve post-STARTTLS banner failed: %w", err)
 		}
 	}
+	// 刷新 deadline 供認證階段
+	_ = c.conn.SetDeadline(time.Now().Add(15 * time.Second))
 
 	// 認證
 	if err := c.authenticate(cfg.Username, cfg.Password); err != nil {
@@ -246,41 +250,91 @@ func (c *Client) authenticate(username, password string) error {
 	if username == "" || password == "" {
 		return fmt.Errorf("sieve username/password required")
 	}
-	raw := "\x00" + username + "\x00" + password
-	enc := base64.StdEncoding.EncodeToString([]byte(raw))
-	id := nextTag()
-	// 先嘗試帶 initial-response 的 PLAIN
-	if err := c.tp.PrintfLine("%s AUTHENTICATE \"PLAIN\" \"%s\"", id, enc); err != nil {
-		return err
+	tryMechs := []string{"PLAIN"}
+	// 若 caps 顯示僅有 LOGIN，優先 LOGIN
+	if len(c.sasl) > 0 {
+		hasPlain := false
+		hasLogin := false
+		for _, m := range c.sasl {
+			if strings.EqualFold(m, "PLAIN") {
+				hasPlain = true
+			}
+			if strings.EqualFold(m, "LOGIN") {
+				hasLogin = true
+			}
+		}
+		if hasPlain && !hasLogin {
+			tryMechs = []string{"PLAIN"}
+		} else if !hasPlain && hasLogin {
+			tryMechs = []string{"LOGIN"}
+		} else if hasPlain && hasLogin {
+			tryMechs = []string{"PLAIN", "LOGIN"}
+		}
 	}
-	for {
-		line, err := c.tp.ReadLine()
-		if err != nil {
-			return fmt.Errorf("sieve auth read failed: %w", err)
-		}
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		// 伺服器挑戰：單獨的 "+" 或 "+ base64"（RFC5804 SASL challenge）
-		if strings.HasPrefix(trimmed, "+") {
-			// 若是空挑戰，補發憑證
-			// Dovecot 在 PLAIN 無 initial-response 時會發 "+"，此時需回覆 base64
-			if err := c.tp.PrintfLine("%s", enc); err != nil {
+
+	var lastErr error
+	// 準備使用者名稱備選：完整 email 與 @ 前綴（兼容 Dovecot 僅認 bare user）
+	usernames := []string{username}
+	if strings.Contains(username, "@") {
+		usernames = append(usernames, strings.Split(username, "@")[0])
+	}
+	for _, u := range usernames {
+		rawU := "\x00" + u + "\x00" + password
+		encU := base64.StdEncoding.EncodeToString([]byte(rawU))
+		for _, mech := range tryMechs {
+			encToUse := encU
+			id := nextTag()
+			if err := c.tp.PrintfLine("%s AUTHENTICATE \"%s\" \"%s\"", id, mech, encToUse); err != nil {
 				return err
 			}
-			continue
-		}
-		if strings.HasPrefix(trimmed, id+" ") {
-			upper := strings.ToUpper(trimmed)
-			if strings.Contains(upper, " OK") {
-				break
+			// 重置 lastErr 為每機制嘗試
+			lastErr = nil
+			for {
+				line, err := c.tp.ReadLine()
+				if err != nil {
+					lastErr = fmt.Errorf("sieve auth read failed: %w", err)
+					break
+				}
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" {
+					continue
+				}
+				if strings.HasPrefix(trimmed, "+") {
+					if err := c.tp.PrintfLine("%s", encToUse); err != nil {
+						lastErr = err
+						break
+					}
+					continue
+				}
+				if strings.HasPrefix(trimmed, id+" ") {
+					upper := strings.ToUpper(trimmed)
+					if strings.Contains(upper, " OK") {
+						return nil
+					}
+					lastErr = fmt.Errorf("sieve authentication failed (%s as %s): %s", mech, u, trimmed)
+					break
+				}
+				parseCapLine(c, trimmed)
 			}
-			return fmt.Errorf("sieve authentication failed: %s", trimmed)
+			if lastErr == nil {
+				return nil
+			}
+			// PLAIN 失敗，嘗試同一使用者之 LOGIN
+			if mech == "PLAIN" && len(tryMechs) > 1 {
+				continue
+			}
+			break
 		}
-		parseCapLine(c, trimmed)
+		// 此使用者所有機制皆失敗，嘗試下一個使用者名稱（bare user）
+		if lastErr == nil {
+			return nil
+		}
+		// 繼續下一個 u
 	}
-	return nil
+	if lastErr != nil {
+		return lastErr
+	}
+	return fmt.Errorf("sieve authentication failed: no mechanism succeeded")
 }
 
 // Capability 返回當前能力映射
