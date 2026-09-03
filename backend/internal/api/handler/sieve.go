@@ -89,44 +89,50 @@ func (h *SieveHandler) acquireSieveClient(ctx context.Context, r *http.Request) 
 	if cfg.Username == "" {
 		cfg.Username = acc.Email
 	}
+	log.Printf("[SIEVE] dial request account=%s sieveHost=%s:%d useTLS=%v allowInsecure=%v imapHost=%s", acc.ID, cfg.Host, cfg.Port, cfg.UseTLS, cfg.AllowInsecureTLS, acc.IMAPHost)
 	client, err := sieve.Dial(ctx, cfg)
 	if err != nil {
+		log.Printf("[SIEVE] dial failed account=%s host=%s:%d user=%s err=%v", acc.ID, cfg.Host, cfg.Port, cfg.Username, err)
 		return nil, nil, nil, nil, err
 	}
+	log.Printf("[SIEVE] dial success account=%s host=%s:%d", acc.ID, cfg.Host, cfg.Port)
 	cleanup := func() { _ = client.Close() }
 	return client, authCtx, acc, cleanup, nil
 }
 
 // Capability 探測 ManageSieve 能力（用於前端判斷是否支援）
 func (h *SieveHandler) Capability(w http.ResponseWriter, r *http.Request) {
-	client, _, _, cleanup, err := h.acquireSieveClient(r.Context(), r)
+	client, _, acc, cleanup, err := h.acquireSieveClient(r.Context(), r)
 	if err != nil {
-		log.Printf("[SIEVE] capability dial failed: %v", err)
+		log.Printf("[SIEVE] capability dial failed account=%s err=%v", accID(acc), err)
 		response.InternalServerError(w, "sieve unavailable: "+err.Error())
 		return
 	}
 	defer cleanup()
 	caps := client.Capability()
+	log.Printf("[SIEVE] capability ok account=%s caps=%v", accID(acc), caps)
 	response.Success(w, caps)
 }
 
 // ListScripts 列出腳本
 func (h *SieveHandler) ListScripts(w http.ResponseWriter, r *http.Request) {
-	client, _, _, cleanup, err := h.acquireSieveClient(r.Context(), r)
+	client, _, acc, cleanup, err := h.acquireSieveClient(r.Context(), r)
 	if err != nil {
-		log.Printf("[SIEVE] list dial failed: %v", err)
+		log.Printf("[SIEVE] list dial failed account=%s err=%v", accID(acc), err)
 		response.InternalServerError(w, "sieve unavailable: "+err.Error())
 		return
 	}
 	defer cleanup()
 	scripts, err := client.ListScripts()
 	if err != nil {
+		log.Printf("[SIEVE] LISTSCRIPTS failed account=%s err=%v", accID(acc), err)
 		response.InternalServerError(w, "LISTSCRIPTS failed: "+err.Error())
 		return
 	}
 	if scripts == nil {
 		scripts = []sieve.ScriptInfo{}
 	}
+	log.Printf("[SIEVE] LISTSCRIPTS ok account=%s count=%d", accID(acc), len(scripts))
 	response.Success(w, scripts)
 }
 
@@ -277,4 +283,11 @@ func (h *SieveHandler) CheckScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.Success(w, map[string]string{"message": "script ok"})
+}
+
+func accID(acc *storage.Account) string {
+	if acc == nil {
+		return "?"
+	}
+	return acc.ID
 }

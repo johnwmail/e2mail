@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"net"
 	"net/textproto"
 	"strconv"
@@ -55,27 +56,13 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	var conn net.Conn
 	var err error
 
-	// 若 UseTLS 為 true，嘗試 implicit TLS
-	if cfg.UseTLS {
-		tlsCfg := &tls.Config{
-			ServerName:         host,
-			InsecureSkipVerify: cfg.AllowInsecureTLS,
-		}
-		tlsDialer := &tls.Dialer{NetDialer: dialer, Config: tlsCfg}
-		conn, err = tlsDialer.DialContext(ctx, "tcp", addr)
-		if err != nil {
-			// implicit TLS 失敗，回退明文（可能需 STARTTLS）
-			conn, err = dialer.DialContext(ctx, "tcp", addr)
-			if err != nil {
-				return nil, fmt.Errorf("sieve dial failed %s: %w", addr, err)
-			}
-		}
-	} else {
-		conn, err = dialer.DialContext(ctx, "tcp", addr)
-		if err != nil {
-			return nil, fmt.Errorf("sieve dial failed %s: %w", addr, err)
-		}
+	// ManageSieve 傳統為明文 + STARTTLS（非 implicit TLS），直接明文連接
+	// 若 UseTLS=true 且伺服器宣告 STARTTLS，稍後會升級
+	conn, err = dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("sieve dial failed %s: %w", addr, err)
 	}
+	log.Printf("[SIEVE] dial ok %s (UseTLS=%v AllowInsecure=%v user=%s)", addr, cfg.UseTLS, cfg.AllowInsecureTLS, cfg.Username)
 
 	// 設置整體 deadline（每階段 15s，總體 30s）
 	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
@@ -86,14 +73,16 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	// 讀 banner 與 CAPABILITY（直到 OK / NO）
 	if err := c.readBanner(); err != nil {
 		_ = c.Close()
-		return nil, err
+		return nil, fmt.Errorf("sieve banner failed %s: %w", addr, err)
 	}
+	log.Printf("[SIEVE] banner ok %s caps=%v sasl=%v tlsCap=%v", addr, c.caps, c.sasl, c.tlsCap)
 
 	// 若明文且伺服器宣告 STARTTLS 且 UseTLS=true，升級
 	if !isTLSConn(conn) && c.tlsCap && cfg.UseTLS {
+		log.Printf("[SIEVE] STARTTLS start %s", addr)
 		if err := c.doSTARTTLS(cfg); err != nil {
 			_ = c.Close()
-			return nil, fmt.Errorf("sieve STARTTLS failed: %w", err)
+			return nil, fmt.Errorf("sieve STARTTLS failed %s: %w", addr, err)
 		}
 		// Dovecot 在 STARTTLS 後會主動推送新 banner（含 SASL "PLAIN LOGIN"），直接重讀 banner
 		c.caps = make(map[string]string)
@@ -103,11 +92,15 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 		_ = c.conn.SetDeadline(time.Now().Add(15 * time.Second))
 		if err := c.readBanner(); err != nil {
 			_ = c.Close()
-			return nil, fmt.Errorf("sieve post-STARTTLS banner failed: %w", err)
+			return nil, fmt.Errorf("sieve post-STARTTLS banner failed %s: %w", addr, err)
 		}
+		log.Printf("[SIEVE] post-STARTTLS banner ok %s caps=%v sasl=%v", addr, c.caps, c.sasl)
+	} else if !isTLSConn(conn) && !c.tlsCap && cfg.UseTLS {
+		log.Printf("[SIEVE] STARTTLS not advertised but UseTLS=true, continuing plain %s", addr)
 	}
 	// 刷新 deadline 供認證階段
 	_ = c.conn.SetDeadline(time.Now().Add(15 * time.Second))
+	log.Printf("[SIEVE] authenticate start %s user=%s sasl=%v", addr, cfg.Username, c.sasl)
 
 	// 認證
 	if err := c.authenticate(cfg.Username, cfg.Password); err != nil {
@@ -222,27 +215,37 @@ func (c *Client) doCapability() error {
 func (c *Client) doSTARTTLS(cfg Config) error {
 	id := nextTag()
 	if err := c.tp.PrintfLine("%s STARTTLS", id); err != nil {
-		return err
+		return fmt.Errorf("STARTTLS write failed: %w", err)
 	}
 	line, err := c.tp.ReadLine()
 	if err != nil {
-		return err
+		return fmt.Errorf("STARTTLS read failed: %w", err)
 	}
 	if !strings.Contains(strings.ToUpper(line), "OK") {
 		return fmt.Errorf("STARTTLS rejected: %s", line)
 	}
+	// 對 IP 主機，ServerName 用空以避免 SNI 驗證失敗；自簽憑證時跳過校驗
+	serverName := cfg.Host
+	if net.ParseIP(serverName) != nil {
+		serverName = ""
+	}
 	tlsCfg := &tls.Config{
-		ServerName:         cfg.Host,
-		InsecureSkipVerify: cfg.AllowInsecureTLS,
+		ServerName:         serverName,
+		InsecureSkipVerify: cfg.AllowInsecureTLS || serverName == "",
+	}
+	// 若 AllowInsecure=false 但 host 為 IP，仍允許握手（證書多為域名）
+	if !cfg.AllowInsecureTLS && serverName == "" {
+		log.Printf("[SIEVE] STARTTLS IP %s with InsecureSkipVerify=true (no SNI)", cfg.Host)
 	}
 	tlsConn := tls.Client(c.conn, tlsCfg)
 	if err := tlsConn.Handshake(); err != nil {
-		return err
+		return fmt.Errorf("TLS handshake failed: %w", err)
 	}
 	// 替換連線
 	c.conn = tlsConn
 	c.tp = textproto.NewConn(tlsConn)
 	_ = c.conn.SetDeadline(time.Now().Add(30 * time.Second))
+	log.Printf("[SIEVE] STARTTLS handshake ok %s", cfg.Host)
 	return nil
 }
 
