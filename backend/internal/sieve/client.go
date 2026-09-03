@@ -188,6 +188,7 @@ func parseCapLine(c *Client, line string) {
 	}
 }
 
+//nolint:unused // 保留作手動 CAPABILITY 探測（目前 Dial 改用 readBanner）
 func (c *Client) doCapability() error {
 	id := nextTag()
 	if err := c.tp.PrintfLine("%s CAPABILITY", id); err != nil {
