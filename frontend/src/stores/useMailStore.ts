@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { OutgoingMessage } from '../types/api';
 
+export type SettingsSection = 'security' | 'pgp' | 'accounts' | 'sieve' | 'appearance';
+export type ThemePreference = 'light' | 'dark' | 'system';
+
 interface MailState {
   currentFolder: string;
   activeAccountId: string | null;
@@ -15,9 +18,11 @@ interface MailState {
   composerDraft: Partial<OutgoingMessage> | null;
   composerKey: number;
   isSidebarOpen: boolean;
-  view: 'mail' | 'accounts' | 'contacts' | 'sieve';
+  view: 'mail' | 'contacts' | 'settings';
+  settingsSection: SettingsSection;
   inboxUnread: number;
   listMode: 'messages' | 'threads';
+  theme: ThemePreference;
 
   setCurrentFolder: (folder: string) => void;
   setActiveAccountId: (id: string | null) => void;
@@ -32,9 +37,12 @@ interface MailState {
   closeComposer: () => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
-  setView: (view: 'mail' | 'accounts' | 'contacts' | 'sieve') => void;
+  setView: (view: 'mail' | 'contacts' | 'settings') => void;
+  openSettings: (section?: SettingsSection) => void;
+  setSettingsSection: (section: SettingsSection) => void;
   setInboxUnread: (n: number) => void;
   setListMode: (mode: 'messages' | 'threads') => void;
+  setTheme: (theme: ThemePreference) => void;
 }
 
 export const useMailStore = create<MailState>((set) => ({
@@ -52,8 +60,13 @@ export const useMailStore = create<MailState>((set) => ({
   composerKey: 0,
   isSidebarOpen: false,
   view: 'mail',
+  settingsSection: 'security',
   inboxUnread: 0,
   listMode: (localStorage.getItem('webmail_list_mode') === 'threads' ? 'threads' : 'messages'),
+  theme: (() => {
+    const stored = localStorage.getItem('webmail_theme');
+    return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+  })(),
 
   setCurrentFolder: (folder) =>
     set({ currentFolder: folder, selectedUID: null, selectedFolder: null, page: 1, isSidebarOpen: false, unreadView: false }),
@@ -89,6 +102,11 @@ export const useMailStore = create<MailState>((set) => ({
 
   setView: (view) => set({ view, isSidebarOpen: false }),
 
+  openSettings: (settingsSection = 'security') =>
+    set({ view: 'settings', settingsSection, isSidebarOpen: false }),
+
+  setSettingsSection: (settingsSection) => set({ settingsSection }),
+
   setInboxUnread: (n) => set({ inboxUnread: n }),
 
   setListMode: (mode) => {
@@ -97,6 +115,14 @@ export const useMailStore = create<MailState>((set) => ({
     // 同步到 DB（後台，失敗唔阻塞 UI）；加 catch 處理 import 於測試環境 teardown 時之錯誤
     void import('../api/prefs')
       .then(({ prefsApi }) => prefsApi.set('listMode', mode).catch(() => {}))
+      .catch(() => {});
+  },
+
+  setTheme: (theme) => {
+    localStorage.setItem('webmail_theme', theme);
+    set({ theme });
+    void import('../api/prefs')
+      .then(({ prefsApi }) => prefsApi.set('theme', theme).catch(() => {}))
       .catch(() => {});
   },
 }));

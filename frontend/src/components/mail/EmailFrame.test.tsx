@@ -91,7 +91,7 @@ describe('EmailFrame', () => {
     expect(blocked).toContain('width="600"');
     expect(blocked).not.toContain('&gt; width');
 
-    fireEvent.click(screen.getByRole('button', { name: /顯示圖片/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Show images/ }));
     const allowed = getFrame().srcdoc;
     expect(allowed).toContain('src="https://track.example/pixel.gif"');
     expect(allowed).not.toMatch(/<img[^>]*data-blocked-src/);
@@ -102,7 +102,7 @@ describe('EmailFrame', () => {
       htmlBody: '<img src="https://cdn.example/logo.png">',
       trustedSender: true,
     });
-    expect(screen.queryByRole('button', { name: /顯示圖片/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Show images/ })).not.toBeInTheDocument();
     expect(getFrame().srcdoc).toContain('src="https://cdn.example/logo.png"');
   });
 

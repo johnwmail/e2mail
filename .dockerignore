@@ -10,7 +10,7 @@
 README.md
 LICENSE
 AGENTS.md
-MultiAccounts.md
+docs
 
 # Orchestration
 docker-compose.yml

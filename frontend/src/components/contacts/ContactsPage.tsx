@@ -4,6 +4,7 @@ import { ArrowLeft, Search, Upload, Download, Trash2, Edit2, UserPlus, Users, Im
 import { contactsApi, Contact } from '../../api/addressBook';
 import { useMailStore } from '../../stores/useMailStore';
 import { toast } from '../../stores/useToastStore';
+import { useI18n } from '../../i18n';
 
 const ContactAvatar: React.FC<{ contact: Contact }> = ({ contact }) => {
   const [url, setUrl] = useState<string | null>(null);
@@ -24,6 +25,7 @@ const ContactAvatar: React.FC<{ contact: Contact }> = ({ contact }) => {
 };
 
 export const ContactsPage: React.FC = () => {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const setView = useMailStore((s) => s.setView);
   const [q, setQ] = useState('');
@@ -45,7 +47,7 @@ export const ContactsPage: React.FC = () => {
     mutationFn: (id: string) => contactsApi.remove(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
-      toast('已刪除聯絡人');
+      toast(t('contacts.deleted'));
     },
   });
 
@@ -54,7 +56,7 @@ export const ContactsPage: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
       setEditing(null);
-      toast('已更新聯絡人');
+      toast(t('contacts.updated'));
     },
   });
 
@@ -70,11 +72,11 @@ export const ContactsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
       setCreating(false);
       setCreateForm({ email: '', displayName: '', note: '' });
-      toast(`已新增聯絡人：${c.displayName}`);
+      toast(t('contacts.added', { name: c.displayName }));
     },
     onError: (err: any) => {
       const msg = String(err?.message || err);
-      toast(/already exists/i.test(msg) ? '這個 email 已存在於通訊錄' : '新增失敗: ' + msg);
+      toast(/already exists/i.test(msg) ? t('contacts.exists') : t('contacts.addFailed', { error: msg }));
     },
   });
 
@@ -82,7 +84,7 @@ export const ContactsPage: React.FC = () => {
     e.preventDefault();
     const email = createForm.email.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-      toast('請輸入有效的 email 地址（例：name@example.com）');
+      toast(t('contacts.needEmail'));
       return;
     }
     createMutation.mutate();
@@ -100,15 +102,15 @@ export const ContactsPage: React.FC = () => {
       const res = await contactsApi.importContacts(file, importMode);
       setImportResult(res);
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
-      toast(`匯入完成：成功 ${res.saved}，略過 ${res.skipped.length}，無效 ${res.invalid}`);
+      toast(t('contacts.importDone', { saved: res.saved, skipped: res.skipped.length, invalid: res.invalid }));
     } catch (err: any) {
-      toast('匯入失敗: ' + (err?.message || String(err)));
+      toast(t('contacts.importFailed', { error: err?.message || String(err) }));
     }
     e.target.value = '';
   };
 
   const handleExport = (format: 'csv' | 'vcf') => {
-    contactsApi.exportContacts(format).catch((err: any) => toast('匯出失敗: ' + (err?.message || String(err))));
+    contactsApi.exportContacts(format).catch((err: any) => toast(t('contacts.exportFailed', { error: err?.message || String(err) })));
   };
 
   const openEdit = (c: Contact) => {
@@ -120,9 +122,9 @@ export const ContactsPage: React.FC = () => {
     try {
       await contactsApi.uploadAvatar(c.id, file);
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
-      toast('頭像已更新');
+      toast(t('contacts.avatarUpdated'));
     } catch (e: any) {
-      toast('頭像上傳失敗: ' + (e?.message || String(e)));
+      toast(t('contacts.avatarFailed', { error: e?.message || String(e) }));
     }
   };
 
@@ -133,32 +135,32 @@ export const ContactsPage: React.FC = () => {
           <ArrowLeft className="w-4 h-4" />
         </button>
         <Users className="w-5 h-5 text-blue-600" />
-        <h1 className="font-bold text-sm md:text-base flex-1">通訊錄</h1>
-        <span className="text-xs text-slate-400">{contacts?.length ?? 0} 位</span>
+        <h1 className="font-bold text-sm md:text-base flex-1">{t('contacts.title')}</h1>
+        <span className="text-xs text-slate-400">{t('contacts.count', { count: contacts?.length ?? 0 })}</span>
       </div>
 
       <div className="p-3 md:p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row gap-2 shrink-0">
         <form onSubmit={handleSearch} className="flex-1 flex gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-            <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="搜尋 email / 名稱 / 備註" className="w-full pl-9 pr-3 py-2 text-sm bg-slate-100 dark:bg-slate-800 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+            <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder={t('contacts.searchPlaceholder')} className="w-full pl-9 pr-3 py-2 text-sm bg-slate-100 dark:bg-slate-800 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
-          <button type="submit" className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold">搜尋</button>
+          <button type="submit" className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold">{t('common.search')}</button>
         </form>
         <div className="flex items-center gap-2">
           <button
             onClick={() => { setCreateForm({ email: '', displayName: '', note: '' }); setCreating(true); }}
             className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold"
           >
-            <UserPlus className="w-3.5 h-3.5" /> 新增
+            <UserPlus className="w-3.5 h-3.5" /> {t('common.add')}
           </button>
           <label className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 rounded-lg text-xs font-semibold cursor-pointer">
-            <Upload className="w-3.5 h-3.5" /> 匯入
+            <Upload className="w-3.5 h-3.5" /> {t('contacts.import')}
             <input type="file" accept=".csv,.vcf,.vcard" onChange={handleImport} className="hidden" />
           </label>
           <select value={importMode} onChange={(e) => setImportMode(e.target.value as any)} className="text-xs border rounded-lg px-1.5 py-2 bg-white dark:bg-slate-800">
-            <option value="skip">略過重複</option>
-            <option value="overwrite">覆蓋重複</option>
+            <option value="skip">{t('contacts.skipDuplicates')}</option>
+            <option value="overwrite">{t('contacts.overwriteDuplicates')}</option>
           </select>
           <div className="flex gap-1">
             <button onClick={() => handleExport('csv')} className="px-2.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold flex items-center gap-1"><Download className="w-3.5 h-3.5" />CSV</button>
@@ -169,18 +171,18 @@ export const ContactsPage: React.FC = () => {
 
       {importResult && (
         <div className="mx-3 mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center justify-between">
-          <span>匯入：成功 {importResult.saved}，略過 {importResult.skipped.length} ({importResult.skipped.slice(0,3).join(', ')}{importResult.skipped.length>3?'…':''})，無效 {importResult.invalid}</span>
+          <span>{t('contacts.importDetails', { saved: importResult.saved, skipped: importResult.skipped.length, list: importResult.skipped.slice(0,3).join(', '), more: importResult.skipped.length > 3 ? '…' : '', invalid: importResult.invalid })}</span>
           <button onClick={() => setImportResult(null)} className="p-1 hover:bg-amber-100 rounded"><X className="w-3.5 h-3.5" /></button>
         </div>
       )}
 
       <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
         {isLoading ? (
-          <div className="p-8 text-center text-xs text-slate-400">載入中...</div>
+          <div className="p-8 text-center text-xs text-slate-400">{t('common.loading')}</div>
         ) : !contacts || contacts.length === 0 ? (
           <div className="p-12 text-center text-slate-400 flex flex-col items-center gap-2">
             <UserPlus className="w-10 h-10 text-slate-300" />
-            <p className="text-xs">未有聯絡人 — 可用上面「新增」手動輸入 email，或匯入 CSV/vCard</p>
+            <p className="text-xs">{t('contacts.empty')}</p>
           </div>
         ) : (
           contacts.map((c) => (
@@ -192,7 +194,7 @@ export const ContactsPage: React.FC = () => {
                 {c.note && <div className="text-[11px] text-slate-400 truncate">{c.note}</div>}
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <label className="p-1.5 hover:bg-slate-200 rounded-lg cursor-pointer text-slate-500" title="上傳頭像">
+                <label className="p-1.5 hover:bg-slate-200 rounded-lg cursor-pointer text-slate-500" title={t('contacts.uploadAvatar')}>
                   <ImageIcon className="w-4 h-4" />
                   <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(e) => e.target.files?.[0] && handleAvatarUpload(c, e.target.files[0])} className="hidden" />
                 </label>
@@ -212,7 +214,7 @@ export const ContactsPage: React.FC = () => {
             className="w-full max-w-md bg-white dark:bg-slate-900 rounded-xl p-4 space-y-3 border border-slate-200 dark:border-slate-800 shadow-2xl"
           >
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm">新增聯絡人</h3>
+              <h3 className="font-bold text-sm">{t('contacts.addContact')}</h3>
               <button type="button" onClick={() => setCreating(false)} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400">
                 <X className="w-4 h-4" />
               </button>
@@ -224,30 +226,30 @@ export const ContactsPage: React.FC = () => {
               required
               value={createForm.email}
               onChange={(e) => setCreateForm((s) => ({ ...s, email: e.target.value }))}
-              placeholder="Email 地址 *"
+              placeholder={t('contacts.emailRequired')}
               className="w-full px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
             />
             <input
               value={createForm.displayName}
               onChange={(e) => setCreateForm((s) => ({ ...s, displayName: e.target.value }))}
-              placeholder="顯示名稱（可留空，會用 email）"
+              placeholder={t('contacts.displayNameHint')}
               className="w-full px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
             />
             <textarea
               value={createForm.note}
               onChange={(e) => setCreateForm((s) => ({ ...s, note: e.target.value }))}
-              placeholder="備註"
+              placeholder={t('contacts.notes')}
               className="w-full px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
               rows={2}
             />
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setCreating(false)} className="px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 rounded-lg">取消</button>
+              <button type="button" onClick={() => setCreating(false)} className="px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 rounded-lg">{t('common.cancel')}</button>
               <button
                 type="submit"
                 disabled={createMutation.isPending}
                 className="px-4 py-2 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50"
               >
-                {createMutation.isPending ? '新增中...' : '新增'}
+                {createMutation.isPending ? t('contacts.adding') : t('common.add')}
               </button>
             </div>
           </form>
@@ -257,13 +259,13 @@ export const ContactsPage: React.FC = () => {
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-xl p-4 space-y-3">
-            <h3 className="font-bold text-sm">編輯聯絡人</h3>
-            <input value={editForm.displayName} onChange={(e) => setEditForm((s) => ({ ...s, displayName: e.target.value }))} placeholder="顯示名稱" className="w-full px-3 py-2 text-sm border rounded-lg" />
+            <h3 className="font-bold text-sm">{t('contacts.editContact')}</h3>
+            <input value={editForm.displayName} onChange={(e) => setEditForm((s) => ({ ...s, displayName: e.target.value }))} placeholder={t('contacts.displayName')} className="w-full px-3 py-2 text-sm border rounded-lg" />
             <input value={editForm.email} onChange={(e) => setEditForm((s) => ({ ...s, email: e.target.value }))} placeholder="Email" className="w-full px-3 py-2 text-sm border rounded-lg" />
-            <textarea value={editForm.note} onChange={(e) => setEditForm((s) => ({ ...s, note: e.target.value }))} placeholder="備註" className="w-full px-3 py-2 text-sm border rounded-lg" rows={3} />
+            <textarea value={editForm.note} onChange={(e) => setEditForm((s) => ({ ...s, note: e.target.value }))} placeholder={t('contacts.notes')} className="w-full px-3 py-2 text-sm border rounded-lg" rows={3} />
             <div className="flex justify-end gap-2">
-              <button onClick={() => setEditing(null)} className="px-3 py-1.5 text-xs bg-slate-100 rounded-lg">取消</button>
-              <button onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg disabled:opacity-50">{updateMutation.isPending ? '儲存中...' : '儲存'}</button>
+              <button onClick={() => setEditing(null)} className="px-3 py-1.5 text-xs bg-slate-100 rounded-lg">{t('common.cancel')}</button>
+              <button onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg disabled:opacity-50">{updateMutation.isPending ? t('common.saving') : t('common.save')}</button>
             </div>
           </div>
         </div>

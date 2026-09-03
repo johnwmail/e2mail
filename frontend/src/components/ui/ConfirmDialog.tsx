@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle, X } from 'lucide-react';
+import { t, useI18n } from '../../i18n';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -15,15 +16,16 @@ interface ConfirmDialogProps {
 
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   isOpen,
-  title = '確認操作',
+  title = t('confirm.title'),
   message,
-  confirmText = '確認',
-  cancelText = '取消',
+  confirmText = t('common.confirm'),
+  cancelText = t('common.cancel'),
   danger = false,
   loading = false,
   onConfirm,
   onCancel,
 }) => {
+  useI18n();
   if (!isOpen) return null;
 
   return (
@@ -66,7 +68,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                 : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >
-            {loading ? '處理中...' : confirmText}
+            {loading ? t('common.processing') : confirmText}
           </button>
         </div>
       </div>

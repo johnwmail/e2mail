@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft,
   Plus,
   Pencil,
   Trash2,
@@ -17,6 +16,7 @@ import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { Account } from '../../types/api';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { useI18n } from '../../i18n';
 
 const emptyForm: AccountInput = {
   label: '',
@@ -45,6 +45,7 @@ const AccountsForm: React.FC<{
   existing?: Account | null;
   onDone: () => void;
 }> = ({ existing, onDone }) => {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const isEdit = !!existing;
   const [form, setForm] = useState<AccountInput>(
@@ -79,7 +80,7 @@ const AccountsForm: React.FC<{
 
   const handleTest = async () => {
     if (!form.imapHost || !form.smtpHost || !form.password) {
-      setError('請先填寫伺服器與密碼再測試連線');
+      setError(t('accounts.needTestFields'));
       return;
     }
     setTesting(true);
@@ -88,7 +89,7 @@ const AccountsForm: React.FC<{
       const res = await accountsApi.test(form);
       setTestResult(res);
     } catch (e: any) {
-      setError(e.message || '測試連線失敗');
+      setError(e.message || t('accounts.testFailed'));
     } finally {
       setTesting(false);
     }
@@ -107,7 +108,7 @@ const AccountsForm: React.FC<{
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       onDone();
     } catch (e: any) {
-      setError(e.message || '儲存失敗');
+      setError(e.message || t('accounts.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -117,91 +118,91 @@ const AccountsForm: React.FC<{
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className={labelCls}>帳號名稱 (label)</label>
-          <input className={inputCls} value={form.label} onChange={(e) => set('label', e.target.value)} placeholder="例如: 公司信箱" />
+          <label className={labelCls}>{t('accounts.label')}</label>
+          <input className={inputCls} value={form.label} onChange={(e) => set('label', e.target.value)} placeholder={t('accounts.labelPlaceholder')} />
         </div>
         <div>
-          <label className={labelCls}>Email 地址</label>
+          <label className={labelCls}>{t('accounts.email')}</label>
           <input className={inputCls} value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="user@example.com" required />
         </div>
       </div>
 
       <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
-        <div className="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">IMAP 伺服器</div>
+        <div className="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">{t('accounts.imap')}</div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={labelCls}>Host</label>
+            <label className={labelCls}>{t('accounts.host')}</label>
             <input className={inputCls} value={form.imapHost} onChange={(e) => set('imapHost', e.target.value)} required />
           </div>
           <div>
-            <label className={labelCls}>Port</label>
+            <label className={labelCls}>{t('accounts.port')}</label>
             <input type="number" className={inputCls} value={form.imapPort} onChange={(e) => set('imapPort', parseInt(e.target.value) || 993)} />
           </div>
         </div>
         <label className="flex items-center gap-2 mt-2 text-xs">
           <input type="checkbox" checked={form.imapUseTls} onChange={(e) => set('imapUseTls', e.target.checked)} className="w-4 h-4 rounded" />
-          使用 TLS (implicit)
+          {t('accounts.useTls')}
         </label>
         <label className="flex items-center gap-2 mt-1.5 text-xs">
           <input type="checkbox" checked={!!form.imapAllowInsecureTls} onChange={(e) => set('imapAllowInsecureTls', e.target.checked)} className="w-4 h-4 rounded" />
-          允許自簽憑證 (Allow insecure TLS)
+          {t('accounts.allowInsecure')}
         </label>
       </div>
 
       <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
-        <div className="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">SMTP 伺服器</div>
+        <div className="text-xs font-bold text-slate-600 dark:text-slate-300 mb-2">{t('accounts.smtp')}</div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={labelCls}>Host</label>
+            <label className={labelCls}>{t('accounts.host')}</label>
             <input className={inputCls} value={form.smtpHost} onChange={(e) => set('smtpHost', e.target.value)} required />
           </div>
           <div>
-            <label className={labelCls}>Port</label>
+            <label className={labelCls}>{t('accounts.port')}</label>
             <input type="number" className={inputCls} value={form.smtpPort} onChange={(e) => set('smtpPort', parseInt(e.target.value) || 587)} />
           </div>
         </div>
         <label className="flex items-center gap-2 mt-2 text-xs">
           <input type="checkbox" checked={form.smtpUseTls} onChange={(e) => set('smtpUseTls', e.target.checked)} className="w-4 h-4 rounded" />
-          使用 TLS
+          {t('accounts.useTlsSmtp')}
         </label>
         <label className="flex items-center gap-2 mt-1.5 text-xs">
           <input type="checkbox" checked={!!form.smtpAllowInsecureTls} onChange={(e) => set('smtpAllowInsecureTls', e.target.checked)} className="w-4 h-4 rounded" />
-          允許自簽憑證
+          {t('accounts.allowInsecure')}
         </label>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className={labelCls}>使用者名稱</label>
-          <input className={inputCls} value={form.username} onChange={(e) => set('username', e.target.value)} placeholder="通常=email" />
+          <label className={labelCls}>{t('accounts.username')}</label>
+          <input className={inputCls} value={form.username} onChange={(e) => set('username', e.target.value)} placeholder={t('accounts.usernamePlaceholder')} />
         </div>
         <div>
-          <label className={labelCls}>密碼 {isEdit ? '(留空=不變)' : ''}</label>
+          <label className={labelCls}>{t('accounts.password')} {isEdit ? t('accounts.passwordKeep') : ''}</label>
           <input type="password" className={inputCls} value={form.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••" required={!isEdit} />
         </div>
       </div>
 
       <details className="p-3 bg-amber-50/50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800/50">
-        <summary className="text-xs font-bold text-amber-800 dark:text-amber-300 cursor-pointer select-none">Sieve 過濾器 (ManageSieve) 進階設定 — 選填，留空=跟隨 IMAP 主機:4190</summary>
+        <summary className="text-xs font-bold text-amber-800 dark:text-amber-300 cursor-pointer select-none">{t('accounts.sieveAdvanced')}</summary>
         <div className="grid grid-cols-2 gap-3 mt-3">
           <div>
-            <label className={labelCls}>Sieve Host</label>
-            <input className={inputCls} value={form.sieveHost || ''} onChange={(e) => set('sieveHost', e.target.value as any)} placeholder={form.imapHost ? `${form.imapHost} (跟隨)` : '留空跟隨 IMAP'} />
+            <label className={labelCls}>{t('accounts.sieveHost')}</label>
+            <input className={inputCls} value={form.sieveHost || ''} onChange={(e) => set('sieveHost', e.target.value as any)} placeholder={form.imapHost ? t('accounts.sieveFollow', { host: form.imapHost }) : t('accounts.sieveFollowEmpty')} />
           </div>
           <div>
-            <label className={labelCls}>Sieve Port</label>
+            <label className={labelCls}>{t('accounts.sievePort')}</label>
             <input type="number" className={inputCls} value={form.sievePort || 4190} onChange={(e) => set('sievePort', (parseInt(e.target.value) || 4190) as any)} />
           </div>
         </div>
         <label className="flex items-center gap-2 mt-2 text-xs">
           <input type="checkbox" checked={!!form.sieveUseTls} onChange={(e) => set('sieveUseTls', e.target.checked as any)} className="w-4 h-4 rounded" />
-          使用 TLS (Sieve)
+          {t('accounts.useTlsSieve')}
         </label>
         <label className="flex items-center gap-2 mt-1.5 text-xs">
           <input type="checkbox" checked={!!form.sieveAllowInsecureTls} onChange={(e) => set('sieveAllowInsecureTls', e.target.checked as any)} className="w-4 h-4 rounded" />
-          允許自簽憑證 (Sieve)
+          {t('accounts.allowInsecureSieve')}
         </label>
-        <div className="text-[11px] text-slate-500 mt-2">提示：請確保 Sieve 主機可從 e2mail 連達。</div>
+        <div className="text-[11px] text-slate-500 mt-2">{t('accounts.sieveHint')}</div>
       </details>
 
       {testResult && (
@@ -219,17 +220,22 @@ const AccountsForm: React.FC<{
 
       <div className="flex items-center justify-end gap-2 pt-2">
         <button type="button" onClick={handleTest} disabled={testing} className="px-3 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 disabled:opacity-50 flex items-center gap-1.5">
-          {testing && <Loader2 className="w-3.5 h-3.5 animate-spin" />} 測試連線
+          {testing && <Loader2 className="w-3.5 h-3.5 animate-spin" />} {t('accounts.test')}
         </button>
         <button type="submit" disabled={saving} className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 flex items-center gap-1.5">
-          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} 儲存
+          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} {t('common.save')}
         </button>
       </div>
     </form>
   );
 };
 
-export const AccountsPage: React.FC = () => {
+interface AccountsPageProps {
+  embedded?: boolean;
+}
+
+export const AccountsPage: React.FC<AccountsPageProps> = ({ embedded = false }) => {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const { setView } = useMailStore();
   const activeAccount = useActiveAccount();
@@ -267,21 +273,23 @@ export const AccountsPage: React.FC = () => {
   const showForm = creating || editing;
 
   return (
-    <main className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 h-full overflow-hidden">
-      <div className="flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <button onClick={() => setView('mail')} className="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h1 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <Settings2 className="w-4 h-4 text-blue-600" />
-          帳號管理
-        </h1>
-      </div>
+    <main className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 h-full min-h-0 overflow-hidden">
+      {!embedded && (
+        <div className="flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+          <button onClick={() => setView('mail')} className="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition">
+            {t('common.back')}
+          </button>
+          <h1 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Settings2 className="w-4 h-4 text-blue-600" />
+            {t('accounts.title')}
+          </h1>
+        </div>
+      )}
 
       {showForm ? (
         <div className="flex-1 overflow-y-auto p-4 md:p-6 max-w-2xl w-full mx-auto">
           <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-4">
-            {creating ? '新增帳號' : `編輯帳號 — ${editing?.label || editing?.email}`}
+            {creating ? t('accounts.add') : t('accounts.edit', { name: editing?.label || editing?.email || '' })}
           </h2>
           <AccountsForm
             existing={editing || null}
@@ -297,13 +305,13 @@ export const AccountsPage: React.FC = () => {
             onClick={() => setCreating(true)}
             className="mb-4 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center gap-1.5 transition"
           >
-            <Plus className="w-4 h-4" /> 新增帳號
+            <Plus className="w-4 h-4" /> {t('accounts.add')}
           </button>
 
           {isLoading ? (
-            <div className="p-8 text-center text-xs text-slate-400">正在載入帳號...</div>
+            <div className="p-8 text-center text-xs text-slate-400">{t('accounts.loading')}</div>
           ) : (accounts?.length ?? 0) === 0 ? (
-            <div className="p-12 text-center text-slate-400 text-xs">未有帳號，請新增第一個帳號。</div>
+            <div className="p-12 text-center text-slate-400 text-xs">{t('accounts.empty')}</div>
           ) : (
             <div className="space-y-2 max-w-2xl">
               {accounts?.map((acc) => (
@@ -315,10 +323,10 @@ export const AccountsPage: React.FC = () => {
                     <div className="flex items-center gap-1.5 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
                       {acc.label || acc.email}
                       {acc.isDefault && (
-                        <span className="px-1.5 py-0.5 text-[9px] font-bold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 rounded">預設</span>
+                        <span className="px-1.5 py-0.5 text-[9px] font-bold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 rounded">{t('accounts.default')}</span>
                       )}
                       {activeAccount?.id === acc.id && (
-                        <span className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 rounded">使用中</span>
+                        <span className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 rounded">{t('accounts.active')}</span>
                       )}
                     </div>
                     <div className="text-xs text-slate-400 truncate">
@@ -330,7 +338,7 @@ export const AccountsPage: React.FC = () => {
                       onClick={() => setDefaultMutation.mutate(acc.id)}
                       disabled={acc.isDefault}
                       className="p-2 text-slate-500 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg disabled:opacity-30 transition"
-                      title="設為預設帳號"
+                      title={t('accounts.setDefault')}
                     >
                       <Star className={`w-4 h-4 ${acc.isDefault ? 'fill-amber-400 text-amber-400' : ''}`} />
                     </button>
@@ -340,7 +348,7 @@ export const AccountsPage: React.FC = () => {
                         setCreating(false);
                       }}
                       className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
-                      title="編輯"
+                      title={t('common.edit')}
                     >
                       <Pencil className="w-4 h-4" />
                     </button>
@@ -348,7 +356,7 @@ export const AccountsPage: React.FC = () => {
                       onClick={() => setAccountToDelete(acc)}
                       disabled={deletingId === acc.id || accounts?.length === 1}
                       className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg disabled:opacity-30 transition"
-                      title={accounts?.length === 1 ? '不能刪除最後一個帳號' : '刪除'}
+                      title={accounts?.length === 1 ? t('accounts.cannotDeleteLast') : t('common.delete')}
                     >
                       {deletingId === acc.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     </button>
@@ -362,9 +370,9 @@ export const AccountsPage: React.FC = () => {
 
       <ConfirmDialog
         isOpen={!!accountToDelete}
-        title="刪除帳號"
-        message={`確定要刪除帳號「${accountToDelete?.label || accountToDelete?.email}」嗎？此操作無法復原。`}
-        confirmText="刪除"
+        title={t('accounts.deleteTitle')}
+        message={t('accounts.deleteConfirm', { name: accountToDelete?.label || accountToDelete?.email || '' })}
+        confirmText={t('common.delete')}
         danger
         loading={!!deletingId}
         onConfirm={() => accountToDelete && handleDelete(accountToDelete)}

@@ -11,8 +11,15 @@ import { SieveRule } from '../../types/sieve';
 import { rulesToSieve, sieveToRules } from '../../utils/sieveGenerator';
 import { toast } from '../../stores/useToastStore';
 import ConfirmDialog from '../ui/ConfirmDialog';
+import { useI18n } from '../../i18n';
 
-export const SievePage: React.FC = () => {
+interface SievePageProps {
+  embedded?: boolean;
+  onOpenAccounts?: () => void;
+}
+
+export const SievePage: React.FC<SievePageProps> = ({ embedded = false, onOpenAccounts }) => {
+  const { t } = useI18n();
   const { setView } = useMailStore();
   const activeAccount = useActiveAccount();
   const accounts = useAuthStore((s) => s.session?.accounts ?? []);
@@ -88,11 +95,11 @@ export const SievePage: React.FC = () => {
     // LISTSCRIPTS 再返回去掉 .sieve 的名字；前端若自行補 .sieve 會變成 x.sieve.sieve
     const safe = raw.replace(/\.sieve$/i, '');
     if (!safe) {
-      toast('腳本名稱無效');
+      toast(t('sieve.invalidName'));
       return;
     }
     if (scripts?.some((s) => s.name === safe)) {
-      toast('已存在同名腳本');
+      toast(t('sieve.duplicateName'));
       return;
     }
     try {
@@ -102,9 +109,9 @@ export const SievePage: React.FC = () => {
       setSelectedScript(safe);
       setShowNewInput(false);
       setNewScriptName('');
-      toast('已建立腳本 ' + safe);
+      toast(t('sieve.created', { name: safe }));
     } catch (e: any) {
-      toast('建立失敗: ' + (e.message || e));
+      toast(t('sieve.createFailed', { error: e.message || e }));
     }
   };
 
@@ -118,10 +125,10 @@ export const SievePage: React.FC = () => {
       await sieveApi.remove(name, accountId);
       queryClient.invalidateQueries({ queryKey: ['sieveScripts', accountId] });
       setDeleteTarget(null);
-      toast('已刪除 ' + name);
+      toast(t('sieve.deleted', { name }));
       if (selectedScript === name) setSelectedScript('');
     } catch (e: any) {
-      toast('刪除失敗: ' + (e.message || e));
+      toast(t('sieve.deleteFailed', { error: e.message || e }));
     }
   };
 
@@ -129,9 +136,9 @@ export const SievePage: React.FC = () => {
     try {
       await sieveApi.activate(name, accountId);
       queryClient.invalidateQueries({ queryKey: ['sieveScripts', accountId] });
-      toast('已設為活動腳本：' + name);
+      toast(t('sieve.activated', { name }));
     } catch (e: any) {
-      toast('啟用失敗: ' + (e.message || e));
+      toast(t('sieve.activateFailed', { error: e.message || e }));
     }
   };
 
@@ -141,16 +148,20 @@ export const SievePage: React.FC = () => {
   };
 
   return (
-    <main className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 h-full overflow-hidden">
+    <main className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 h-full min-h-0 overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-        <button onClick={() => setView('mail')} className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h1 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <FileCode className="w-4 h-4 text-amber-600" />
-          過濾器 (Sieve)
-        </h1>
+        {!embedded && (
+          <button onClick={() => setView('mail')} className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+        )}
+        {!embedded && (
+          <h1 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <FileCode className="w-4 h-4 text-amber-600" />
+            {t('sieve.title')}
+          </h1>
+        )}
         <div className="ml-auto flex items-center gap-2">
           {accounts.length > 1 && (
             <select
@@ -163,26 +174,26 @@ export const SievePage: React.FC = () => {
               ))}
             </select>
           )}
-          <button onClick={handleRefresh} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg" title="重新整理">
+          <button onClick={handleRefresh} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg" title={t('common.refresh')}>
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
       {!accountId ? (
-        <div className="flex-1 flex items-center justify-center p-8 text-xs text-slate-400">請先選擇帳號</div>
+        <div className="flex-1 flex items-center justify-center p-8 text-xs text-slate-400">{t('sieve.pickAccount')}</div>
       ) : scriptsError ? (
         <div className="flex-1 flex flex-col items-center justify-center p-8 gap-3 text-center">
           <AlertTriangle className="w-10 h-10 text-amber-500" />
-          <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">無法連接 ManageSieve</div>
+          <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t('sieve.connectFailed')}</div>
           <div className="text-xs text-slate-500 max-w-md">
-            {(scriptsError as any)?.message || '此帳號暫不支援 Sieve 過濾器。請檢查伺服器是否已開啟 ManageSieve 或 Sieve 主機設定。'}
+            {(scriptsError as any)?.message || t('sieve.unsupported')}
           </div>
           <button
-            onClick={() => setView('accounts')}
+            onClick={() => onOpenAccounts ? onOpenAccounts() : setView('settings')}
             className="mt-2 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center gap-1.5"
           >
-            <Settings2 className="w-3.5 h-3.5" /> 前往帳號設定檢查 Sieve
+            <Settings2 className="w-3.5 h-3.5" /> {t('sieve.goAccounts')}
           </button>
         </div>
       ) : (
@@ -190,13 +201,13 @@ export const SievePage: React.FC = () => {
           {/* 左側：腳本列表 */}
           <div className="w-full lg:w-72 shrink-0 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col overflow-hidden max-h-[40vh] lg:max-h-none">
             <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">腳本</span>
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{t('sieve.scripts')}</span>
               <span className="text-[11px] text-slate-400">({scripts?.length ?? 0})</span>
               <button
                 onClick={() => setShowNewInput((v) => !v)}
                 className="ml-auto px-2 py-1 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1"
               >
-                <Plus className="w-3 h-3" /> 新增
+                <Plus className="w-3 h-3" /> {t('sieve.new')}
               </button>
             </div>
             {showNewInput && (
@@ -208,17 +219,17 @@ export const SievePage: React.FC = () => {
                   className="flex-1 px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button onClick={handleCreate} className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg">
-                  建立
+                  {t('sieve.create')}
                 </button>
               </div>
             )}
             <div className="flex-1 overflow-y-auto">
               {isLoading ? (
                 <div className="p-8 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> 載入中...
+                  <Loader2 className="w-4 h-4 animate-spin" /> {t('common.loading')}
                 </div>
               ) : (scripts?.length ?? 0) === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-400">尚無腳本，點擊「新增」建立第一個過濾器</div>
+                <div className="p-8 text-center text-xs text-slate-400">{t('sieve.empty')}</div>
               ) : (
                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {scripts?.map((s) => (
@@ -231,13 +242,13 @@ export const SievePage: React.FC = () => {
                       <span className={`flex-1 truncate text-xs ${selectedScript === s.name ? 'font-semibold text-blue-700 dark:text-blue-300' : 'text-slate-700 dark:text-slate-300'}`}>
                         {s.name}
                       </span>
-                      {s.active && <span className="px-1.5 py-0.5 text-[9px] font-bold bg-blue-600 text-white rounded">活動</span>}
+                      {s.active && <span className="px-1.5 py-0.5 text-[9px] font-bold bg-blue-600 text-white rounded">{t('sieve.active')}</span>}
                       <div className="flex items-center gap-1 shrink-0">
                         {!s.active && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleActivate(s.name); }}
                             className="p-1 text-slate-400 hover:text-emerald-600 rounded"
-                            title="設為活動"
+                            title={t('sieve.setActive')}
                           >
                             <CheckCircle2 className="w-4 h-4" />
                           </button>
@@ -245,7 +256,7 @@ export const SievePage: React.FC = () => {
                         <button
                           onClick={(e) => { e.stopPropagation(); setDeleteTarget(s.name); }}
                           className="p-1 text-slate-400 hover:text-red-600 rounded"
-                          title="刪除"
+                          title={t('common.delete')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -260,16 +271,16 @@ export const SievePage: React.FC = () => {
           {/* 右側：編輯區 */}
           <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50 dark:bg-slate-950">
             {!selectedScript ? (
-              <div className="h-full flex items-center justify-center text-xs text-slate-400">請選擇或建立一個腳本</div>
+              <div className="h-full flex items-center justify-center text-xs text-slate-400">{t('sieve.pickOrCreate')}</div>
             ) : !scriptContent ? (
               <div className="flex items-center justify-center p-12 text-xs text-slate-400 gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" /> 載入腳本...
+                <Loader2 className="w-4 h-4 animate-spin" /> {t('sieve.loadingScript')}
               </div>
             ) : (
               <>
                 {rawFallback && (
                   <div className="mb-3 px-3 py-2 rounded-lg text-xs bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
-                    <AlertTriangle className="w-4 h-4" /> 此腳本含進階語法，僅能在原始碼模式編輯
+                    <AlertTriangle className="w-4 h-4" /> {t('sieve.advancedSyntax')}
                   </div>
                 )}
                 <div className="flex items-center gap-1 p-1 bg-slate-200 dark:bg-slate-800 rounded-lg w-fit mb-4">
@@ -278,13 +289,13 @@ export const SievePage: React.FC = () => {
                     disabled={rawFallback}
                     className={`px-4 py-1.5 text-xs font-semibold rounded-md transition ${mode === 'rules' ? 'bg-white dark:bg-slate-900 shadow text-slate-900 dark:text-white' : 'text-slate-500 disabled:opacity-40'}`}
                   >
-                    規則模式
+                    {t('sieve.rulesMode')}
                   </button>
                   <button
                     onClick={() => setMode('raw')}
                     className={`px-4 py-1.5 text-xs font-semibold rounded-md transition ${mode === 'raw' ? 'bg-white dark:bg-slate-900 shadow text-slate-900 dark:text-white' : 'text-slate-500'}`}
                   >
-                    原始碼
+                    {t('sieve.sourceMode')}
                   </button>
                 </div>
 
@@ -297,7 +308,7 @@ export const SievePage: React.FC = () => {
                     onSaved={() => {
                       queryClient.invalidateQueries({ queryKey: ['sieveScripts', accountId] });
                       queryClient.invalidateQueries({ queryKey: ['sieveScript', accountId, selectedScript] });
-                      toast('已保存並重新載入');
+                      toast(t('sieve.savedReload'));
                     }}
                   />
                 ) : (
@@ -308,7 +319,7 @@ export const SievePage: React.FC = () => {
                     onSaved={() => {
                       queryClient.invalidateQueries({ queryKey: ['sieveScripts', accountId] });
                       queryClient.invalidateQueries({ queryKey: ['sieveScript', accountId, selectedScript] });
-                      toast('已保存');
+                      toast(t('sieve.saved'));
                     }}
                   />
                 )}
@@ -320,9 +331,9 @@ export const SievePage: React.FC = () => {
 
       <ConfirmDialog
         isOpen={!!deleteTarget}
-        title="刪除腳本"
-        message={`確定要刪除「${deleteTarget}」嗎？此操作無法復原。`}
-        confirmText="刪除"
+        title={t('sieve.deleteTitle')}
+        message={t('sieve.deleteConfirm', { name: deleteTarget || '' })}
+        confirmText={t('common.delete')}
         danger
         onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
         onCancel={() => setDeleteTarget(null)}

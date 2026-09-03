@@ -17,14 +17,16 @@ import { QRCodeSVG } from 'qrcode.react';
 import { twoFApi } from '../../api/2fa';
 import { authApi } from '../../api/auth';
 import { TwoFASetupResponse } from '../../types/api';
+import { useI18n } from '../../i18n';
 
 interface SecurityTabProps {
   sessionEmail?: string;
 }
 
 // ChangePasswordSection 經 ldapd 變更登入密碼（僅在伺服器 LDAP_ENABLED 時顯示）。
-// 設計見 repo 根目錄 LDAP.md：後端驗證舊密碼 → 改 ldapd → re-wrap 本地 DEK，當前 session 不會被登出。
+// 設計見 docs/LDAP.md：後端驗證舊密碼 → 改 ldapd → re-wrap 本地 DEK，當前 session 不會被登出。
 const ChangePasswordSection: React.FC = () => {
+  const { t } = useI18n();
   const [enabled, setEnabled] = useState(false);
   const [oldPw, setOldPw] = useState('');
   const [newPw, setNewPw] = useState('');
@@ -46,26 +48,26 @@ const ChangePasswordSection: React.FC = () => {
     e.preventDefault();
     setMsg(null);
     if (newPw.length < 8) {
-      setMsg({ type: 'error', text: '新密碼至少 8 個字元' });
+      setMsg({ type: 'error', text: t('security.needLength') });
       return;
     }
     if (newPw !== confirmPw) {
-      setMsg({ type: 'error', text: '新密碼與確認密碼不一致' });
+      setMsg({ type: 'error', text: t('security.mismatch') });
       return;
     }
     if (newPw === oldPw) {
-      setMsg({ type: 'error', text: '新密碼與舊密碼相同' });
+      setMsg({ type: 'error', text: t('security.sameAsOld') });
       return;
     }
     setSubmitting(true);
     try {
       await authApi.changePassword(oldPw, newPw, confirmPw);
-      setMsg({ type: 'success', text: '密碼已變更。你嘅加密資料已用新密碼重新包裝，目前登入不會被登出。' });
+      setMsg({ type: 'success', text: t('security.changed') });
       setOldPw('');
       setNewPw('');
       setConfirmPw('');
     } catch (err: any) {
-      setMsg({ type: 'error', text: err.message || '密碼變更失敗，請重試' });
+      setMsg({ type: 'error', text: err.message || t('security.changeFailed') });
     } finally {
       setSubmitting(false);
     }
@@ -78,10 +80,10 @@ const ChangePasswordSection: React.FC = () => {
     <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
       <div className="flex items-center gap-2">
         <Lock className="w-4 h-4 text-slate-500 shrink-0" />
-        <h4 className="text-sm font-bold text-slate-900 dark:text-white">變更登入密碼</h4>
+        <h4 className="text-sm font-bold text-slate-900 dark:text-white">{t('security.changePassword')}</h4>
       </div>
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        新密碼會同步到你郵件伺服器嘅 LDAP 帳戶（IMAP/SMTP 登入密碼會一併變更），並即時重新包裝你嘅本地加密資料。
+        {t('security.changePasswordHint')}
       </p>
 
       {msg && (
@@ -97,7 +99,7 @@ const ChangePasswordSection: React.FC = () => {
           ) : (
             <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
           )}
-          <span className="break-all">{msg.text}</span>
+          <span className="break-words min-w-0">{msg.text}</span>
         </div>
       )}
 
@@ -105,7 +107,7 @@ const ChangePasswordSection: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           <div>
             <label htmlFor="cp-old" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              舊密碼
+              {t('security.oldPassword')}
             </label>
             <input
               id="cp-old"
@@ -119,7 +121,7 @@ const ChangePasswordSection: React.FC = () => {
           </div>
           <div>
             <label htmlFor="cp-new" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              新密碼（至少 8 字）
+              {t('security.newPassword')}
             </label>
             <input
               id="cp-new"
@@ -134,7 +136,7 @@ const ChangePasswordSection: React.FC = () => {
           </div>
           <div>
             <label htmlFor="cp-confirm" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              確認新密碼
+              {t('security.confirmPassword')}
             </label>
             <input
               id="cp-confirm"
@@ -155,7 +157,7 @@ const ChangePasswordSection: React.FC = () => {
             className="flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50 w-full sm:w-auto"
           >
             {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
-            變更密碼
+            {t('security.change')}
           </button>
           <button
             type="button"
@@ -163,7 +165,7 @@ const ChangePasswordSection: React.FC = () => {
             className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition px-1 py-1 min-h-[40px] sm:min-h-0"
           >
             {showPw ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-            {showPw ? '隱藏密碼' : '顯示密碼'}
+            {showPw ? t('login.hidePassword') : t('login.showPassword')}
           </button>
         </div>
       </form>
@@ -172,6 +174,7 @@ const ChangePasswordSection: React.FC = () => {
 };
 
 export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<boolean | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -212,7 +215,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
     try {
       const secretToUse = useCustom ? customSecret.trim().toUpperCase() : undefined;
       if (useCustom && !secretToUse) {
-        setMsg({ type: 'error', text: '請輸入舊 2FA secret（MYOLD2FA...）' });
+        setMsg({ type: 'error', text: t('security.needOldSecret') });
         setLoading(false);
         return;
       }
@@ -221,7 +224,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
       setBackupCodes(null);
       setVerifyCode('');
     } catch (err: any) {
-      setMsg({ type: 'error', text: err.message || '無法開始設定兩步驟驗證' });
+      setMsg({ type: 'error', text: err.message || t('security.setupFailed') });
     } finally {
       setLoading(false);
     }
@@ -236,9 +239,9 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
       const res = await twoFApi.enable(setup.secret, verifyCode.trim());
       setBackupCodes(res.backupCodes);
       setStatus(true);
-      setMsg({ type: 'success', text: '兩步驟驗證已成功啟用！請立即保存下方備份碼。' });
+      setMsg({ type: 'success', text: t('security.enabled') });
     } catch (err: any) {
-      setMsg({ type: 'error', text: err.message || '驗證碼錯誤，請重試' });
+      setMsg({ type: 'error', text: err.message || t('security.codeError') });
     } finally {
       setLoading(false);
     }
@@ -254,9 +257,9 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
       setStatus(false);
       setActionCode('');
       setDisableMode(false);
-      setMsg({ type: 'success', text: '兩步驟驗證已停用。' });
+      setMsg({ type: 'success', text: t('security.disabled') });
     } catch (err: any) {
-      setMsg({ type: 'error', text: err.message || '驗證碼錯誤，請重試' });
+      setMsg({ type: 'error', text: err.message || t('security.codeError') });
     } finally {
       setLoading(false);
     }
@@ -272,9 +275,9 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
       setBackupCodes(res.backupCodes);
       setRegenerateMode(false);
       setActionCode('');
-      setMsg({ type: 'success', text: '備份碼已重新生成，舊碼即時作廢。請保存新備份碼！' });
+      setMsg({ type: 'success', text: t('security.codesRegen') });
     } catch (err: any) {
-      setMsg({ type: 'error', text: err.message || '驗證碼錯誤，請重試' });
+      setMsg({ type: 'error', text: err.message || t('security.codeError') });
     } finally {
       setLoading(false);
     }
@@ -310,7 +313,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
           ) : (
             <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
           )}
-          <span className="break-all">{msg.text}</span>
+          <span className="break-words min-w-0">{msg.text}</span>
         </div>
       )}
 
@@ -325,12 +328,11 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
             <div className="flex items-center gap-2 mb-2">
               <KeyRound className="w-4 h-4 text-emerald-600 shrink-0" />
               <span className="text-sm font-bold text-emerald-900 dark:text-emerald-200">
-                備份碼 (Backup Codes)
+                {t('security.backupCodesTitle')}
               </span>
             </div>
             <p className="text-[11px] text-emerald-800/80 dark:text-emerald-300 leading-relaxed mb-3">
-              每個備份碼只能使用一次。當你無法使用 Authenticator App 時可用它登入。
-              <span className="font-bold">請立即妥善保存</span>，關閉視窗後無法再查看。
+              {t('security.backupCodesOnce')}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {backupCodes.map((code) => (
@@ -347,14 +349,14 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
               className="mt-3 flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition"
             >
               {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? '已複製' : '複製全部備份碼'}
+              {copied ? t('common.copied') : t('security.copyCodes')}
             </button>
           </div>
           <button
             onClick={() => setBackupCodes(null)}
             className="text-xs text-slate-500 hover:text-sky-600 transition font-medium"
           >
-            我已保存備份碼，完成
+            {t('security.codesSaved')}
           </button>
         </div>
       ) : !status ? (
@@ -364,13 +366,13 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <Smartphone className="w-4 h-4 text-blue-600" />
-                掃描 QR Code 加入 Authenticator App
+                {t('security.scanQr')}
               </h4>
               <button
                 onClick={cancelSetup}
                 className="text-xs text-slate-500 hover:text-sky-600 transition font-medium"
               >
-                取消
+                {t('common.cancel')}
               </button>
             </div>
 
@@ -383,7 +385,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
               {/* 手動輸入 secret */}
               <div className="flex-1 w-full min-w-0 space-y-2">
                 <div className="text-[11px] text-slate-500 leading-relaxed">
-                  無法掃描？手動輸入以下密鑰到你的 Authenticator App：
+                  {t('security.cannotScan')}
                 </div>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 min-w-0 break-all px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono text-[11px] text-slate-700 dark:text-slate-200">
@@ -393,13 +395,13 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                     type="button"
                     onClick={() => setShowSecret(!showSecret)}
                     className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition"
-                    title={showSecret ? '隱藏密鑰' : '顯示密鑰'}
+                    title={showSecret ? t('security.hideSecret') : t('security.showSecret')}
                   >
                     {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  帳戶：{setup.account}（{setup.issuer}）
+{t('security.accountLabel', { account: setup.account, issuer: setup.issuer })}
                 </div>
               </div>
             </div>
@@ -407,7 +409,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
             {/* 驗證啟用 */}
             <form onSubmit={handleEnable} className="pt-1">
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                輸入 App 顯示嘅 6 位數驗證碼以確認
+                {t('security.enterCodeToEnable')}
               </label>
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
@@ -426,7 +428,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                   className="flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50 shrink-0"
                 >
                   {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-                  啟用兩步驟驗證
+                  {t('security.enable')}
                 </button>
               </div>
             </form>
@@ -438,14 +440,14 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
               <ShieldOff className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold text-slate-900 dark:text-white">
-                  兩步驟驗證未啟用
+                  {t('security.twoFaOff')}
                 </div>
                 <div className="text-[11px] text-slate-500 leading-relaxed mt-0.5">
-                  啟用後，每次登入除咗密碼仲需要 Authenticator App 嘅驗證碼，大幅提升帳號安全性。
+                  {t('security.twoFaOffHint')}
                 </div>
                 <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
                   <input type="checkbox" checked={useCustom} onChange={(e) => setUseCustom(e.target.checked)} className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600" />
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">沿用舊 2FA（手動輸入 MYOLD2FA secret）</span>
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{t('security.reuseOldManual')}</span>
                 </label>
                 {useCustom && (
                   <div className="mt-2">
@@ -453,10 +455,10 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                       type="text"
                       value={customSecret}
                       onChange={(e) => setCustomSecret(e.target.value.toUpperCase())}
-                      placeholder="MYOLD2FA...（A-Z2-7，至少16字元）"
+                      placeholder={t('security.customSecretPlaceholder')}
                       className="w-full px-3 py-2 text-xs font-mono tracking-widest bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    <div className="text-[10px] text-slate-400 mt-1">需為有效 base32，提交後仍需用 App 嘅 6 位碼驗證先會寫入 DB。</div>
+                    <div className="text-[10px] text-slate-400 mt-1">{t('security.customSecretHelp')}</div>
                   </div>
                 )}
               </div>
@@ -467,7 +469,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
               className="flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50 shrink-0 w-full"
             >
               {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-              {useCustom ? '使用舊 secret 產生 QR' : '啟用兩步驟驗證'}
+              {useCustom ? t('security.useOldSecret') : t('security.enable')}
             </button>
           </div>
         )
@@ -477,12 +479,12 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-emerald-50/70 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800/60">
             <div className="flex items-start gap-2.5 min-w-0">
               <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-              <div>
+              <div className="min-w-0">
                 <div className="text-sm font-bold text-emerald-900 dark:text-emerald-200">
-                  兩步驟驗證已啟用
+                  {t('security.twoFaOn')}
                 </div>
                 <div className="text-[11px] text-emerald-800/80 dark:text-emerald-300 leading-relaxed mt-0.5">
-                  登入時需輸入 Authenticator App 驗證碼或備份碼。
+                  {t('security.twoFaOnHint')}
                 </div>
               </div>
             </div>
@@ -491,7 +493,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
               className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg text-xs font-semibold transition border border-red-200 dark:border-red-900/60 shrink-0 w-full sm:w-auto"
             >
               <ShieldOff className="w-3.5 h-3.5" />
-              停用兩步驟驗證
+              {t('security.disable')}
             </button>
           </div>
 
@@ -502,7 +504,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
               className="p-4 border border-red-200 dark:border-red-900/60 rounded-xl bg-red-50/40 dark:bg-red-950/30 space-y-3"
             >
               <div className="text-xs text-red-800 dark:text-red-200 font-semibold">
-                輸入目前驗證碼以停用兩步驟驗證
+                {t('security.disableNeedCode')}
               </div>
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
@@ -512,7 +514,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                   inputMode="numeric"
                   value={actionCode}
                   onChange={(e) => setActionCode(e.target.value)}
-                  placeholder="6 位數驗證碼"
+                  placeholder={t('security.sixDigit')}
                   className="flex-1 px-3 py-2 text-sm text-center tracking-[0.3em] font-mono bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-red-400"
                 />
                 <div className="flex gap-2">
@@ -522,7 +524,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                     className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldOff className="w-3.5 h-3.5" />}
-                    確認停用
+                    {t('security.confirmDisableBtn')}
                   </button>
                   <button
                     type="button"
@@ -532,7 +534,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                     }}
                     className="px-3 py-2 text-xs text-slate-500 hover:text-slate-700 rounded-lg transition"
                   >
-                    取消
+                    {t('common.cancel')}
                   </button>
                 </div>
               </div>
@@ -546,7 +548,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
               className="p-4 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-800/60 space-y-3"
             >
               <div className="text-xs text-slate-700 dark:text-slate-200 font-semibold">
-                重新生成備份碼需驗證目前驗證碼（舊碼即時作廢）
+                {t('security.regenNeedCode')}
               </div>
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
@@ -556,7 +558,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                   inputMode="numeric"
                   value={actionCode}
                   onChange={(e) => setActionCode(e.target.value)}
-                  placeholder="6 位數驗證碼"
+                  placeholder={t('security.sixDigit')}
                   className="flex-1 px-3 py-2 text-sm text-center tracking-[0.3em] font-mono bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex gap-2">
@@ -566,7 +568,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                     className="flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
-                    確認生成
+                    {t('security.confirmRegenBtn')}
                   </button>
                   <button
                     type="button"
@@ -576,28 +578,28 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                     }}
                     className="px-3 py-2 text-xs text-slate-500 hover:text-slate-700 rounded-lg transition"
                   >
-                    取消
+                    {t('common.cancel')}
                   </button>
                 </div>
               </div>
             </form>
           ) : (
-            <div className="flex items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
-                <KeyRound className="w-4 h-4 text-slate-400 shrink-0" />
-                <div>
-                  <div className="font-semibold">備份碼</div>
-                  <div className="text-[11px] text-slate-400">
-                    用於無法使用 App 時嘅一次性登入碼（只顯示一次）
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div className="flex items-start sm:items-center gap-2 min-w-0 text-xs text-slate-700 dark:text-slate-200">
+                <KeyRound className="w-4 h-4 text-slate-400 shrink-0 mt-0.5 sm:mt-0" />
+                <div className="min-w-0">
+                  <div className="font-semibold">{t('security.backupCodesTitle')}</div>
+                  <div className="text-[11px] text-slate-400 leading-relaxed">
+                    {t('security.backupCodesOnceHint')}
                   </div>
                 </div>
               </div>
               <button
                 onClick={() => setRegenerateMode(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold transition shrink-0"
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 min-h-10 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold transition shrink-0 w-full sm:w-auto"
               >
                 <RefreshCcw className="w-3.5 h-3.5" />
-                重新生成
+                {t('security.regenerate')}
               </button>
             </div>
           )}

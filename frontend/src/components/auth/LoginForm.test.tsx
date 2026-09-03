@@ -33,8 +33,8 @@ describe('LoginForm', () => {
 
   it('renders the login form', () => {
     render(<LoginForm />);
-    expect(screen.getByRole('heading', { name: '登入 e2Mail' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '登入信箱' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Sign in to e2Mail' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
 
   it('shows error when submitting empty form', async () => {
@@ -42,7 +42,7 @@ describe('LoginForm', () => {
     const form = container.querySelector('form') as HTMLFormElement;
     expect(form).toBeTruthy();
     fireEvent.submit(form);
-    expect(await screen.findByText('請輸入電子郵件與密碼')).toBeInTheDocument();
+    expect(await screen.findByText('Please enter your email and password')).toBeInTheDocument();
     expect(mocks.login).not.toHaveBeenCalled();
   });
 
@@ -52,13 +52,13 @@ describe('LoginForm', () => {
     render(<LoginForm />);
     fireEvent.change(screen.getByPlaceholderText('user@example.com'), { target: { value: loginReq.email } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: loginReq.password } });
-    fireEvent.click(screen.getByRole('button', { name: '登入信箱' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     await waitFor(() => {
       expect(mocks.login).toHaveBeenCalledWith(loginReq);
     });
-    expect(await screen.findByText('兩步驟驗證 (2FA)')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '驗證並登入' })).toBeInTheDocument();
+    expect(await screen.findByText('Two-factor authentication (2FA)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Verify and sign in' })).toBeInTheDocument();
   });
 
   it('submits 2FA code via verify2fa', async () => {
@@ -68,11 +68,11 @@ describe('LoginForm', () => {
     render(<LoginForm />);
     fireEvent.change(screen.getByPlaceholderText('user@example.com'), { target: { value: loginReq.email } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: loginReq.password } });
-    fireEvent.click(screen.getByRole('button', { name: '登入信箱' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     const codeInput = await screen.findByPlaceholderText('••••••');
     fireEvent.change(codeInput, { target: { value: '123456' } });
-    fireEvent.click(screen.getByRole('button', { name: '驗證並登入' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Verify and sign in' }));
 
     await waitFor(() => {
       expect(mocks.verify2fa).toHaveBeenCalledWith('ch-1', '123456');
@@ -81,18 +81,18 @@ describe('LoginForm', () => {
 
   it('shows error and clears code on failed 2FA verification', async () => {
     mocks.login.mockResolvedValue({ requires2fa: true, challenge: 'ch-1' });
-    mocks.verify2fa.mockRejectedValue(new Error('驗證碼錯誤，請重試'));
+    mocks.verify2fa.mockRejectedValue(new Error('Invalid code. Try again.'));
 
     render(<LoginForm />);
     fireEvent.change(screen.getByPlaceholderText('user@example.com'), { target: { value: loginReq.email } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: loginReq.password } });
-    fireEvent.click(screen.getByRole('button', { name: '登入信箱' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     const codeInput = await screen.findByPlaceholderText('••••••');
     fireEvent.change(codeInput, { target: { value: '000000' } });
-    fireEvent.click(screen.getByRole('button', { name: '驗證並登入' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Verify and sign in' }));
 
-    expect(await screen.findByText('驗證碼錯誤，請重試')).toBeInTheDocument();
+    expect(await screen.findByText('Invalid code. Try again.')).toBeInTheDocument();
     const cleared = await screen.findByPlaceholderText('••••••');
     expect((cleared as HTMLInputElement).value).toBe('');
   });
@@ -103,12 +103,12 @@ describe('LoginForm', () => {
     render(<LoginForm />);
     fireEvent.change(screen.getByPlaceholderText('user@example.com'), { target: { value: loginReq.email } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: loginReq.password } });
-    fireEvent.click(screen.getByRole('button', { name: '登入信箱' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    fireEvent.click(await screen.findByRole('button', { name: '返回重新輸入帳號密碼' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to email and password' }));
 
-    expect(screen.getByRole('button', { name: '登入信箱' })).toBeInTheDocument();
-    expect(screen.queryByText('兩步驟驗證 (2FA)')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.queryByText('Two-factor authentication (2FA)')).not.toBeInTheDocument();
   });
 
   it('shows login error message', async () => {
@@ -117,7 +117,7 @@ describe('LoginForm', () => {
     render(<LoginForm />);
     fireEvent.change(screen.getByPlaceholderText('user@example.com'), { target: { value: loginReq.email } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: loginReq.password } });
-    fireEvent.click(screen.getByRole('button', { name: '登入信箱' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(await screen.findByText('IMAP authentication failed: bad creds')).toBeInTheDocument();
   });

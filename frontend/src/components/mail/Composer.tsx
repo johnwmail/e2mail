@@ -17,8 +17,10 @@ import { mailApi } from '../../api/mail';
 import { contactsApi } from '../../api/addressBook';
 import { pgpService } from '../../api/pgp';
 import { useQuery } from '@tanstack/react-query';
+import { useI18n } from '../../i18n';
 
 export const Composer: React.FC = () => {
+  const { t } = useI18n();
   const { isComposerOpen, composerDraft, closeComposer } = useMailStore();
   const activeAccount = useActiveAccount();
 
@@ -115,7 +117,7 @@ export const Composer: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!to.trim()) {
-      setError('請至少輸入一位收件人');
+      setError(t('composer.needRecipient'));
       return;
     }
 
@@ -123,7 +125,7 @@ export const Composer: React.FC = () => {
     if (enablePgpSign) {
       const myKeyPair = await pgpService.ensureKey();
       if (!myKeyPair) {
-        setError('請先在「PGP 金鑰設定」中生成或匯入你的私鑰才能進行數位簽名');
+        setError(t('composer.needPrivateKey'));
         return;
       }
       const isEncrypted = await pgpService.isPrivateKeyEncrypted(myKeyPair.privateKeyArmored);
@@ -159,7 +161,7 @@ export const Composer: React.FC = () => {
 
         // 若本地無公鑰，自動從線上 PGP Keyserver 搜尋
         if (!foundKey && enablePgpEncrypt) {
-          setStatusText(`正在自 PGP 金鑰伺服器 (keys.openpgp.org) 檢索 ${recipient} 的公鑰...`);
+          setStatusText(t('composer.fetchingKey', { recipient }));
           const onlineKey = await pgpService.fetchPublicKeyFromKeyserver(recipient);
           if (onlineKey) {
             await pgpService.saveContactKey(recipient, onlineKey);
@@ -175,21 +177,21 @@ export const Composer: React.FC = () => {
       if (enablePgpEncrypt) {
         if (recipientKeys.length === 0) {
           // 全部收件人都揾唔到公鑰（本地 + keys.openpgp.org 都冇）→ 唔可以 encrypt
-          setError(`以下收件人搵唔到 PGP 公鑰：${toList.join(', ')}。已檢查「聯絡人公鑰庫」同 online keyserver (keys.openpgp.org)，請確認對方有公開金鑰，或手動去「PGP 金鑰設定」加入。`);
+          setError(t('composer.missingKeys', { emails: toList.join(', ') }));
           setIsSending(false);
           setStatusText(null);
           return;
         }
         // 部分收件人冇公鑰 → encrypt 會令嗰啲人讀唔到
         if (recipientKeys.length < toList.length) {
-          setError(`有 ${toList.length - recipientKeys.length} 位收件人冇 PGP 公鑰（本地「聯絡人公鑰庫」同 online keyserver 都搵唔到）。為免佢哋睇唔到，請先確認齊晒公鑰先行發送。`);
+          setError(t('composer.someMissingKeys', { count: toList.length - recipientKeys.length }));
           setIsSending(false);
           setStatusText(null);
           return;
         }
       }
 
-      setStatusText('正在使用 PGP 金鑰加密信件內文...');
+      setStatusText(t('composer.encrypting'));
       try {
         finalBody = await pgpService.encrypt({
           text: body,
@@ -198,14 +200,14 @@ export const Composer: React.FC = () => {
           passphrase: passphraseToUse,
         });
       } catch (pgpErr: any) {
-        setError('PGP 加密/簽名失敗: ' + pgpErr.message);
+        setError(t('composer.pgpFailed', { error: pgpErr.message }));
         setIsSending(false);
         setStatusText(null);
         return;
       }
     }
 
-    setStatusText('正在透過 SMTP 發送郵件...');
+    setStatusText(t('composer.sending'));
     try {
       await mailApi.sendMessage({
         from: activeAccount?.email,
@@ -224,7 +226,7 @@ export const Composer: React.FC = () => {
       setShowSignPassModal(false);
       closeComposer();
     } catch (err: any) {
-      setError(err.message || '發送郵件失敗，請檢查 SMTP 設定或網路連線');
+      setError(err.message || t('composer.sendFailed'));
     } finally {
       setIsSending(false);
       setStatusText(null);
@@ -242,14 +244,14 @@ export const Composer: React.FC = () => {
       {/* 頂部標題列 */}
       <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white md:rounded-t-xl select-none shrink-0">
         <span className="text-sm font-semibold truncate">
-          {subject ? `寫信：${subject}` : '撰寫新郵件'}
+          {subject ? t('composer.composingSubject', { subject }) : t('composer.newMessage')}
         </span>
         <div className="flex items-center gap-1.5 text-slate-300">
           <button
             type="button"
             onClick={() => setIsMinimized(!isMinimized)}
             className="hidden md:block p-1 hover:text-white rounded hover:bg-slate-800 transition"
-            title={isMinimized ? '展開' : '最小化'}
+            title={isMinimized ? t('composer.expand') : t('composer.minimize')}
           >
             {isMinimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minus className="w-3.5 h-3.5" />}
           </button>
@@ -257,7 +259,7 @@ export const Composer: React.FC = () => {
             type="button"
             onClick={closeComposer}
             className="p-1 hover:text-white rounded hover:bg-slate-800 transition"
-            title="關閉"
+            title={t('composer.close')}
           >
             <X className="w-5 h-5 md:w-4 md:h-4" />
           </button>
@@ -281,7 +283,7 @@ export const Composer: React.FC = () => {
 
           {/* 收件人 */}
           <div className="relative flex items-center border-b border-slate-200 dark:border-slate-800 py-2">
-            <span className="text-xs text-slate-500 w-16 shrink-0 font-medium">收件人：</span>
+            <span className="text-xs text-slate-500 w-16 shrink-0 font-medium">{t('composer.toLabel')}</span>
             <input
               type="text"
               value={to}
@@ -333,7 +335,7 @@ export const Composer: React.FC = () => {
           {/* 副本 (Cc) */}
           {showCc && (
             <div className="relative flex items-center border-b border-slate-200 dark:border-slate-800 py-2">
-              <span className="text-xs text-slate-500 w-16 shrink-0 font-medium">副本：</span>
+              <span className="text-xs text-slate-500 w-16 shrink-0 font-medium">{t('composer.ccLabel')}</span>
               <input
                 type="text"
                 value={cc}
@@ -365,7 +367,7 @@ export const Composer: React.FC = () => {
           {/* 密件副本 (Bcc) */}
           {showBcc && (
             <div className="relative flex items-center border-b border-slate-200 dark:border-slate-800 py-2">
-              <span className="text-xs text-slate-500 w-16 shrink-0 font-medium">密件副本：</span>
+              <span className="text-xs text-slate-500 w-16 shrink-0 font-medium">{t('composer.bccLabel')}</span>
               <input
                 type="text"
                 value={bcc}
@@ -396,12 +398,12 @@ export const Composer: React.FC = () => {
 
           {/* 主旨 */}
           <div className="flex items-center border-b border-slate-200 dark:border-slate-800 py-2">
-            <span className="text-xs text-slate-500 w-16 shrink-0 font-medium">主旨：</span>
+            <span className="text-xs text-slate-500 w-16 shrink-0 font-medium">{t('composer.subjectLabel')}</span>
             <input
               type="text"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="輸入郵件主旨"
+              placeholder={t('composer.subjectPlaceholder')}
               className="flex-1 text-sm outline-none bg-transparent font-medium min-w-0"
             />
           </div>
@@ -435,7 +437,7 @@ export const Composer: React.FC = () => {
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="請在此輸入郵件內容..."
+            placeholder={t('composer.bodyPlaceholder')}
             className="flex-1 w-full p-2 my-2 text-sm outline-none resize-none bg-transparent leading-relaxed"
           />
 
@@ -461,10 +463,10 @@ export const Composer: React.FC = () => {
                     ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                     : 'text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
                 }`}
-                title="啟用 PGP 端到端加密（自動自本地或 keys.openpgp.org 獲取公鑰）"
+                title={t('composer.encryptTitle')}
               >
                 <Lock className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">PGP 加密</span>
+                <span className="hidden sm:inline">{t('composer.encrypt')}</span>
               </button>
 
               {/* PGP 簽名切換按鈕 */}
@@ -476,10 +478,10 @@ export const Composer: React.FC = () => {
                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                     : 'text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
                 }`}
-                title="啟用 PGP 數位簽名（需私鑰密碼）"
+                title={t('composer.signTitle')}
               >
                 <FileSignature className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">PGP 簽名</span>
+                <span className="hidden sm:inline">{t('composer.sign')}</span>
               </button>
             </div>
 
@@ -488,7 +490,7 @@ export const Composer: React.FC = () => {
                 type="button"
                 onClick={closeComposer}
                 className="p-2 text-slate-400 hover:text-red-600 rounded-lg transition"
-                title="捨棄草稿"
+                title={t('composer.discard')}
               >
                 <Trash2 className="w-5 h-5 md:w-4 md:h-4" />
               </button>
@@ -500,12 +502,12 @@ export const Composer: React.FC = () => {
                 {isSending ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    發送中...
+                    {t('composer.sendingBtn')}
                   </>
                 ) : (
                   <>
                     <Send className="w-4 h-4" />
-                    發送
+                    {t('composer.send')}
                   </>
                 )}
               </button>
@@ -520,11 +522,11 @@ export const Composer: React.FC = () => {
           <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-xl p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
             <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-white">
               <Key className="w-4 h-4 text-emerald-600" />
-              <span>輸入私鑰密碼以附加 PGP 簽名</span>
+              <span>{t('composer.passphraseTitle')}</span>
             </div>
 
             <p className="text-xs text-slate-500">
-              你的 PGP 私鑰受到密碼保護，請輸入 Passphrase 解鎖以完成數位簽名。
+              {t('composer.passphraseHint')}
             </p>
 
             <form
@@ -539,7 +541,7 @@ export const Composer: React.FC = () => {
                 required
                 value={signingPassphrase}
                 onChange={(e) => setSigningPassphrase(e.target.value)}
-                placeholder="輸入你的 PGP 私鑰密碼"
+                placeholder={t('composer.passphrasePlaceholder')}
                 className="w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                 autoFocus
               />
@@ -549,14 +551,14 @@ export const Composer: React.FC = () => {
                   onClick={() => setShowSignPassModal(false)}
                   className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-lg"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={isSending}
                   className="px-3.5 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold"
                 >
-                  {isSending ? '發送中...' : '確認簽名並發送'}
+                  {isSending ? t('composer.sendingBtn') : t('composer.confirmSignSend')}
                 </button>
               </div>
             </form>

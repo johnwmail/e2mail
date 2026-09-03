@@ -22,25 +22,7 @@ import { contactsApi } from '../../api/addressBook';
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { MessageSummary, FolderInfo, ThreadSummary, EmailAddress } from '../../types/api';
-
-const getFolderDisplayName = (folder: FolderInfo) => {
-  switch (folder.specialUse) {
-    case 'inbox':
-      return '收件箱';
-    case 'sent':
-      return '已發送';
-    case 'drafts':
-      return '草稿箱';
-    case 'trash':
-      return '垃圾桶';
-    case 'junk':
-      return '垃圾郵件';
-    case 'archive':
-      return '封存';
-    default:
-      return folder.name;
-  }
-};
+import { folderDisplayName, formatShortDate, useI18n } from '../../i18n';
 
 const ContactMiniAvatar: React.FC<{ contact: any }> = ({ contact }) => {
   const [url, setUrl] = useState<string | null>(null);
@@ -84,12 +66,13 @@ const formatDateShort = (dateStr: string) => {
   if (d.toDateString() === now.toDateString()) {
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
+  return formatShortDate(d);
 };
 
 const ThreadRow: React.FC<ThreadRowProps> = ({
   thread, contactMap, expanded, onToggle, selectedUIDs, onToggleSelect, activeUID, onOpen,
 }) => {
+  const { t } = useI18n();
   const memberUIDs = thread.messages.map((m) => m.uid);
   const allChecked = memberUIDs.length > 0 && memberUIDs.every((u) => selectedUIDs.includes(u));
   const newest = thread.messages.reduce((a, b) => (new Date(a.date) >= new Date(b.date) ? a : b), thread.messages[0]);
@@ -131,8 +114,8 @@ const ThreadRow: React.FC<ThreadRowProps> = ({
               onToggle();
             }}
             className="p-2 -m-1 shrink-0 text-slate-400 hover:text-slate-600"
-            title={expanded ? '收起對話' : '展開對話'}
-            aria-label={expanded ? '收起對話' : '展開對話'}
+            title={expanded ? t('mailList.collapseThread') : t('mailList.expandThread')}
+            aria-label={expanded ? t('mailList.collapseThread') : t('mailList.expandThread')}
           >
             {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </button>
@@ -150,7 +133,7 @@ const ThreadRow: React.FC<ThreadRowProps> = ({
             <span className="text-[11px] text-slate-400 shrink-0 font-mono">{formatDateShort(newest.date)}</span>
           </div>
           <div className={`truncate text-xs mt-0.5 ${thread.unreadCount > 0 ? 'font-semibold text-slate-800 dark:text-slate-100' : 'text-slate-600 dark:text-slate-400'}`}>
-            {thread.subject || '(無主旨)'}
+            {thread.subject || t('mailList.noSubject')}
           </div>
           <div className="flex items-center gap-1.5 text-[11px] text-slate-400 min-w-0 mt-0.5">
             {thread.hasAttachment && <Paperclip className="w-3 h-3 shrink-0" />}
@@ -295,6 +278,7 @@ function matchesLocalThread(thread: ThreadSummary, query: string): boolean {
 }
 
 export const MessageList: React.FC = () => {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const activeAccount = useActiveAccount();
   const accountId = activeAccount?.id;
@@ -629,7 +613,7 @@ export const MessageList: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
     },
     onError: (err: any) => {
-      setSwipeError(err?.message || '移動郵件失敗');
+      setSwipeError(err?.message || t('mailList.moveFailed'));
       setTimeout(() => setSwipeError(null), 3000);
     },
   });
@@ -807,18 +791,6 @@ export const MessageList: React.FC = () => {
     flagMutation.mutate({ uids: [msg.uid], flags: ['\\Flagged'], op });
   };
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return '';
-    const d = new Date(dateStr);
-    const now = new Date();
-    if (d.toDateString() === now.toDateString()) {
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-    const month = d.getMonth() + 1;
-    const day = d.getDate();
-    return `${month}月${day}日`;
-  };
-
   const messages = data?.messages || [];
   const threads = useMemo(() => data?.threads || [], [data]);
   const totalPages = data?.totalPages || 1;
@@ -888,10 +860,10 @@ export const MessageList: React.FC = () => {
                 setSelectedUIDs([]);
               }}
               className="flex items-center gap-1 p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition"
-              title="完成 / 退出多選"
+              title={t('mailList.doneMulti')}
             >
               <X className="w-4 h-4" />
-              <span className="text-xs font-semibold">完成</span>
+              <span className="text-xs font-semibold">{t('common.confirm')}</span>
             </button>
           ) : (
             <input
@@ -920,7 +892,7 @@ export const MessageList: React.FC = () => {
                   })
                 }
                 className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-slate-200/60 rounded-lg transition"
-                title="標記為已讀"
+                title={t('mailList.markRead')}
               >
                 <MailCheck className="w-4 h-4" />
               </button>
@@ -933,14 +905,14 @@ export const MessageList: React.FC = () => {
                   })
                 }
                 className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-slate-200/60 rounded-lg transition"
-                title="標記為未讀"
+                title={t('mailList.markUnread')}
               >
                 <Mail className="w-4 h-4" />
               </button>
               <button
                 onClick={() => deleteMutation.mutate(selectedUIDs)}
                 className="p-1.5 text-slate-600 hover:text-red-600 hover:bg-slate-200/60 rounded-lg transition"
-                title="刪除所選"
+                title={t('mailList.deleteSelected')}
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -953,24 +925,24 @@ export const MessageList: React.FC = () => {
                   }
                 }}
                 className="max-w-[120px] text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-1.5 py-1 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 outline-none"
-                title="移動到資料夾"
+                title={t('mailList.moveToFolder')}
                 disabled={moveMutation.isPending}
               >
                 <option value="" disabled>
-                  {moveMutation.isPending ? '移動中...' : '移動到…'}
+                  {moveMutation.isPending ? t('mailList.moving') : t('mailList.moveTo')}
                 </option>
                 {folders
                   ?.filter((f) => f.name !== currentFolder)
                   .map((f) => (
                     <option key={f.name} value={f.name}>
-                      {getFolderDisplayName(f)}
+                      {folderDisplayName(f.name, f.specialUse)}
                     </option>
                   ))}
               </select>
             </div>
           ) : (
             <span className="text-xs font-medium text-slate-500 truncate">
-              {resultCount ? (threadMode ? `共 ${resultCount} 個對話` : `共 ${resultCount} 封`) : (threadMode ? '對話清單' : '信件清單')}
+              {resultCount ? (threadMode ? t('mailList.threadCount', { count: resultCount }) : t('mailList.messageCount', { count: resultCount })) : (threadMode ? t('mailList.conversations') : t('mailList.messages'))}
             </span>
           )}
         </div>
@@ -997,7 +969,7 @@ export const MessageList: React.FC = () => {
           <button
             onClick={() => refetch()}
             className={`p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg ${isFetching ? 'animate-spin' : ''}`}
-            title="重新整理"
+            title={t('common.refresh')}
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -1009,13 +981,13 @@ export const MessageList: React.FC = () => {
         <div className="px-3.5 py-2 border-b border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-950/30 flex items-center gap-2 shrink-0 text-xs text-blue-800 dark:text-blue-200">
           <Search className="w-3.5 h-3.5 shrink-0" />
           <span className="truncate flex-1 min-w-0">
-             搜尋「{searchInput.trim() || searchQuery}」— <b>{resultCount}</b> 個結果
+             {t('mailList.searchResults', { query: searchInput.trim() || searchQuery, count: resultCount })}
           </span>
           <button
             onClick={() => clearSearch()}
             className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/50 transition shrink-0"
-            title="清除搜尋"
-            aria-label="清除搜尋"
+            title={t('mailList.clearSearch')}
+            aria-label={t('mailList.clearSearch')}
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -1030,18 +1002,18 @@ export const MessageList: React.FC = () => {
         className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/80 w-full min-w-0 overscroll-contain"
       >
         {isLoading ? (
-          <div className="p-8 text-center text-xs text-slate-400">正在讀取信件...</div>
+          <div className="p-8 text-center text-xs text-slate-400">{t('mailList.loading')}</div>
         ) : threadMode ? (
           displayThreads.length === 0 ? (
             <div className="p-12 text-center text-slate-400 flex flex-col items-center">
               <MessagesSquare className="w-12 h-12 stroke-1 mb-2 text-slate-300 dark:text-slate-700" />
-              <p className="text-xs">{searchInput.trim() ? '沒有符合搜尋嘅對話' : '此資料夾沒有對話'}</p>
+              <p className="text-xs">{searchInput.trim() ? t('mailList.noMatchingThreads') : t('mailList.noThreads')}</p>
             </div>
           ) : (
-            displayThreads.map((t) => {
-              const tUids = t.messages.map((m) => m.uid);
+            displayThreads.map((thread) => {
+              const tUids = thread.messages.map((m) => m.uid);
               return (
-                <div key={t.threadId} className="relative overflow-hidden w-full">
+                <div key={thread.threadId} className="relative overflow-hidden w-full">
                   {/* 揭示按鈕層 — 向左滑揭露（右邊：垃圾桶 + 垃圾郵件[若存在]） */}
                   <div className="absolute inset-y-0 right-0 flex">
                     <button
@@ -1052,7 +1024,7 @@ export const MessageList: React.FC = () => {
                       className="w-[80px] bg-red-500 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold h-full"
                     >
                       <Trash2 className="w-5 h-5" />
-                      垃圾桶
+                      {t('folders.trash')}
                     </button>
                     {junkFolder && (
                       <button
@@ -1063,7 +1035,7 @@ export const MessageList: React.FC = () => {
                         className="w-[80px] bg-orange-500 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold h-full"
                       >
                         <AlertOctagon className="w-5 h-5" />
-                        垃圾郵件
+                        {t('folders.junk')}
                       </button>
                     )}
                   </div>
@@ -1072,13 +1044,13 @@ export const MessageList: React.FC = () => {
                   <div className="absolute inset-y-0 left-0 flex">
                     <button
                       onClick={() => {
-                        flagMutation.mutate({ uids: tUids, flags: ['\\Seen'], op: t.unreadCount > 0 ? 'add' : 'remove' });
+                        flagMutation.mutate({ uids: tUids, flags: ['\\Seen'], op: thread.unreadCount > 0 ? 'add' : 'remove' });
                         clearThreadSwipe();
                       }}
                       className="w-[80px] bg-blue-500 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold h-full"
                     >
                       <MailCheck className="w-5 h-5" />
-                      {t.unreadCount > 0 ? '已讀' : '未讀'}
+                      {thread.unreadCount > 0 ? t('mailList.read') : t('mailList.unread')}
                     </button>
                   </div>
 
@@ -1088,22 +1060,22 @@ export const MessageList: React.FC = () => {
                     style={{
                       touchAction: isMultiSelect ? 'none' : 'pan-y',
                       transform:
-                        draggingThreadId === t.threadId ||
-                        (swipedThreadId === t.threadId && draggingThreadId === null)
+                        draggingThreadId === thread.threadId ||
+                        (swipedThreadId === thread.threadId && draggingThreadId === null)
                           ? `translateX(${threadSwipeOffset}px)`
                           : 'translateX(0)',
-                      transition: draggingThreadId === t.threadId ? 'none' : 'transform 0.2s ease',
+                      transition: draggingThreadId === thread.threadId ? 'none' : 'transform 0.2s ease',
                     }}
-                    onTouchStart={handleThreadTouchStart(t)}
-                    onTouchMove={handleThreadTouchMove(t)}
-                    onTouchEnd={handleThreadTouchEnd(t)}
+                    onTouchStart={handleThreadTouchStart(thread)}
+                    onTouchMove={handleThreadTouchMove(thread)}
+                    onTouchEnd={handleThreadTouchEnd(thread)}
                     onContextMenu={(e) => e.preventDefault()}
                   >
                     <ThreadRow
-                      thread={t}
+                      thread={thread}
                       contactMap={contactMap}
-                      expanded={expandedThreads.has(t.threadId)}
-                      onToggle={() => toggleThread(t.threadId)}
+                      expanded={expandedThreads.has(thread.threadId)}
+                      onToggle={() => toggleThread(thread.threadId)}
                       selectedUIDs={selectedUIDs}
                       onToggleSelect={toggleThreadSelect}
                       activeUID={selectedUID}
@@ -1125,17 +1097,17 @@ export const MessageList: React.FC = () => {
             <Inbox className="w-12 h-12 stroke-1 mb-2 text-slate-300 dark:text-slate-700" />
             <p className="text-xs">
               {searchInput.trim()
-                ? '沒有符合搜尋嘅郵件'
+                ? t('mailList.noMatchingMessages')
                 : isUnreadView
-                  ? '冇未讀郵件，全部睇完晒'
-                  : '此資料夾沒有郵件'}
+                  ? t('mailList.noUnread')
+                  : t('mailList.noMessages')}
             </p>
           </div>
         ) : (
           displayMessages.map((msg, index) => {
             const isSelected = selectedUID === msg.uid;
             const isChecked = selectedUIDs.includes(msg.uid);
-            const fromName = msg.from?.[0]?.name || msg.from?.[0]?.address || '未知寄件者';
+            const fromName = msg.from?.[0]?.name || msg.from?.[0]?.address || t('mailList.unknownSender');
 
             return (
               <div
@@ -1153,7 +1125,7 @@ export const MessageList: React.FC = () => {
                     className="w-[80px] bg-red-500 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold h-full"
                   >
                     <Trash2 className="w-5 h-5" />
-                    垃圾桶
+                    {t('folders.trash')}
                   </button>
                   {junkFolder && (
                     <button
@@ -1165,7 +1137,7 @@ export const MessageList: React.FC = () => {
                       className="w-[80px] bg-orange-500 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold h-full"
                     >
                       <AlertOctagon className="w-5 h-5" />
-                      垃圾郵件
+                      {t('folders.junk')}
                     </button>
                   )}
                 </div>
@@ -1181,7 +1153,7 @@ export const MessageList: React.FC = () => {
                     className="w-[80px] bg-blue-500 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold h-full"
                   >
                     <MailCheck className="w-5 h-5" />
-                    {msg.unread ? '已讀' : '未讀'}
+                    {msg.unread ? t('mailList.read') : t('mailList.unread')}
                   </button>
                 </div>
 
@@ -1259,7 +1231,7 @@ export const MessageList: React.FC = () => {
                       </span>
                     </div>
                     <span className="text-[11px] text-slate-400 shrink-0 ml-2 font-mono">
-                      {formatDate(msg.date)}
+                      {formatDateShort(msg.date)}
                     </span>
                   </div>
 
@@ -1270,13 +1242,13 @@ export const MessageList: React.FC = () => {
                         : 'text-slate-600 dark:text-slate-400'
                     }`}
                   >
-                    {msg.subject || '(無主旨)'}
+                    {msg.subject || t('mailList.noSubject')}
                   </div>
 
                   {isUnreadView && msg.folder && (
                     <div className="mb-1 flex items-center gap-1">
                       <FolderInput className="w-3 h-3 text-slate-400 shrink-0" />
-                      <span className="text-[10px] text-slate-400 truncate">{msg.folder}</span>
+                      <span className="text-[10px] text-slate-400 truncate">{folderDisplayName(msg.folder)}</span>
                     </div>
                   )}
 

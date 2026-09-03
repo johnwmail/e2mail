@@ -2,7 +2,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from './App';
+import { applyDocumentLang } from './i18n';
 import './index.css';
+
+applyDocumentLang();
 
 const queryClient = new QueryClient({
   defaultOptions: {

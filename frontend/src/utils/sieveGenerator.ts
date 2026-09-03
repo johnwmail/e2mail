@@ -620,7 +620,7 @@ class Parser {
       }
       if (t.k === 'word' && t.v === 'if') {
         const nameMatch = /rule:\s*\[?([^\]]+)\]?/i.exec(lastComment || '');
-        const name = nameMatch ? nameMatch[1].trim() : `規則 ${rules.length + 1}`;
+        const name = nameMatch ? nameMatch[1].trim() : `Rule ${rules.length + 1}`;
         lastComment = '';
         this.next(); // consume 'if'
         const expr = this.parseTestEntry();
@@ -657,7 +657,7 @@ class Parser {
         if (!cmd) break;
         rules.push({
           id: uid(),
-          name: '無條件動作',
+          name: 'Unconditional actions',
           enabled: true,
           conditionJoin: 'allof',
           conditions: [],

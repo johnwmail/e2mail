@@ -589,7 +589,7 @@ const (
 )
 
 // ChangePassword 將新密碼寫入 OpenBSD ldapd（rootdn Modify userPassword={SSHA}），
-// 再同步 re-wrap 本地 DEK 與 LDAP 身分帳號嘅儲存密碼。順序與回滾設計見 LDAP.md：
+// 再同步 re-wrap 本地 DEK 與 LDAP 身分帳號嘅儲存密碼。順序與回滾設計見 docs/LDAP.md：
 // self-bind 驗證舊密 → 預算本地新值 → LDAP 改密 → 本地寫入（失敗即回滾 LDAP）。
 // Session DEK 由 server key 加密，故改密成功後當前 session 繼續有效（不強制登出）。
 //nolint:gocyclo // 密碼變更流程含多段校驗與回滾分支，拆分會降低可讀性；複雜度與 address_contacts 匯入邏輯同級

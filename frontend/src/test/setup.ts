@@ -1,10 +1,14 @@
 import '@testing-library/jest-dom';
 import { afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
+import { setLocale } from '../i18n';
+
+setLocale('en');
 
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  setLocale('en');
   vi.restoreAllMocks();
 });
 
