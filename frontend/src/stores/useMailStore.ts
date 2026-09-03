@@ -15,7 +15,7 @@ interface MailState {
   composerDraft: Partial<OutgoingMessage> | null;
   composerKey: number;
   isSidebarOpen: boolean;
-  view: 'mail' | 'accounts' | 'contacts';
+  view: 'mail' | 'accounts' | 'contacts' | 'sieve';
   inboxUnread: number;
   listMode: 'messages' | 'threads';
 
@@ -32,7 +32,7 @@ interface MailState {
   closeComposer: () => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
-  setView: (view: 'mail' | 'accounts' | 'contacts') => void;
+  setView: (view: 'mail' | 'accounts' | 'contacts' | 'sieve') => void;
   setInboxUnread: (n: number) => void;
   setListMode: (mode: 'messages' | 'threads') => void;
 }
@@ -87,16 +87,16 @@ export const useMailStore = create<MailState>((set) => ({
 
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
 
-  setView: (view) => set({ view }),
+  setView: (view) => set({ view, isSidebarOpen: false }),
 
   setInboxUnread: (n) => set({ inboxUnread: n }),
 
   setListMode: (mode) => {
     localStorage.setItem('webmail_list_mode', mode);
     set({ listMode: mode, page: 1, selectedUID: null, selectedFolder: null });
-    // 同步到 DB（後台，失敗唔阻塞 UI）
-    void import('../api/prefs').then(({ prefsApi }) =>
-      prefsApi.set('listMode', mode).catch(() => {})
-    );
+    // 同步到 DB（後台，失敗唔阻塞 UI）；加 catch 處理 import 於測試環境 teardown 時之錯誤
+    void import('../api/prefs')
+      .then(({ prefsApi }) => prefsApi.set('listMode', mode).catch(() => {}))
+      .catch(() => {});
   },
 }));

@@ -22,6 +22,7 @@ func NewRouter(
 	prefsH *handler.PrefsHandler,
 	configH *handler.ServerConfigHandler,
 	accountsH *handler.AccountsHandler,
+	sieveH *handler.SieveHandler,
 	store session.Store,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -135,6 +136,18 @@ func NewRouter(
 			protected.Route("/prefs", func(prefs chi.Router) {
 				prefs.Get("/{key}", prefsH.GetPref)
 				prefs.Put("/{key}", prefsH.SetPref)
+			})
+
+			// ManageSieve 過濾器管理（每帳號獨立，Dovecot Pigeonhole）
+			protected.Route("/sieve", func(sieve chi.Router) {
+				sieve.Get("/capability", sieveH.Capability)
+				sieve.Get("/scripts", sieveH.ListScripts)
+				sieve.Get("/scripts/{name}", sieveH.GetScript)
+				sieve.Put("/scripts/{name}", sieveH.PutScript)
+				sieve.Delete("/scripts/{name}", sieveH.DeleteScript)
+				sieve.Post("/scripts/{name}/activate", sieveH.SetActive)
+				sieve.Post("/scripts/deactivate", sieveH.Deactivate)
+				sieve.Post("/check", sieveH.CheckScript)
 			})
 		})
 	})

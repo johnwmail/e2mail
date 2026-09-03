@@ -27,11 +27,15 @@ func (h *ServerConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.cfg != nil && h.cfg.HasDefaults() {
 		resp["defaults"] = map[string]any{
-			"imapHost":         h.cfg.DefaultIMAPHost,
-			"imapPort":         h.cfg.DefaultIMAPPort,
-			"smtpHost":         h.cfg.DefaultSMTPHost,
-			"smtpPort":         h.cfg.DefaultSMTPPort,
-			"allowInsecureTls": h.cfg.DefaultAllowInsecureTLS,
+			"imapHost":              h.cfg.DefaultIMAPHost,
+			"imapPort":              h.cfg.DefaultIMAPPort,
+			"smtpHost":              h.cfg.DefaultSMTPHost,
+			"smtpPort":              h.cfg.DefaultSMTPPort,
+			"allowInsecureTls":      h.cfg.DefaultAllowInsecureTLS,
+			"sieveHost":             h.cfg.DefaultSieveHost,
+			"sievePort":             h.cfg.DefaultSievePort,
+			"sieveUseTls":           h.cfg.DefaultSieveUseTLS,
+			"sieveAllowInsecureTls": h.cfg.DefaultSieveAllowInsecureTLS,
 		}
 	}
 	response.Success(w, resp)

@@ -24,6 +24,7 @@ import {
   Loader2,
   Users,
   MailOpen,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { accountsApi } from '../../api/accounts';
@@ -476,6 +477,18 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* 過濾器入口 */}
+      <button
+        onClick={() => {
+          setView('sieve');
+          setSidebarOpen(false);
+        }}
+        className="w-full flex items-center gap-2 p-2.5 bg-amber-50/80 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-900/40 text-amber-900 dark:text-amber-200 rounded-xl text-xs font-semibold transition border border-amber-200/60 dark:border-amber-800/50"
+      >
+        <SlidersHorizontal className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+        <span>過濾器</span>
+      </button>
 
       {/* 通訊錄入口 */}
       <button

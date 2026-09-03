@@ -29,6 +29,10 @@ const emptyForm: AccountInput = {
   smtpPort: 587,
   smtpUseTls: true,
   smtpAllowInsecureTls: false,
+  sieveHost: '',
+  sievePort: 4190,
+  sieveUseTls: true,
+  sieveAllowInsecureTls: false,
   username: '',
   password: '',
 };
@@ -56,6 +60,10 @@ const AccountsForm: React.FC<{
           smtpPort: existing.smtpPort,
           smtpUseTls: existing.smtpUseTls,
           smtpAllowInsecureTls: existing.smtpAllowInsecureTls,
+          sieveHost: (existing as any).sieveHost || '',
+          sievePort: (existing as any).sievePort || 4190,
+          sieveUseTls: (existing as any).sieveUseTls ?? true,
+          sieveAllowInsecureTls: (existing as any).sieveAllowInsecureTls || false,
           username: existing.username,
           password: '',
         }
@@ -172,6 +180,29 @@ const AccountsForm: React.FC<{
           <input type="password" className={inputCls} value={form.password} onChange={(e) => set('password', e.target.value)} placeholder="••••••••" required={!isEdit} />
         </div>
       </div>
+
+      <details className="p-3 bg-amber-50/50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800/50">
+        <summary className="text-xs font-bold text-amber-800 dark:text-amber-300 cursor-pointer select-none">Sieve 過濾器 (ManageSieve) 進階設定 — 選填，留空=跟隨 IMAP 主機:4190</summary>
+        <div className="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label className={labelCls}>Sieve Host</label>
+            <input className={inputCls} value={form.sieveHost || ''} onChange={(e) => set('sieveHost', e.target.value as any)} placeholder={form.imapHost ? `${form.imapHost} (跟隨)` : '留空跟隨 IMAP'} />
+          </div>
+          <div>
+            <label className={labelCls}>Sieve Port</label>
+            <input type="number" className={inputCls} value={form.sievePort || 4190} onChange={(e) => set('sievePort', (parseInt(e.target.value) || 4190) as any)} />
+          </div>
+        </div>
+        <label className="flex items-center gap-2 mt-2 text-xs">
+          <input type="checkbox" checked={!!form.sieveUseTls} onChange={(e) => set('sieveUseTls', e.target.checked as any)} className="w-4 h-4 rounded" />
+          使用 TLS (Sieve)
+        </label>
+        <label className="flex items-center gap-2 mt-1.5 text-xs">
+          <input type="checkbox" checked={!!form.sieveAllowInsecureTls} onChange={(e) => set('sieveAllowInsecureTls', e.target.checked as any)} className="w-4 h-4 rounded" />
+          允許自簽憑證 (Sieve)
+        </label>
+        <div className="text-[11px] text-slate-500 mt-2">提示：你的 Dovecot 若僅監聽 127.0.0.1:4190，Sieve 主機需設為可從 e2mail 容器連達之主機名或 IP，或將 Dovecot 改為 0.0.0.0。</div>
+      </details>
 
       {testResult && (
         <div className="flex items-center gap-3 text-xs px-2">

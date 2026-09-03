@@ -11,6 +11,7 @@ import { ViewerPane } from './components/layout/ViewerPane';
 import { Composer } from './components/mail/Composer';
 import { AccountsPage } from './components/accounts/AccountsPage';
 import { ContactsPage } from './components/contacts/ContactsPage';
+import { SievePage } from './components/sieve/SievePage';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { Toast } from './components/ui/Toast';
 import { connectEvents } from './api/sse';
@@ -119,6 +120,8 @@ export const App: React.FC = () => {
           <AccountsPage />
         ) : view === 'contacts' ? (
           <ContactsPage />
+        ) : view === 'sieve' ? (
+          <SievePage />
         ) : (
           <>
             <Sidebar />

@@ -47,25 +47,29 @@ type TwoFA struct {
 
 // Account 儲存於 SQLite 之郵件帳號設定（密碼以 DEK 加密，非明文）
 type Account struct {
-	ID                   string    `json:"id"`
-	UserEmail            string    `json:"-"` // 登入者（owner）
-	Label                string    `json:"label"`
-	Email                string    `json:"email"`
-	IMAPHost             string    `json:"imapHost"`
-	IMAPPort             int       `json:"imapPort"`
-	IMAPUseTLS           bool      `json:"imapUseTls"`
-	IMAPAllowInsecureTLS bool      `json:"imapAllowInsecureTls"`
-	SMTPHost             string    `json:"smtpHost"`
-	SMTPPort             int       `json:"smtpPort"`
-	SMTPUseTLS           bool      `json:"smtpUseTls"`
-	SMTPAllowInsecureTLS bool      `json:"smtpAllowInsecureTls"`
-	Username             string    `json:"username"`
-	EncIMAPPassword      string    `json:"-"` // AES-GCM(DEK, imap_password)
-	EncSMTPPassword      string    `json:"-"` // AES-GCM(DEK, smtp_password)
-	IsDefault            bool      `json:"isDefault"`
-	SortOrder            int       `json:"sortOrder"`
-	CreatedAt            time.Time `json:"createdAt"`
-	UpdatedAt            time.Time `json:"updatedAt"`
+	ID                    string    `json:"id"`
+	UserEmail             string    `json:"-"` // 登入者（owner）
+	Label                 string    `json:"label"`
+	Email                 string    `json:"email"`
+	IMAPHost              string    `json:"imapHost"`
+	IMAPPort              int       `json:"imapPort"`
+	IMAPUseTLS            bool      `json:"imapUseTls"`
+	IMAPAllowInsecureTLS  bool      `json:"imapAllowInsecureTls"`
+	SMTPHost              string    `json:"smtpHost"`
+	SMTPPort              int       `json:"smtpPort"`
+	SMTPUseTLS            bool      `json:"smtpUseTls"`
+	SMTPAllowInsecureTLS  bool      `json:"smtpAllowInsecureTls"`
+	SieveHost             string    `json:"sieveHost"`
+	SievePort             int       `json:"sievePort"`
+	SieveUseTLS           bool      `json:"sieveUseTls"`
+	SieveAllowInsecureTLS bool      `json:"sieveAllowInsecureTls"`
+	Username              string    `json:"username"`
+	EncIMAPPassword       string    `json:"-"` // AES-GCM(DEK, imap_password)
+	EncSMTPPassword       string    `json:"-"` // AES-GCM(DEK, smtp_password)
+	IsDefault             bool      `json:"isDefault"`
+	SortOrder             int       `json:"sortOrder"`
+	CreatedAt             time.Time `json:"createdAt"`
+	UpdatedAt             time.Time `json:"updatedAt"`
 }
 
 // UserCredential 儲存於 SQLite 之 per-user 憑證包（包裹 DEK）
@@ -203,6 +207,10 @@ CREATE TABLE IF NOT EXISTS accounts (
 	smtp_port              INTEGER NOT NULL,
 	smtp_use_tls           INTEGER NOT NULL DEFAULT 1,
 	smtp_allow_insecure_tls INTEGER NOT NULL DEFAULT 0,
+	sieve_host             TEXT NOT NULL DEFAULT '',
+	sieve_port             INTEGER NOT NULL DEFAULT 0,
+	sieve_use_tls          INTEGER NOT NULL DEFAULT 1,
+	sieve_allow_insecure_tls INTEGER NOT NULL DEFAULT 0,
 	username               TEXT NOT NULL,
 	enc_imap_password      TEXT NOT NULL,
 	enc_smtp_password      TEXT NOT NULL,
@@ -282,6 +290,15 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 	if _, err := db.Exec(schema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to apply schema: %w", err)
+	}
+	// 向後兼容：舊庫無 sieve 欄位時自動加欄（冪等）
+	for _, ddl := range []string{
+		`ALTER TABLE accounts ADD COLUMN sieve_host TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE accounts ADD COLUMN sieve_port INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE accounts ADD COLUMN sieve_use_tls INTEGER NOT NULL DEFAULT 1`,
+		`ALTER TABLE accounts ADD COLUMN sieve_allow_insecure_tls INTEGER NOT NULL DEFAULT 0`,
+	} {
+		_, _ = db.Exec(ddl)
 	}
 	return &SQLiteStore{db: db}, nil
 }
@@ -885,12 +902,14 @@ func (s *SQLiteStore) SetFolderOrder(userEmail, accountID string, orderedNames [
 
 func scanAccount(rows interface{ Scan(...any) error }) (*Account, error) {
 	var a Account
-	var imapUseTLS, imapInsecure, smtpUseTLS, smtpInsecure, isDefault int
+	var imapUseTLS, imapInsecure, smtpUseTLS, smtpInsecure, sieveUseTLS, sieveInsecure, isDefault int
 	var createdAt, updatedAt int64
+	// 先嘗試含 sieve 欄位嘅完整掃描
 	err := rows.Scan(
 		&a.ID, &a.UserEmail, &a.Label, &a.Email,
 		&a.IMAPHost, &a.IMAPPort, &imapUseTLS, &imapInsecure,
 		&a.SMTPHost, &a.SMTPPort, &smtpUseTLS, &smtpInsecure,
+		&a.SieveHost, &a.SievePort, &sieveUseTLS, &sieveInsecure,
 		&a.Username, &a.EncIMAPPassword, &a.EncSMTPPassword,
 		&isDefault, &a.SortOrder, &createdAt, &updatedAt,
 	)
@@ -901,6 +920,8 @@ func scanAccount(rows interface{ Scan(...any) error }) (*Account, error) {
 	a.IMAPAllowInsecureTLS = imapInsecure == 1
 	a.SMTPUseTLS = smtpUseTLS == 1
 	a.SMTPAllowInsecureTLS = smtpInsecure == 1
+	a.SieveUseTLS = sieveUseTLS == 1
+	a.SieveAllowInsecureTLS = sieveInsecure == 1
 	a.IsDefault = isDefault == 1
 	a.CreatedAt = time.Unix(createdAt, 0).UTC()
 	a.UpdatedAt = time.Unix(updatedAt, 0).UTC()
@@ -913,6 +934,7 @@ func (s *SQLiteStore) ListAccounts(userEmail string) ([]Account, error) {
 		`SELECT id, user_email, label, email,
 		        imap_host, imap_port, imap_use_tls, imap_allow_insecure_tls,
 		        smtp_host, smtp_port, smtp_use_tls, smtp_allow_insecure_tls,
+		        sieve_host, sieve_port, sieve_use_tls, sieve_allow_insecure_tls,
 		        username, enc_imap_password, enc_smtp_password,
 		        is_default, sort_order, created_at, updated_at
 		 FROM accounts WHERE user_email = ? ORDER BY sort_order ASC, created_at ASC`,
@@ -943,6 +965,7 @@ func (s *SQLiteStore) GetAccount(userEmail, accountID string) (*Account, error) 
 		`SELECT id, user_email, label, email,
 		        imap_host, imap_port, imap_use_tls, imap_allow_insecure_tls,
 		        smtp_host, smtp_port, smtp_use_tls, smtp_allow_insecure_tls,
+		        sieve_host, sieve_port, sieve_use_tls, sieve_allow_insecure_tls,
 		        username, enc_imap_password, enc_smtp_password,
 		        is_default, sort_order, created_at, updated_at
 		 FROM accounts WHERE user_email = ? AND id = ?`,
@@ -978,12 +1001,14 @@ func (s *SQLiteStore) CreateAccount(a *Account) error {
 		`INSERT INTO accounts (id, user_email, label, email,
 		        imap_host, imap_port, imap_use_tls, imap_allow_insecure_tls,
 		        smtp_host, smtp_port, smtp_use_tls, smtp_allow_insecure_tls,
+		        sieve_host, sieve_port, sieve_use_tls, sieve_allow_insecure_tls,
 		        username, enc_imap_password, enc_smtp_password,
 		        is_default, sort_order, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.ID, a.UserEmail, a.Label, a.Email,
 		a.IMAPHost, a.IMAPPort, boolInt(a.IMAPUseTLS), boolInt(a.IMAPAllowInsecureTLS),
 		a.SMTPHost, a.SMTPPort, boolInt(a.SMTPUseTLS), boolInt(a.SMTPAllowInsecureTLS),
+		a.SieveHost, a.SievePort, boolInt(a.SieveUseTLS), boolInt(a.SieveAllowInsecureTLS),
 		a.Username, a.EncIMAPPassword, a.EncSMTPPassword,
 		boolInt(a.IsDefault), a.SortOrder, a.CreatedAt.Unix(), a.UpdatedAt.Unix(),
 	)
@@ -1006,12 +1031,14 @@ func (s *SQLiteStore) UpdateAccount(a *Account) error {
 		        label = ?, email = ?,
 		        imap_host = ?, imap_port = ?, imap_use_tls = ?, imap_allow_insecure_tls = ?,
 		        smtp_host = ?, smtp_port = ?, smtp_use_tls = ?, smtp_allow_insecure_tls = ?,
+		        sieve_host = ?, sieve_port = ?, sieve_use_tls = ?, sieve_allow_insecure_tls = ?,
 		        username = ?, enc_imap_password = ?, enc_smtp_password = ?,
 		        is_default = ?, sort_order = ?, updated_at = ?
 		 WHERE user_email = ? AND id = ?`,
 		a.Label, a.Email,
 		a.IMAPHost, a.IMAPPort, boolInt(a.IMAPUseTLS), boolInt(a.IMAPAllowInsecureTLS),
 		a.SMTPHost, a.SMTPPort, boolInt(a.SMTPUseTLS), boolInt(a.SMTPAllowInsecureTLS),
+		a.SieveHost, a.SievePort, boolInt(a.SieveUseTLS), boolInt(a.SieveAllowInsecureTLS),
 		a.Username, a.EncIMAPPassword, a.EncSMTPPassword,
 		boolInt(a.IsDefault), a.SortOrder, a.UpdatedAt.Unix(),
 		a.UserEmail, a.ID,

@@ -104,6 +104,10 @@ export interface Account {
   smtpPort: number;
   smtpUseTls: boolean;
   smtpAllowInsecureTls: boolean;
+  sieveHost: string;
+  sievePort: number;
+  sieveUseTls: boolean;
+  sieveAllowInsecureTls: boolean;
   username: string;
   isDefault: boolean;
   sortOrder: number;
