@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  X,
   Key,
   ShieldCheck,
   Download,
@@ -16,22 +15,24 @@ import {
   Cloud,
   CloudUpload,
   CloudDownload,
+  ShieldAlert,
 } from 'lucide-react';
 import { pgpService, PgpKeyPair, PgpContactKey, ParsedKeyInfo, fileToPublicKeyArmor, fileToPrivateKeyArmor } from '../../api/pgp';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { refreshPgp } from '../../stores/usePgpStore';
-import { SecurityTab } from './SecurityTab';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
-import { ShieldAlert } from 'lucide-react';
+import { useI18n } from '../../i18n';
 
 interface PgpKeyModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+  isOpen?: boolean;
+  onClose?: () => void;
+  embedded?: boolean;
 }
 
-export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => {
+export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen = false, onClose, embedded = false }) => {
+  const { t } = useI18n();
   const { session } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'mykey' | 'contacts' | 'security'>('mykey');
+  const [activeTab, setActiveTab] = useState<'mykey' | 'contacts'>('mykey');
   const [keyPair, setKeyPair] = useState<PgpKeyPair | null>(null);
   const [contacts, setContacts] = useState<PgpContactKey[]>([]);
   const [removingEmail, setRemovingEmail] = useState<string | null>(null);
@@ -65,7 +66,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
   const personalFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen || embedded) {
       loadKeys();
       if (session?.email) {
         setName(session.email.split('@')[0]);
@@ -74,7 +75,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
       // 關閉 modal 時清空上次的狀態
       setMsg(null);
     }
-  }, [isOpen, session]);
+  }, [isOpen, embedded, session]);
 
   const loadKeys = async () => {
     setKeyPair(await pgpService.ensureKey());
@@ -82,7 +83,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
     setContacts(list);
   };
 
-  if (!isOpen) return null;
+  if (!isOpen && !embedded) return null;
 
   // 處理公鑰文字輸入與自動解析（支援單把或多把公鑰批次貼上）
   const handlePublicKeyChange = async (text: string) => {
@@ -122,7 +123,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
     e.target.value = '';
 
     const totalBytes = files.reduce((s, f) => s + f.size, 0);
-    setMsg({ type: 'success', text: `正在上傳 ${files.length} 個檔案（共 ${totalBytes.toLocaleString()} bytes）至伺服器…` });
+    setMsg({ type: 'success', text: t('pgp.uploadingFiles', { count: files.length, bytes: totalBytes.toLocaleString() }) });
 
     let totalSaved = 0;
     let totalInvalid = 0;
@@ -133,7 +134,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
       try {
         const armored = await fileToPublicKeyArmor(file);
         if (!armored) {
-          failedFiles.push(`${file.name} (內容為空)`);
+          failedFiles.push(t('pgp.fileEmpty', { name: file.name }));
           continue;
         }
         console.log(`[PGP] ${file.name}: uploading ${armored.length} armored chars to server`);
@@ -144,21 +145,21 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
         allSkipped.push(...result.skipped);
       } catch (err: any) {
         console.error(`[PGP] ${file.name} upload error:`, err);
-        failedFiles.push(`${file.name} (${err?.message || '上傳失敗'})`);
+        failedFiles.push(t('pgp.fileFailed', { name: file.name, error: err?.message || t('pgp.uploadFailed') }));
       }
     }
 
     const parts: string[] = [];
-    if (totalSaved > 0) parts.push(`成功匯入 ${totalSaved} 把公鑰`);
+    if (totalSaved > 0) parts.push(t('pgp.importedKeys', { count: totalSaved }));
     if (allSkipped.length > 0)
-      parts.push(`略過 ${allSkipped.length} 把重複 (${allSkipped.slice(0, 5).join(', ')}${allSkipped.length > 5 ? '…' : ''})`);
+      parts.push(t('pgp.skippedDup', { count: allSkipped.length, list: `${allSkipped.slice(0, 5).join(', ')}${allSkipped.length > 5 ? '…' : ''}` }));
     if (totalInvalid > 0)
-      parts.push(`${totalInvalid} 把無 Email`);
+      parts.push(t('pgp.noEmailCount', { count: totalInvalid }));
     if (failedFiles.length > 0)
-      parts.push(`${failedFiles.length} 個檔案上傳失敗`);
+      parts.push(t('pgp.filesFailed', { count: failedFiles.length }));
 
     if (parts.length === 0) {
-      parts.push('伺服器未匯入任何公鑰');
+      parts.push(t('pgp.nothingImported'));
     }
 
     setMsg({
@@ -181,7 +182,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
       const armored = await fileToPrivateKeyArmor(file);
       setPersonalKeyInput(armored);
     } catch (err: any) {
-      setMsg({ type: 'error', text: '讀取私鑰檔案失敗: ' + (err?.message || String(err)) });
+      setMsg({ type: 'error', text: t('pgp.readPrivateFailed', { error: err?.message || String(err) }) });
     }
   };
 
@@ -197,9 +198,9 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
       setShowImportPersonal(false);
       setPersonalKeyInput('');
       setImportPassphrase('');
-      setMsg({ type: 'success', text: `已成功匯入個人金鑰 (${imported.userId}) 並同步備份至雲端！` });
+      setMsg({ type: 'success', text: t('pgp.importedPersonal', { userId: imported.userId }) });
     } catch (err: any) {
-      setMsg({ type: 'error', text: '匯入私鑰失敗: ' + err.message });
+      setMsg({ type: 'error', text: t('pgp.importPrivateFailed', { error: err.message }) });
     }
   };
 
@@ -214,9 +215,9 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
       const generated = await pgpService.generateKey(name || 'User', session.email, passphrase);
       setKeyPair(generated);
       refreshPgp();
-      setMsg({ type: 'success', text: 'PGP 金鑰對已成功生成並自動備份加密密文至伺服器！' });
+      setMsg({ type: 'success', text: t('pgp.generated') });
     } catch (err: any) {
-      setMsg({ type: 'error', text: '生成金鑰失敗: ' + err.message });
+      setMsg({ type: 'error', text: t('pgp.generateFailed', { error: err.message }) });
     } finally {
       setIsGenerating(false);
     }
@@ -228,9 +229,9 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
     setMsg(null);
     try {
       await pgpService.syncKeyringToCloud(keyPair);
-      setMsg({ type: 'success', text: '已成功將金鑰包（Passphrase 密文形式）備份至伺服器！換裝置登入將自動載入。' });
+      setMsg({ type: 'success', text: t('pgp.backedUp') });
     } catch (err: any) {
-      setMsg({ type: 'error', text: '雲端備份失敗: ' + err.message });
+      setMsg({ type: 'error', text: t('pgp.backupFailed', { error: err.message }) });
     } finally {
       setIsCloudSyncing(false);
     }
@@ -244,12 +245,12 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
       if (cloudKey) {
         setKeyPair(cloudKey);
         refreshPgp();
-        setMsg({ type: 'success', text: `已成功自伺服器拉取雲端金鑰 (${cloudKey.keyId})！` });
+        setMsg({ type: 'success', text: t('pgp.fetched', { keyId: cloudKey.keyId }) });
       } else {
-        setMsg({ type: 'error', text: '伺服器上尚未備份任何 PGP 金鑰包。' });
+        setMsg({ type: 'error', text: t('pgp.noCloudKey') });
       }
     } catch (err: any) {
-      setMsg({ type: 'error', text: '拉取金鑰失敗: ' + err.message });
+      setMsg({ type: 'error', text: t('pgp.fetchFailed', { error: err.message }) });
     } finally {
       setIsCloudSyncing(false);
     }
@@ -295,7 +296,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
 
   const handleSearchKeyserver = async () => {
     if (!contactEmail || !contactEmail.includes('@')) {
-      setMsg({ type: 'error', text: '請先輸入有效的電子郵件地址以進行搜尋' });
+      setMsg({ type: 'error', text: t('pgp.needValidEmail') });
       return;
     }
 
@@ -306,12 +307,12 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
       const key = await pgpService.fetchPublicKeyFromKeyserver(contactEmail);
       if (key) {
         handlePublicKeyChange(key);
-        setMsg({ type: 'success', text: `成功自 PGP 金鑰伺服器 (keys.openpgp.org) 找到 ${contactEmail} 的公鑰！` });
+        setMsg({ type: 'success', text: t('pgp.foundOnKeyserver', { email: contactEmail }) });
       } else {
-        setMsg({ type: 'error', text: `在公開金鑰伺服器未找到 ${contactEmail} 的公鑰。請手動上傳檔案或貼上公鑰。` });
+        setMsg({ type: 'error', text: t('pgp.notOnKeyserver', { email: contactEmail }) });
       }
     } catch (err: any) {
-      setMsg({ type: 'error', text: '查詢金鑰伺服器失敗: ' + err.message });
+      setMsg({ type: 'error', text: t('pgp.keyserverFailed', { error: err.message }) });
     } finally {
       setIsSearchingKeyserver(false);
     }
@@ -321,15 +322,15 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
     e.preventDefault();
     if (!contactPublicKey) return;
 
-    setMsg({ type: 'success', text: '正在上傳至伺服器解析…' });
+    setMsg({ type: 'success', text: t('pgp.uploadingParse') });
 
     try {
       const result = await pgpService.importContactKeysFromFile(contactPublicKey);
       const parts: string[] = [];
-      if (result.saved > 0) parts.push(`成功匯入 ${result.saved} 把公鑰`);
+      if (result.saved > 0) parts.push(t('pgp.importedKeys', { count: result.saved }));
       if (result.skipped.length > 0)
-        parts.push(`略過 ${result.skipped.length} 把重複`);
-      if (result.invalid > 0) parts.push(`${result.invalid} 把無 Email`);
+        parts.push(t('pgp.skippedDupShort', { count: result.skipped.length }));
+      if (result.invalid > 0) parts.push(t('pgp.noEmailCount', { count: result.invalid }));
 
       setContactEmail('');
       setContactPublicKey('');
@@ -340,7 +341,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
         text: parts.join('，') + '。',
       });
     } catch (err: any) {
-      setMsg({ type: 'error', text: '公鑰格式無效: ' + (err?.message || String(err)) });
+      setMsg({ type: 'error', text: t('pgp.invalidFormat', { error: err?.message || String(err) }) });
     }
   };
 
@@ -349,9 +350,9 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
     try {
       await pgpService.removeContactKey(email);
       await loadKeys();
-      setMsg({ type: 'success', text: `已刪除 ${email} 的公鑰。` });
+      setMsg({ type: 'success', text: t('pgp.deletedContact', { email }) });
     } catch (err: any) {
-      setMsg({ type: 'error', text: '刪除失敗: ' + (err?.message || String(err)) });
+      setMsg({ type: 'error', text: t('pgp.deleteFailed', { error: err?.message || String(err) }) });
     } finally {
       setRemovingEmail(null);
       setContactToRemove(null);
@@ -368,18 +369,23 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-      <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh] max-h-[90dvh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className={embedded ? 'h-full min-h-0 flex flex-col' : 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm'}>
+      <div className={embedded
+        ? 'w-full h-full min-h-0 bg-white dark:bg-slate-900 flex flex-col overflow-hidden'
+        : 'w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh] max-h-[90dvh] overflow-hidden animate-in fade-in zoom-in-95 duration-150'
+      }>
         {/* Modal 頂部標題 */}
-        <div className="flex items-center justify-between shrink-0 px-4 md:px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
-          <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm md:text-base min-w-0">
-            <Key className="w-5 h-5 text-blue-600 shrink-0" />
-            <span className="truncate">PGP / GPG 端到端加密金鑰管理</span>
+        {!embedded && (
+          <div className="flex items-center justify-between shrink-0 px-4 md:px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
+            <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm md:text-base min-w-0">
+              <Key className="w-5 h-5 text-blue-600 shrink-0" />
+              <span className="truncate">{t('pgp.title')}</span>
+            </div>
+            <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg shrink-0">
+              {t('common.close')}
+            </button>
           </div>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg shrink-0">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        )}
 
         {/* 分頁選單 */}
         <div className="flex shrink-0 border-b border-slate-200 dark:border-slate-800 md:px-6 px-2 gap-3 md:gap-6 text-xs font-semibold overflow-x-auto overflow-y-hidden">
@@ -394,7 +400,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
-            我的 PGP 金鑰對
+            {t('pgp.myKey')}
           </button>
           <button
             onClick={() => {
@@ -407,21 +413,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
-            聯絡人公鑰庫 ({contacts.length})
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab('security');
-              setMsg(null);
-            }}
-            className={`py-3 px-1 md:px-0 border-b-2 whitespace-nowrap shrink-0 transition flex items-center gap-1.5 ${
-              activeTab === 'security'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <ShieldAlert className="w-3.5 h-3.5" />
-            帳號安全
+            {t('pgp.contactKeys', { count: contacts.length })}
           </button>
         </div>
 
@@ -445,9 +437,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
 
         {/* 內容區塊 */}
         <div className="p-4 md:p-6 overflow-y-auto flex-1 space-y-6">
-          {activeTab === 'security' ? (
-            <SecurityTab sessionEmail={session?.email} />
-          ) : activeTab === 'mykey' ? (
+          {activeTab === 'mykey' ? (
             <>
               {keyPair ? (
                 <div className="space-y-4">
@@ -456,26 +446,26 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                       <div className="flex items-center gap-2">
                         <ShieldCheck className="w-5 h-5 text-blue-600" />
                         <span className="font-bold text-sm text-slate-900 dark:text-white">
-                          已配置 PGP 金鑰對
+                          {t('pgp.configured')}
                         </span>
                       </div>
                       <span className="text-[10px] px-2 py-0.5 bg-blue-600 text-white font-bold rounded-full">
-                        已就緒
+                        {t('pgp.ready')}
                       </span>
                     </div>
 
                     <div className="text-xs text-slate-600 dark:text-slate-300 space-y-1 pt-1">
                       <div>
-                        <span className="font-semibold text-slate-400">身份：</span> {keyPair.userId}
+                        <span className="font-semibold text-slate-400">{t('pgp.identity')}</span> {keyPair.userId}
                       </div>
                       <div>
-                        <span className="font-semibold text-slate-400">Key ID：</span>{' '}
+                        <span className="font-semibold text-slate-400">{t('pgp.keyId')}</span>{' '}
                         <code className="bg-slate-200/60 dark:bg-slate-800 px-1 py-0.5 rounded font-mono">
                           {keyPair.keyId}
                         </code>
                       </div>
                       <div>
-                        <span className="font-semibold text-slate-400">指紋：</span>{' '}
+                        <span className="font-semibold text-slate-400">{t('pgp.fingerprint')}</span>{' '}
                         <code className="text-[11px] font-mono break-all">{keyPair.fingerprint}</code>
                       </div>
                     </div>
@@ -486,8 +476,8 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                     <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
                       <Cloud className="w-4 h-4 text-blue-600" />
                       <div>
-                        <div className="font-semibold">雲端密文金鑰庫（跨裝置免手動匯入）</div>
-                        <div className="text-[11px] text-slate-400">伺服器僅儲存 Passphrase 加密的密文，換手機/新電腦自動同步</div>
+                        <div className="font-semibold">{t('pgp.cloudTitle')}</div>
+                        <div className="text-[11px] text-slate-400">{t('pgp.cloudHint')}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -497,7 +487,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                         className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition disabled:opacity-50 text-[11px]"
                       >
                         {isCloudSyncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudUpload className="w-3.5 h-3.5" />}
-                        立即備份
+                        {t('pgp.backupNow')}
                       </button>
                     </div>
                   </div>
@@ -505,7 +495,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                   {/* 公鑰匯出與複製 */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                      我的公開金鑰 (Public Key) — 可分享給聯絡人加密寄信用
+                      {t('pgp.publicKeyLabel')}
                     </label>
                     <textarea
                       readOnly
@@ -519,21 +509,21 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition"
                       >
                         {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                        {copied ? '已複製' : '複製公鑰'}
+                        {copied ? t('common.copied') : t('pgp.copyPublic')}
                       </button>
                       <button
                         onClick={handleDownloadPublicKey}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold transition border border-slate-200 dark:border-slate-700"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        下載 .asc 檔案
+                        {t('pgp.downloadAsc')}
                       </button>
                       <button
                         onClick={() => setConfirmRemoveKey(true)}
                         className="flex items-center gap-1 px-3 py-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg text-xs font-semibold transition ml-auto"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        移除金鑰對
+                        {t('pgp.removePair')}
                       </button>
                     </div>
                   </div>
@@ -541,12 +531,12 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                   {/* 私鑰匯出（已用 PGP passphrase 加密，唔係明文） */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                      我的私鑰 (Private Key) — 已用 Passphrase 加密，請小心保管
+                      {t('pgp.privateKeyLabel')}
                     </label>
                     <div className="flex items-start gap-2 p-2.5 mb-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-lg">
                       <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                       <p className="text-[11px] text-amber-800 dark:text-amber-200 leading-relaxed">
-                        呢個係你嘅私鑰（已由 PGP Passphrase 加密）。請妥善保管，匯出檔案可喺另一部機 import；任何人攞到都要配合你嘅 Passphrase 先用得。
+                        {t('pgp.privateKeyWarn')}
                       </p>
                     </div>
                     <textarea
@@ -561,14 +551,14 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold transition border border-slate-200 dark:border-slate-700"
                       >
                         {copiedPriv ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        {copiedPriv ? '已複製' : '複製私鑰'}
+                        {copiedPriv ? t('common.copied') : t('pgp.copyPrivate')}
                       </button>
                       <button
                         onClick={handleDownloadPrivateKey}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold transition border border-slate-200 dark:border-slate-700"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        下載 .asc 檔案
+                        {t('pgp.downloadAsc')}
                       </button>
                     </div>
                   </div>
@@ -582,10 +572,10 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                       <CloudDownload className="w-5 h-5 text-indigo-600" />
                       <div>
                         <div className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
-                          已在其他裝置生成過金鑰？
+                          {t('pgp.otherDevice')}
                         </div>
                         <div className="text-[11px] text-indigo-800/80 dark:text-indigo-300">
-                          可一鍵自伺服器同步已備份的 PGP 密文金鑰包
+                          {t('pgp.otherDeviceHint')}
                         </div>
                       </div>
                     </div>
@@ -595,7 +585,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition shadow-sm disabled:opacity-50"
                     >
                       {isCloudSyncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CloudDownload className="w-3.5 h-3.5" />}
-                      自雲端同步
+                      {t('pgp.syncFromCloud')}
                     </button>
                   </div>
 
@@ -603,21 +593,21 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                     <form onSubmit={handleImportPersonalKey} className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50/50 space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                          匯入既有的個人 PGP 金鑰對 (.asc / 私鑰)
+                          {t('pgp.importExisting')}
                         </h3>
                         <button
                           type="button"
                           onClick={() => setShowImportPersonal(false)}
                           className="text-xs text-blue-600 hover:underline"
                         >
-                          返回生成金鑰
+                          {t('pgp.backToGenerate')}
                         </button>
                       </div>
 
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
                           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                            貼上私鑰區塊或上傳檔案
+                            {t('pgp.pasteOrUpload')}
                           </label>
                           <button
                             type="button"
@@ -625,7 +615,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                             className="flex items-center gap-1 text-xs text-blue-600 hover:underline font-semibold"
                           >
                             <Upload className="w-3.5 h-3.5" />
-                            選擇 .asc 檔案
+                            {t('pgp.chooseAsc')}
                           </button>
                           <input
                             ref={personalFileInputRef}
@@ -647,7 +637,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                           type="password"
                           value={importPassphrase}
                           onChange={(e) => setImportPassphrase(e.target.value)}
-                          placeholder="私鑰 Passphrase（若私鑰已加密需輸入；留空=未加密）"
+                          placeholder={t('pgp.importPassphrase')}
                           className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                         />
                       </div>
@@ -656,14 +646,14 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                         type="submit"
                         className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition"
                       >
-                        確認匯入個人金鑰
+                        {t('pgp.confirmImport')}
                       </button>
                     </form>
                   ) : (
                     <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50/50">
                       <div className="flex items-center justify-between mb-1">
                         <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                          生成全新 PGP 金鑰對
+                          {t('pgp.generateTitle')}
                         </h3>
                         <button
                           type="button"
@@ -671,17 +661,17 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                           className="flex items-center gap-1 text-xs text-blue-600 hover:underline font-semibold"
                         >
                           <Upload className="w-3.5 h-3.5" />
-                          匯入既有私鑰 (.asc)
+                          {t('pgp.importExistingLink')}
                         </button>
                       </div>
                       <p className="text-xs text-slate-500 mb-4">
-                        將在你的瀏覽器中直接使用 ECC Ed25519 演算法生成端對端加密金鑰（私鑰密文會自動備份至伺服器以便跨裝置使用）。
+                        {t('pgp.generateHint')}
                       </p>
 
                       <form onSubmit={handleGenerateKey} className="space-y-3">
                         <div>
                           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                            金鑰名稱 (Name)
+                            {t('pgp.keyName')}
                           </label>
                           <input
                             type="text"
@@ -694,18 +684,18 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                            專用保護密碼 (Passphrase) <span className="text-red-500">*</span>
+                            {t('pgp.passphrase')} <span className="text-red-500">*</span>
                           </label>
                           <input
                             type="password"
                             required
                             value={passphrase}
                             onChange={(e) => setPassphrase(e.target.value)}
-                            placeholder="加密私鑰用（唔係登入密碼）；解密/簽名時需輸入"
+                            placeholder={t('pgp.passphrasePlaceholder')}
                             className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                           />
                           <p className="mt-1 text-[10px] text-slate-400 leading-relaxed">
-                            呢個係用嚟加密私鑰嘅<strong className="text-slate-500">專屬密碼</strong>，同登入密碼無關。加密郵件唔使輸入；解密/數碼簽名時先需要。請緊記，遺失將無法解密。
+                            {t('pgp.passphraseHelp')}
                           </p>
                         </div>
                         <button
@@ -716,12 +706,12 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                           {isGenerating ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              正在生成 Ed25519 金鑰...
+                              {t('pgp.generating')}
                             </>
                           ) : (
                             <>
                               <Plus className="w-3.5 h-3.5" />
-                              立即生成並備份金鑰對
+                              {t('pgp.generateNow')}
                             </>
                           )}
                         </button>
@@ -741,7 +731,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                 <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                   <h4 className="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5 min-w-0">
                     <Plus className="w-4 h-4 text-blue-600 shrink-0" />
-                    匯入聯絡人 PGP 公開金鑰
+                    {t('pgp.importContactTitle')}
                   </h4>
                   <button
                     type="button"
@@ -749,7 +739,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                     className="flex items-center gap-1 text-xs text-blue-600 hover:underline font-semibold shrink-0 whitespace-nowrap"
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    上傳 .asc / .pub 檔案
+                    {t('pgp.uploadFiles')}
                   </button>
                   <input
                     ref={fileInputRef}
@@ -766,7 +756,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                     type="email"
                     value={contactEmail}
                     onChange={(e) => setContactEmail(e.target.value)}
-                    placeholder="聯絡人電子郵件 (匯入公鑰後會自動解析填入)"
+                    placeholder={t('pgp.contactEmailPlaceholder')}
                     className="flex-1 min-w-0 px-3 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                   />
                   <button
@@ -780,7 +770,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                     ) : (
                       <Globe className="w-3.5 h-3.5 text-indigo-600" />
                     )}
-                    從 Keyserver 搜尋
+                    {t('pgp.searchKeyserver')}
                   </button>
                 </div>
 
@@ -790,7 +780,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                     required
                     value={contactPublicKey}
                     onChange={(e) => handlePublicKeyChange(e.target.value)}
-                    placeholder="貼上 -----BEGIN PGP PUBLIC KEY BLOCK----- 區塊，或直接點擊右上角「上傳檔案」..."
+                    placeholder={t('pgp.pastePublic')}
                     rows={4}
                     className="w-full p-2 text-xs font-mono bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                   />
@@ -803,8 +793,8 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                       <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                       <span>
                         {parsedPreviews.length === 1
-                          ? '已成功解析公鑰資訊：'
-                          : `已偵測到 ${parsedPreviews.length} 把公鑰，按下方按鈕即可批次匯入：`}
+                          ? t('pgp.parsedOne')
+                          : t('pgp.parsedMany', { count: parsedPreviews.length })}
                       </span>
                     </div>
                     {parsedPreviews.map((p, idx) => (
@@ -813,11 +803,11 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                         className="pl-3 border-l-2 border-emerald-300/60 space-y-0.5"
                       >
                         <div>
-                          <span className="font-semibold text-slate-500">使用者：</span>{' '}
-                          {p.name || '未命名'} &lt;{p.email || '未識別'}&gt;
+                          <span className="font-semibold text-slate-500">{t('pgp.user')}</span>{' '}
+                          {p.name || t('common.unnamed')} &lt;{p.email || t('common.unidentified')}&gt;
                         </div>
                         <div>
-                          <span className="font-semibold text-slate-500">Key ID：</span>{' '}
+                          <span className="font-semibold text-slate-500">{t('pgp.keyId')}</span>{' '}
                           <code className="font-mono bg-emerald-100 dark:bg-emerald-900/60 px-1 py-0.5 rounded">
                             {p.keyId}
                           </code>
@@ -833,16 +823,16 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50"
                 >
                   {parsedPreviews.length > 1
-                    ? `確認批次匯入 ${parsedPreviews.length} 把公鑰至本地庫`
-                    : '確認儲存公鑰至本地庫'}
+                    ? t('pgp.importMany', { count: parsedPreviews.length })
+                    : t('pgp.importOne')}
                 </button>
               </form>
 
               {/* 已儲存公鑰清單 */}
               <div>
-                <h4 className="text-xs font-semibold text-slate-500 mb-2">已儲存的聯絡人公鑰庫</h4>
+                <h4 className="text-xs font-semibold text-slate-500 mb-2">{t('pgp.storedKeys')}</h4>
                 {contacts.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">尚未儲存任何聯絡人公鑰。</p>
+                  <p className="text-xs text-slate-400 italic">{t('pgp.noneStored')}</p>
                 ) : (
                   <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
                     {contacts.map((c) => (
@@ -864,7 +854,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
                           onClick={() => setContactToRemove(c.email)}
                           disabled={removingEmail !== null}
                           className="p-2 shrink-0 text-slate-400 hover:text-red-600 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
-                          title={removingEmail === c.email ? '刪除中...' : '刪除此公鑰'}
+                          title={removingEmail === c.email ? t('common.deleting') : t('pgp.removeThisKey')}
                         >
                           {removingEmail === c.email ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -884,9 +874,9 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
 
       <ConfirmDialog
         isOpen={!!contactToRemove}
-        title="刪除聯絡人公鑰"
-        message={`確定要刪除 ${contactToRemove ?? ''} 的聯絡人公鑰嗎？`}
-        confirmText="刪除"
+        title={t('pgp.removeContactTitle')}
+        message={t('pgp.removeContactConfirm', { email: contactToRemove ?? '' })}
+        confirmText={t('common.delete')}
         danger
         loading={!!removingEmail}
         onConfirm={() => contactToRemove && handleRemoveContact(contactToRemove)}
@@ -895,9 +885,9 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen, onClose }) => 
 
       <ConfirmDialog
         isOpen={confirmRemoveKey}
-        title="移除 PGP 金鑰對"
-        message="確定要自瀏覽器與雲端移除此金鑰對嗎？此操作無法復原。"
-        confirmText="移除"
+        title={t('pgp.removePairTitle')}
+        message={t('pgp.removePairConfirm')}
+        confirmText={t('pgp.remove')}
         danger
         onConfirm={handleRemoveKey}
         onCancel={() => setConfirmRemoveKey(false)}

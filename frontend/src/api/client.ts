@@ -1,4 +1,5 @@
 import { StandardResponse } from '../types/api';
+import { t } from '../i18n';
 
 const API_BASE = '/api';
 
@@ -33,7 +34,9 @@ export async function request<T>(
       headers,
     });
   } catch (netErr: any) {
-    throw new ApiError(`無法連線至後端伺服器 (${netErr.message || '連線逾時或網路中斷'})`);
+    throw new ApiError(
+      t('api.unreachable', { detail: netErr.message || t('api.networkTimeout') })
+    );
   }
 
   if (response.status === 401) {
@@ -59,13 +62,17 @@ export async function request<T>(
   } catch {
     // 若後端返回非 JSON (如 Nginx 502/504 Bad Gateway HTML)
     throw new ApiError(
-      `後端服務回應異常 [HTTP ${response.status} ${response.statusText}]: ${rawText.slice(0, 120)}`,
+      t('api.badGateway', {
+        status: response.status,
+        statusText: response.statusText,
+        body: rawText.slice(0, 120),
+      }),
       response.status
     );
   }
 
   if (!data.success) {
-    throw new ApiError(data.error || `請求失敗 (HTTP ${response.status})`, response.status);
+    throw new ApiError(data.error || t('api.requestFailed', { status: response.status }), response.status);
   }
 
   return data.data as T;

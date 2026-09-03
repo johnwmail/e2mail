@@ -1,5 +1,6 @@
 import * as openpgp from 'openpgp';
 import { request } from './client';
+import { t } from '../i18n';
 
 export interface PgpKeyPair {
   keyId: string;
@@ -306,13 +307,13 @@ export const pgpService = {
   parseMultipleKeys: async (armored: string): Promise<ParsedKeyInfo[]> => {
     armored = armored.trim();
     if (!armored) {
-      throw new Error('找不到有效的 PGP 金鑰區塊');
+      throw new Error(t('pgp.noPgpBlock'));
     }
     let keys: openpgp.Key[];
     try {
       keys = await openpgp.readKeys({ armoredKeys: armored });
     } catch {
-      throw new Error('找不到有效的 PGP 金鑰區塊');
+      throw new Error(t('pgp.noPgpBlock'));
     }
     const results: ParsedKeyInfo[] = [];
     for (const key of keys) {
@@ -337,11 +338,11 @@ export const pgpService = {
 
     for (const info of keys) {
       if (info.isPrivate) {
-        failed.push({ email: info.email, error: '私鑰不適合作為聯絡人公鑰' });
+        failed.push({ email: info.email, error: t('pgp.privateNotContact') });
         continue;
       }
       if (!info.email) {
-        failed.push({ email: '', error: '無法從公鑰中識別電子郵件地址' });
+        failed.push({ email: '', error: t('pgp.noEmailInKey') });
         continue;
       }
       contacts.push({
@@ -407,7 +408,7 @@ export const pgpService = {
       try {
         await openpgp.decryptKey({ privateKey: privKey, passphrase: passphrase || '' });
       } catch {
-        throw new Error('私鑰密碼 (Passphrase) 錯誤，無法匯入。請輸入匯入時設定嘅護照密碼。');
+        throw new Error(t('pgp.badPassphraseImport'));
       }
     }
 
@@ -520,7 +521,7 @@ export const pgpService = {
     const finalEmail = (email || info.email).toLowerCase().trim();
 
     if (!finalEmail) {
-      throw new Error('無法從公鑰中識別電子郵件地址，請手動指定 Email');
+      throw new Error(t('pgp.noEmailSpecify'));
     }
 
     const result = await request<{ contact: PgpContactKey }>('/pgp/contacts', {
@@ -604,7 +605,7 @@ export const pgpService = {
             passphrase: passphrase || '',
           });
         } catch (e: any) {
-          throw new Error('私鑰密碼 (Passphrase) 錯誤，無法完成 PGP 簽名: ' + (e?.message || e));
+          throw new Error(t('pgp.badPassphraseSign', { error: e?.message || e }));
         }
       }
       signingKeys = privateKey;
@@ -640,7 +641,7 @@ export const pgpService = {
           passphrase: passphrase || '',
         });
       } catch {
-        throw new Error('私鑰密碼 (Passphrase) 錯誤，無法解密');
+        throw new Error(t('pgp.badPassphraseDecrypt'));
       }
     }
 

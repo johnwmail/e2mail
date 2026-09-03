@@ -9,23 +9,25 @@ import { Sidebar } from './components/layout/Sidebar';
 import { MessageList } from './components/layout/MessageList';
 import { ViewerPane } from './components/layout/ViewerPane';
 import { Composer } from './components/mail/Composer';
-import { AccountsPage } from './components/accounts/AccountsPage';
 import { ContactsPage } from './components/contacts/ContactsPage';
-import { SievePage } from './components/sieve/SievePage';
+import { SettingsPage } from './components/settings/SettingsPage';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { Toast } from './components/ui/Toast';
 import { connectEvents } from './api/sse';
 import { pgpService } from './api/pgp';
 import { refreshPgp } from './stores/usePgpStore';
 import { onboardingApi, OnboardingStatus } from './api/onboarding';
+import { applyDocumentLang, setLocale, t, useI18n } from './i18n';
 
 export const App: React.FC = () => {
+  useI18n();
   const queryClient = useQueryClient();
   const { isAuthenticated, isLoading, initAuth, token, logout } = useAuthStore();
   const view = useMailStore((s) => s.view);
   const composerKey = useMailStore((s) => s.composerKey);
   const activeAccount = useActiveAccount();
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const theme = useMailStore((s) => s.theme);
 
   useEffect(() => {
     initAuth();
@@ -59,19 +61,45 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!isAuthenticated) return;
     import('./api/prefs')
-      .then(({ prefsApi }) => prefsApi.get('listMode'))
-      .then((mode) => {
+      .then(async ({ prefsApi }) => {
+        const [mode, savedTheme, savedLocale] = await Promise.all([
+          prefsApi.get('listMode'),
+          prefsApi.get('theme'),
+          prefsApi.get('locale'),
+        ]);
         if (mode === 'threads' || mode === 'messages') setListMode(mode);
+        if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
+          localStorage.setItem('webmail_theme', savedTheme);
+          useMailStore.setState({ theme: savedTheme });
+        }
+        if (savedLocale === 'en' || savedLocale === 'zh-Hant') {
+          setLocale(savedLocale);
+          applyDocumentLang();
+        }
       })
       .catch(() => {});
   }, [isAuthenticated, setListMode]);
+
+  // 套用外觀設定；system 模式會即時跟隨作業系統配色。
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      document.documentElement.classList.toggle(
+        'dark',
+        theme === 'dark' || (theme === 'system' && media.matches)
+      );
+    };
+    applyTheme();
+    media.addEventListener('change', applyTheme);
+    return () => media.removeEventListener('change', applyTheme);
+  }, [theme]);
 
   // 登入後每次從雲端載入 PGP 金鑰包（唔留 localStorage；logout/session 過期後再 fetch）
   useEffect(() => {
     if (isAuthenticated) {
       pgpService.fetchKeyringFromCloud().then((cloudKey) => {
         if (cloudKey) {
-          console.log('✅ 已成功自雲端同步 PGP 密文金鑰包:', cloudKey.keyId);
+          console.log(t('app.pgpCloudSynced', { keyId: cloudKey.keyId }));
         }
         refreshPgp();
       });
@@ -103,7 +131,7 @@ export const App: React.FC = () => {
   if (isLoading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-slate-900 text-white text-sm">
-        正在載入 e2Mail...
+        {t('app.loading')}
       </div>
     );
   }
@@ -116,12 +144,10 @@ export const App: React.FC = () => {
     <div className="h-[100dvh] w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
       <Header />
       <div className="flex-1 flex overflow-hidden relative">
-        {view === 'accounts' ? (
-          <AccountsPage />
+        {view === 'settings' ? (
+          <SettingsPage />
         ) : view === 'contacts' ? (
           <ContactsPage />
-        ) : view === 'sieve' ? (
-          <SievePage />
         ) : (
           <>
             <Sidebar />

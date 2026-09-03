@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Mail, Search, LogOut, PenSquare, X, Menu, Key, MessagesSquare } from 'lucide-react';
+import { Mail, Search, LogOut, PenSquare, X, Menu, MessagesSquare } from 'lucide-react';
 import { useQueries } from '@tanstack/react-query';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { mailApi } from '../../api/mail';
-import { PgpKeyModal } from '../mail/PgpKeyModal';
 import { FolderInfo } from '../../types/api';
+import { folderDisplayName, useI18n } from '../../i18n';
 
 export const Header: React.FC = () => {
+  const { t } = useI18n();
   const { session, logout } = useAuthStore();
   const { searchQuery, searchInput, setSearchQuery, setSearchInput, clearSearch, openComposer, toggleSidebar, selectedUID, setSelectedUID, currentFolder, setCurrentFolder, setActiveAccountId, unreadView, setUnreadView, listMode, setListMode, setView } = useMailStore();
   const goHome = () => {
@@ -21,7 +22,6 @@ export const Header: React.FC = () => {
   const activeAccount = useActiveAccount();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [isPgpModalOpen, setIsPgpModalOpen] = useState(false);
 
   // 點擊未讀 badge → 切去該帳號嘅動態未讀虛擬列表（純 App 前端合併）
   const openUnread = () => {
@@ -91,16 +91,7 @@ export const Header: React.FC = () => {
     clearSearch();
   };
 
-  const getFolderDisplayName = (name: string) => {
-    const n = name.toLowerCase();
-    if (n.includes('inbox')) return '收件箱';
-    if (n.includes('sent')) return '已發送';
-    if (n.includes('draft')) return '草稿箱';
-    if (n.includes('trash') || n.includes('bin')) return '垃圾桶';
-    if (n.includes('junk') || n.includes('spam')) return '垃圾郵件';
-    if (n.includes('archive')) return '封存';
-    return name;
-  };
+  const getFolderDisplayName = (name: string) => folderDisplayName(name);
 
   return (
     <>
@@ -119,7 +110,7 @@ export const Header: React.FC = () => {
                 autoFocus
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="搜尋郵件主旨、內文或寄件者...（可用 from: is:unread）"
+                placeholder={t('header.searchPlaceholderMobile')}
                 className="w-full pl-9 pr-8 py-1.5 text-sm bg-slate-100 dark:bg-slate-800 border-0 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
               />
               {searchInput && (
@@ -136,7 +127,7 @@ export const Header: React.FC = () => {
               onClick={() => setIsMobileSearchOpen(false)}
               className="p-2 text-xs font-semibold text-slate-600 dark:text-slate-300"
             >
-              取消
+              {t('header.cancelSearch')}
             </button>
           </div>
         ) : (
@@ -147,7 +138,7 @@ export const Header: React.FC = () => {
                 <button
                   onClick={toggleSidebar}
                   className="p-2 -ml-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
-                  title="開啟選單"
+                  title={t('header.openMenu')}
                 >
                   <Menu className="w-5 h-5" />
                 </button>
@@ -155,7 +146,7 @@ export const Header: React.FC = () => {
                   <button
                     onClick={openUnread}
                     className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[9px] font-bold leading-none border-2 border-white dark:border-slate-900 hover:bg-red-700 transition"
-                    title="查看所有未讀郵件"
+                    title={t('header.viewUnread')}
                   >
                     {totalUnread > 99 ? '99+' : totalUnread}
                   </button>
@@ -166,8 +157,8 @@ export const Header: React.FC = () => {
                 type="button"
                 onClick={goHome}
                 className="flex items-center gap-2 hover:opacity-80 active:opacity-60 transition text-left"
-                title="返回主頁"
-                aria-label="返回主頁"
+                title={t('header.goHome')}
+                aria-label={t('header.goHome')}
               >
                 <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-sm shrink-0">
                   <Mail className="w-4 h-4" />
@@ -177,7 +168,7 @@ export const Header: React.FC = () => {
                     e2Mail
                   </span>
                   <span className="lg:hidden text-[11px] text-slate-400 font-medium leading-none mt-0.5">
-                    {unreadView ? '未讀' : getFolderDisplayName(currentFolder)}
+                    {unreadView ? t('header.unread') : getFolderDisplayName(currentFolder)}
                   </span>
                 </div>
               </button>
@@ -193,7 +184,7 @@ export const Header: React.FC = () => {
                   onChange={(e) => setSearchInput(e.target.value)}
                   onFocus={() => setIsSearchFocused(true)}
                   onBlur={() => setIsSearchFocused(false)}
-                  placeholder="搜尋郵件主旨、內文或寄件者...（可用 from: to: is:unread）"
+                  placeholder={t('header.searchPlaceholder')}
                   className="w-full pl-9 pr-8 py-1.5 text-sm bg-slate-100 dark:bg-slate-800 border-0 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400"
                 />
                 {searchInput && (
@@ -209,7 +200,7 @@ export const Header: React.FC = () => {
 
               {showSearchHint && (
                 <div className="absolute left-0 right-0 top-full mt-2 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg p-2.5 text-left">
-                  <p className="text-[11px] text-slate-400 mb-1.5 px-1">進階搜尋運算符（點擊插入）</p>
+                  <p className="text-[11px] text-slate-400 mb-1.5 px-1">{t('header.searchOperators')}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {searchOperators.map((op) => (
                       <button
@@ -233,7 +224,7 @@ export const Header: React.FC = () => {
               <button
                 onClick={() => setIsMobileSearchOpen(true)}
                 className="md:hidden p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
-                title="搜尋"
+                title={t('common.search')}
               >
                 <Search className="w-4 h-4" />
               </button>
@@ -243,22 +234,12 @@ export const Header: React.FC = () => {
                 <button
                   onClick={() => setListMode(listMode === 'threads' ? 'messages' : 'threads')}
                   className={`p-2 rounded-lg transition ${listMode === 'threads' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-                  title={listMode === 'threads' ? '切換為單封模式' : '切換為對話串模式'}
-                  aria-label={listMode === 'threads' ? '切換為單封模式' : '切換為對話串模式'}
+                  title={listMode === 'threads' ? t('header.messagesMode') : t('header.threadsMode')}
+                  aria-label={listMode === 'threads' ? t('header.messagesMode') : t('header.threadsMode')}
                 >
                   <MessagesSquare className="w-4 h-4" />
                 </button>
               )}
-
-              {/* PGP 金鑰管理按鈕 */}
-              <button
-                onClick={() => setIsPgpModalOpen(true)}
-                className="flex items-center gap-1 p-2 md:px-2.5 md:py-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-semibold transition"
-                title="PGP / GPG 端到端加密金鑰管理"
-              >
-                <Key className="w-4 h-4 md:w-3.5 md:h-3.5 text-indigo-600 dark:text-indigo-400" />
-                <span className="hidden md:inline">PGP 金鑰</span>
-              </button>
 
               {/* 寫信按鈕 */}
               <button
@@ -266,7 +247,7 @@ export const Header: React.FC = () => {
                 className="flex items-center gap-1 px-2.5 py-1.5 md:px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition shadow-sm"
               >
                 <PenSquare className="w-4 h-4 md:w-3.5 md:h-3.5" />
-                <span className="hidden sm:inline">寫信</span>
+                <span className="hidden sm:inline">{t('common.compose')}</span>
               </button>
 
               <div className="hidden md:block h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
@@ -285,7 +266,7 @@ export const Header: React.FC = () => {
               <button
                 onClick={logout}
                 className="hidden md:block p-1.5 text-slate-500 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
-                title="登出"
+                title={t('common.logout')}
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -294,8 +275,6 @@ export const Header: React.FC = () => {
         )}
       </header>
 
-      {/* PGP 金鑰管理 Modal */}
-      <PgpKeyModal isOpen={isPgpModalOpen} onClose={() => setIsPgpModalOpen(false)} />
     </>
   );
 };

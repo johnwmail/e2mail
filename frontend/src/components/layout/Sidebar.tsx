@@ -11,8 +11,6 @@ import {
   PenSquare,
   RefreshCw,
   X,
-  Key,
-  ShieldCheck,
   LogOut,
   ChevronDown,
   ChevronRight,
@@ -24,20 +22,18 @@ import {
   Loader2,
   Users,
   MailOpen,
-  SlidersHorizontal,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
 import { accountsApi } from '../../api/accounts';
 import { toast } from '../../stores/useToastStore';
 import { useMailStore } from '../../stores/useMailStore';
 import { useAuthStore } from '../../stores/useAuthStore';
-import { usePgpStore } from '../../stores/usePgpStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { FolderInfo, Account } from '../../types/api';
-import { PgpKeyModal } from '../mail/PgpKeyModal';
 import FolderManagerModal from './FolderManagerModal';
 import ConfirmDialog from '../ui/ConfirmDialog';
 import { buildInfo } from '../../buildInfo';
+import { folderDisplayName, t, useI18n } from '../../i18n';
 
 const getFolderIcon = (specialUse?: string, name?: string) => {
   const key = (specialUse || name || '').toLowerCase();
@@ -50,24 +46,8 @@ const getFolderIcon = (specialUse?: string, name?: string) => {
   return <Folder className="w-4 h-4" />;
 };
 
-const getFolderDisplayName = (folder: FolderInfo) => {
-  switch (folder.specialUse) {
-    case 'inbox':
-      return '收件箱';
-    case 'sent':
-      return '已發送';
-    case 'drafts':
-      return '草稿箱';
-    case 'trash':
-      return '垃圾桶';
-    case 'junk':
-      return '垃圾郵件';
-    case 'archive':
-      return '封存';
-    default:
-      return folder.name;
-  }
-};
+const getFolderDisplayName = (folder: FolderInfo) =>
+  folderDisplayName(folder.name, folder.specialUse);
 
 // 只有 INBOX 或「e2Mail 偏好設為顯示」嘅 folder 先顯示喺側邊欄（唔依賴 IMAP subscription）
 const isVisibleFolder = (f: FolderInfo, prefs: Record<string, boolean> | undefined) =>
@@ -123,6 +103,7 @@ const FolderBranch: React.FC<{
   expandedMap: Record<string, boolean>;
   onToggle: (path: string) => void;
 }> = ({ node, depth, accountId, isActiveAccount, currentFolder, onSelectFolder, setSidebarOpen, expandedMap, onToggle }) => {
+  const { t } = useI18n();
   const hasChildren = node.children.size > 0;
   const isExpanded = expandedMap[node.path] ?? false;
   const isActive = isActiveAccount && currentFolder === node.path;
@@ -142,7 +123,7 @@ const FolderBranch: React.FC<{
       queryClient.invalidateQueries({ queryKey: ['messages', accountId, node.path] });
       queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
     } catch (e: any) {
-      toast('清空失敗: ' + (e?.message || e));
+      toast(t('sidebar.emptyFailed', { error: e?.message || e }));
     } finally {
       setEmptying(false);
     }
@@ -155,7 +136,7 @@ const FolderBranch: React.FC<{
           <button
             onClick={() => onToggle(node.path)}
             className="flex items-center justify-center w-5 h-5 shrink-0 text-slate-400 hover:text-slate-600"
-            title={isExpanded ? '收合' : '展開'}
+            title={isExpanded ? t('sidebar.collapse') : t('sidebar.expand')}
           >
             {isExpanded ? <Minus className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
           </button>
@@ -189,8 +170,8 @@ const FolderBranch: React.FC<{
             onClick={() => setConfirmEmpty(true)}
             disabled={emptying}
             className="flex items-center justify-center w-6 h-6 mr-1 shrink-0 text-slate-400 hover:text-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 transition disabled:opacity-40"
-            title="清空垃圾桶 (Empty Trash)"
-            aria-label="清空垃圾桶"
+            title={t('sidebar.emptyTrash')}
+            aria-label={t('sidebar.emptyTrashTitle')}
           >
             {emptying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
           </button>
@@ -218,9 +199,9 @@ const FolderBranch: React.FC<{
 
       <ConfirmDialog
         isOpen={confirmEmpty}
-        title="清空垃圾桶"
-        message={`確定要清空「${node.displayName}」全部郵件嗎？此操作無法復原。`}
-        confirmText="清空"
+        title={t('sidebar.emptyTrashTitle')}
+        message={t('sidebar.emptyTrashConfirm', { name: node.displayName })}
+        confirmText={t('sidebar.empty')}
         danger
         loading={emptying}
         onConfirm={handleEmptyTrash}
@@ -236,6 +217,7 @@ const AccountFolders: React.FC<{
   onToggleExpand: () => void;
   setSidebarOpen: (open: boolean) => void;
 }> = ({ account, expanded, onToggleExpand, setSidebarOpen }) => {
+  const { t } = useI18n();
   const { currentFolder, setCurrentFolder, setActiveAccountId, setInboxUnread, unreadView, setUnreadView } = useMailStore();
   const isActiveAccount = useActiveAccount()?.id === account.id;
   const [isManagerOpen, setIsManagerOpen] = useState(false);
@@ -325,11 +307,11 @@ const AccountFolders: React.FC<{
                   ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 font-semibold'
                   : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800'
               }`}
-              title="顯示所有未讀郵件"
+              title={t('sidebar.allUnread')}
             >
               <span className="flex items-center gap-2.5 truncate">
                 <MailOpen className="w-4 h-4 text-slate-400" />
-                <span className="truncate">未讀</span>
+                <span className="truncate">{t('header.unread')}</span>
               </span>
               {accountUnread > 0 && (
                 <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded-full shrink-0">
@@ -339,9 +321,9 @@ const AccountFolders: React.FC<{
             </button>
 
             {isLoading ? (
-              <div className="p-3 text-xs text-slate-400">正在載入資料夾...</div>
+              <div className="p-3 text-xs text-slate-400">{t('sidebar.loadingFolders')}</div>
             ) : visibleFolders.length === 0 ? (
-              <div className="p-3 text-xs text-slate-400">未有已訂閱資料夾</div>
+              <div className="p-3 text-xs text-slate-400">{t('sidebar.noFolders')}</div>
             ) : (
               (() => {
                 const tree = buildFolderTree(visibleFolders);
@@ -377,15 +359,15 @@ const AccountFolders: React.FC<{
             <button
               onClick={() => refetch()}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-slate-400 hover:text-slate-600 transition ${isFetching ? 'animate-spin' : ''}`}
-              title="重新整理資料夾"
+              title={t('sidebar.refreshFolders')}
             >
-              <RefreshCw className="w-3 h-3" /> 重新整理
+              <RefreshCw className="w-3 h-3" /> {t('common.refresh')}
             </button>
             <button
               onClick={() => setIsManagerOpen(true)}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-blue-600 hover:text-blue-700 transition"
             >
-              <ListTree className="w-3 h-3" /> 資料夾管理
+              <ListTree className="w-3 h-3" /> {t('sidebar.folderManager')}
             </button>
           </nav>
           {isManagerOpen && (
@@ -398,9 +380,9 @@ const AccountFolders: React.FC<{
 };
 
 export const Sidebar: React.FC = () => {
-  const { openComposer, isSidebarOpen, setSidebarOpen, setView } = useMailStore();
+  const { t } = useI18n();
+  const { openComposer, isSidebarOpen, setSidebarOpen, setView, openSettings } = useMailStore();
   const { session, logout } = useAuthStore();
-  const [isPgpModalOpen, setIsPgpModalOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
     session?.accounts?.forEach((a, i) => {
@@ -409,7 +391,6 @@ export const Sidebar: React.FC = () => {
     return init;
   });
 
-  const hasPgpKey = usePgpStore((s) => s.hasKey);
   const accounts = session?.accounts ?? [];
 
   const toggleCollapsed = (id: string) =>
@@ -428,7 +409,7 @@ export const Sidebar: React.FC = () => {
               <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
                 {session?.email}
               </div>
-              <div className="text-[10px] text-slate-400">{accounts.length} 個帳號</div>
+              <div className="text-[10px] text-slate-400">{t('sidebar.accountsCount', { count: accounts.length })}</div>
             </div>
           </div>
           <button
@@ -448,20 +429,13 @@ export const Sidebar: React.FC = () => {
           className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition"
         >
           <PenSquare className="w-4 h-4" />
-          撰寫新郵件
+          {t('sidebar.writeMail')}
         </button>
 
         {/* 帳號資料夾樹 */}
         <div>
-          <div className="flex items-center justify-between px-2 mb-1">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">信箱</span>
-            <button
-              onClick={() => setView('accounts')}
-              className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 transition"
-              title="管理帳號"
-            >
-              <Settings2 className="w-3.5 h-3.5" /> 管理帳號
-            </button>
+          <div className="flex items-center px-2 mb-1">
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{t('sidebar.mailboxes')}</span>
           </div>
 
           <div className="space-y-1">
@@ -478,18 +452,6 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* 過濾器入口 */}
-      <button
-        onClick={() => {
-          setView('sieve');
-          setSidebarOpen(false);
-        }}
-        className="w-full flex items-center gap-2 p-2.5 bg-amber-50/80 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-900/40 text-amber-900 dark:text-amber-200 rounded-xl text-xs font-semibold transition border border-amber-200/60 dark:border-amber-800/50"
-      >
-        <SlidersHorizontal className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-        <span>過濾器</span>
-      </button>
-
       {/* 通訊錄入口 */}
       <button
         onClick={() => {
@@ -499,27 +461,19 @@ export const Sidebar: React.FC = () => {
         className="w-full flex items-center gap-2 p-2.5 bg-emerald-50/80 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-900/40 text-emerald-900 dark:text-emerald-200 rounded-xl text-xs font-semibold transition border border-emerald-200/60 dark:border-emerald-800/50"
       >
         <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-        <span>通訊錄</span>
+        <span>{t('sidebar.contacts')}</span>
       </button>
 
-      {/* 側邊欄底部：PGP 設定與登出按鈕 */}
+      {/* 側邊欄底部：設定與登出按鈕 */}
       <div className="space-y-2 pt-3 border-t border-slate-200 dark:border-slate-800 mt-4">
         <button
           onClick={() => {
-            setIsPgpModalOpen(true);
-            setSidebarOpen(false);
+            openSettings();
           }}
-          className="w-full flex items-center justify-between p-2.5 bg-indigo-50/80 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-900 dark:text-indigo-200 rounded-xl text-xs font-semibold transition border border-indigo-200/60 dark:border-indigo-800/50"
+          className="w-full min-h-10 flex items-center gap-2 p-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold transition border border-slate-200 dark:border-slate-700"
         >
-          <div className="flex items-center gap-2">
-            <Key className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-            <span>PGP 金鑰設定</span>
-          </div>
-          {hasPgpKey ? (
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          ) : (
-            <span className="text-[10px] text-amber-600 font-medium">未配置</span>
-          )}
+          <Settings2 className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+          <span>{t('sidebar.settings')}</span>
         </button>
 
         {/* 行動端登出按鈕 */}
@@ -528,7 +482,7 @@ export const Sidebar: React.FC = () => {
           className="lg:hidden w-full flex items-center gap-2 p-2.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl text-xs font-semibold transition"
         >
           <LogOut className="w-4 h-4" />
-          <span>登出帳號</span>
+          <span>{t('sidebar.logout')}</span>
         </button>
       </div>
 
@@ -538,8 +492,6 @@ export const Sidebar: React.FC = () => {
         <p>CommitHash: {buildInfo.commitHash.slice(0, 7)}</p>
         <p>BuildTime: {buildInfo.buildTime}</p>
       </div>
-
-      <PgpKeyModal isOpen={isPgpModalOpen} onClose={() => setIsPgpModalOpen(false)} />
     </div>
   );
 

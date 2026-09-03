@@ -24,8 +24,10 @@ import { useActiveAccount } from '../../hooks/useActiveAccount';
 import { EmailFrame } from '../mail/EmailFrame';
 import { MessageListResult, MessageSummary } from '../../types/api';
 import { UserPlus, Check } from 'lucide-react';
+import { useI18n } from '../../i18n';
 
 export const ViewerPane: React.FC = () => {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const activeAccount = useActiveAccount();
   const accountId = activeAccount?.id;
@@ -278,7 +280,7 @@ export const ViewerPane: React.FC = () => {
       const raw = await mailApi.getRawMessage(message.uid, detailFolder, accountId);
       setRawContent(raw);
     } catch (e: any) {
-      setRawContent(`載入失敗: ${e?.message || String(e)}`);
+      setRawContent(t('viewer.loadFailed', { error: e?.message || String(e) }));
     } finally {
       setRawLoading(false);
     }
@@ -288,7 +290,7 @@ export const ViewerPane: React.FC = () => {
     return (
       <main className="hidden lg:flex flex-1 bg-slate-50/50 dark:bg-slate-950 flex-col items-center justify-center text-slate-400 p-8 select-none">
         <MailOpen className="w-16 h-16 stroke-1 text-slate-300 dark:text-slate-700 mb-3" />
-        <p className="text-sm font-medium">請在左側清單選擇一封郵件進行檢視</p>
+        <p className="text-sm font-medium">{t('viewer.noSelection')}</p>
       </main>
     );
   }
@@ -296,7 +298,7 @@ export const ViewerPane: React.FC = () => {
   if (isLoading || !message) {
     return (
       <main className="flex-1 bg-white dark:bg-slate-900 p-8 flex items-center justify-center text-slate-400 text-xs">
-        正在載入郵件內容與附件...
+        {t('viewer.loading')}
       </main>
     );
   }
@@ -307,7 +309,7 @@ export const ViewerPane: React.FC = () => {
       ? [fromAddr, ...(message.to ?? []).map((t) => t.address).filter((a) => a !== fromAddr)]
       : [fromAddr];
 
-    const quoteHeader = `\n\n--- 原始郵件 (${message.date}) ---\n寄件者: ${fromAddr}\n主旨: ${message.subject}\n\n`;
+    const quoteHeader = t('viewer.replyQuote', { date: message.date, from: fromAddr, subject: message.subject });
 
     openComposer({
       to: toList,
@@ -321,7 +323,12 @@ export const ViewerPane: React.FC = () => {
 
   const handleForward = () => {
     const fromAddr = message.from?.[0]?.address || '';
-    const quoteHeader = `\n\n---------- 轉寄郵件 ----------\n寄件者: ${fromAddr}\n日期: ${message.date}\n主旨: ${message.subject}\n收件者: ${(message.to ?? []).map((t) => t.address).join(', ')}\n\n`;
+    const quoteHeader = t('viewer.forwardQuote', {
+      from: fromAddr,
+      date: message.date,
+      subject: message.subject,
+      to: (message.to ?? []).map((recipient) => recipient.address).join(', '),
+    });
 
     openComposer({
       to: [],
@@ -341,21 +348,21 @@ export const ViewerPane: React.FC = () => {
             className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition"
           >
             <Reply className="w-3.5 h-3.5" />
-            回覆
+            {t('viewer.reply')}
           </button>
           <button
             onClick={() => handleReply(true)}
             className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition"
           >
             <ReplyAll className="w-3.5 h-3.5" />
-            全部回覆
+            {t('viewer.replyAll')}
           </button>
           <button
             onClick={handleForward}
             className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition"
           >
             <Forward className="w-3.5 h-3.5" />
-            轉寄
+            {t('viewer.forward')}
           </button>
 
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
@@ -368,7 +375,7 @@ export const ViewerPane: React.FC = () => {
               })
             }
             className="p-1.5 text-slate-500 hover:text-amber-500 rounded-lg transition"
-            title="星標"
+            title={t('viewer.star')}
           >
             <Star
               className={`w-4 h-4 ${
@@ -384,7 +391,7 @@ export const ViewerPane: React.FC = () => {
               })
             }
             className="p-1.5 text-slate-500 hover:text-blue-600 rounded-lg transition"
-            title="標為未讀"
+            title={t('viewer.markUnread')}
           >
             <Mail className="w-4 h-4" />
           </button>
@@ -393,7 +400,7 @@ export const ViewerPane: React.FC = () => {
               onClick={handleMoveToJunk}
               disabled={moveToJunkMutation.isPending}
               className="p-1.5 text-slate-500 hover:text-orange-600 rounded-lg transition disabled:opacity-40"
-              title="移到垃圾郵件"
+              title={t('viewer.moveToJunk')}
             >
               <AlertOctagon className="w-4 h-4" />
             </button>
@@ -401,7 +408,7 @@ export const ViewerPane: React.FC = () => {
           <button
             onClick={() => deleteMutation.mutate(message.uid)}
             className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg transition"
-            title="刪除"
+            title={t('viewer.delete')}
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -409,7 +416,7 @@ export const ViewerPane: React.FC = () => {
           <button
             onClick={handleShowRaw}
             className="p-1.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg transition"
-            title="顯示原始碼"
+            title={t('viewer.showSource')}
           >
             <Code className="w-4 h-4" />
           </button>
@@ -425,7 +432,7 @@ export const ViewerPane: React.FC = () => {
             className="flex items-center gap-1 text-xs font-bold text-blue-600 p-1 -ml-1 hover:opacity-80 transition"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>返回清單</span>
+            <span>{t('viewer.backToList')}</span>
           </button>
           <div className="flex items-center gap-2">
             <button
@@ -436,7 +443,7 @@ export const ViewerPane: React.FC = () => {
                 })
               }
               className="p-1.5 text-slate-500 rounded-lg"
-              title="星標"
+              title={t('viewer.star')}
             >
               <Star
                 className={`w-4 h-4 ${
@@ -452,21 +459,21 @@ export const ViewerPane: React.FC = () => {
                 })
               }
               className="p-1.5 text-slate-500 rounded-lg"
-              title="標為未讀"
+              title={t('viewer.markUnread')}
             >
               <Mail className="w-4 h-4" />
             </button>
             <button
               onClick={() => deleteMutation.mutate(message.uid)}
               className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg"
-              title="刪除"
+              title={t('viewer.delete')}
             >
               <Trash2 className="w-4 h-4" />
             </button>
             <button
               onClick={handleShowRaw}
               className="p-1.5 text-slate-500 rounded-lg"
-              title="顯示原始碼"
+              title={t('viewer.showSource')}
             >
               <Code className="w-4 h-4" />
             </button>
@@ -474,7 +481,7 @@ export const ViewerPane: React.FC = () => {
         </div>
 
         <h2 className="text-base md:text-xl font-bold text-slate-900 dark:text-white leading-snug break-words">
-          {message.subject || '(無主旨)'}
+          {message.subject || t('viewer.noSubject')}
         </h2>
 
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 min-w-0">
@@ -501,7 +508,7 @@ export const ViewerPane: React.FC = () => {
                   )}
                   {senderContact ? (
                     <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200">
-                      <Check className="w-3 h-3" /> 已在通訊錄
+                      <Check className="w-3 h-3" /> {t('viewer.inContacts')}
                     </span>
                   ) : (
                     <button
@@ -510,12 +517,12 @@ export const ViewerPane: React.FC = () => {
                       className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-full border border-blue-200 transition disabled:opacity-50"
                     >
                       <UserPlus className="w-3 h-3" />
-                      {addContactMutation.isPending ? '加入中...' : '加入聯絡人'}
+                      {addContactMutation.isPending ? t('viewer.adding') : t('viewer.addContact')}
                     </button>
                   )}
                 </div>
                 <div className="text-[11px] text-slate-500 truncate">
-                  收件人：{message.to?.map((t) => t.name || t.address).join(', ') || '無'}
+                  {t('viewer.to', { recipients: message.to?.map((recipient) => recipient.name || recipient.address).join(', ') || t('common.none') })}
                 </div>
               </div>
             </div>
@@ -570,28 +577,28 @@ export const ViewerPane: React.FC = () => {
           className="flex flex-col items-center gap-1 text-slate-700 dark:text-slate-300 text-[10px] font-medium"
         >
           <Reply className="w-4 h-4 text-blue-600" />
-          回覆
+          {t('viewer.reply')}
         </button>
         <button
           onClick={() => handleReply(true)}
           className="flex flex-col items-center gap-1 text-slate-700 dark:text-slate-300 text-[10px] font-medium"
         >
           <ReplyAll className="w-4 h-4 text-blue-600" />
-          全部回覆
+          {t('viewer.replyAll')}
         </button>
         <button
           onClick={handleForward}
           className="flex flex-col items-center gap-1 text-slate-700 dark:text-slate-300 text-[10px] font-medium"
         >
           <Forward className="w-4 h-4 text-blue-600" />
-          轉寄
+          {t('viewer.forward')}
         </button>
         <button
           onClick={() => deleteMutation.mutate(message.uid)}
           className="flex flex-col items-center gap-1 text-red-600 text-[10px] font-medium"
         >
           <Trash2 className="w-4 h-4" />
-          刪除
+          {t('viewer.delete')}
         </button>
       </div>
 
@@ -602,7 +609,7 @@ export const ViewerPane: React.FC = () => {
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 shrink-0">
               <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-white">
                 <Code className="w-4 h-4" />
-                <span>郵件原始碼 (Raw Source)</span>
+                <span>{t('viewer.rawSource')}</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -612,7 +619,7 @@ export const ViewerPane: React.FC = () => {
                   className="flex items-center gap-1 px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded-lg"
                 >
                   <Copy className="w-3.5 h-3.5" />
-                  複製
+                  {t('common.copy')}
                 </button>
                 <button
                   onClick={() => setShowRaw(false)}
@@ -624,7 +631,7 @@ export const ViewerPane: React.FC = () => {
             </div>
             <div className="flex-1 overflow-auto p-4 bg-slate-50 dark:bg-slate-950">
               {rawLoading ? (
-                <div className="text-xs text-slate-500">載入中...</div>
+                <div className="text-xs text-slate-500">{t('common.loading')}</div>
               ) : (
                 <pre className="text-xs font-mono whitespace-pre-wrap break-all text-slate-800 dark:text-slate-200">{rawContent}</pre>
               )}

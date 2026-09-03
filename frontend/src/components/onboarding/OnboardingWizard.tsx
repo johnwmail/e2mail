@@ -16,6 +16,7 @@ import { pgpService, fileToPrivateKeyArmor } from '../../api/pgp';
 import { refreshPgp } from '../../stores/usePgpStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useMailStore } from '../../stores/useMailStore';
+import { useI18n } from '../../i18n';
 
 type Step = '2fa' | 'pgp' | 'done';
 
@@ -24,6 +25,7 @@ export const OnboardingWizard: React.FC<{
   requirePGP?: boolean;
   onComplete: () => void;
 }> = ({ require2FA = true, requirePGP = true, onComplete }) => {
+  const { t } = useI18n();
   const { session } = useAuthStore();
   const setView = useMailStore((s) => s.setView);
   const [step, setStep] = useState<Step>(() => {
@@ -55,7 +57,7 @@ export const OnboardingWizard: React.FC<{
       setImportedArmored(armored);
       setMsg(null);
     } catch (err: any) {
-      setMsg({ type: 'error', text: '讀取檔案失敗: ' + (err?.message || err) });
+      setMsg({ type: 'error', text: t('onboarding.readFailed', { error: err?.message || err }) });
     } finally {
       e.target.value = '';
     }
@@ -81,7 +83,7 @@ export const OnboardingWizard: React.FC<{
         setIssuer(res.issuer);
         setQrDataUrl(res.otpauthUrl);
       } catch (e: any) {
-        setMsg({ type: 'error', text: '2FA 設定失敗: ' + (e?.message || e) });
+        setMsg({ type: 'error', text: t('onboarding.setupFailed', { error: e?.message || e }) });
       } finally {
         setLoading(false);
       }
@@ -91,7 +93,7 @@ export const OnboardingWizard: React.FC<{
   const handleEnable2FA = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code || code.length !== 6) {
-      setMsg({ type: 'error', text: '請輸入 Authenticator App 顯示嘅 6 位數驗證碼' });
+      setMsg({ type: 'error', text: t('onboarding.needCode') });
       return;
     }
     setLoading(true);
@@ -102,7 +104,7 @@ export const OnboardingWizard: React.FC<{
       setStep(requirePGP ? 'pgp' : 'done');
       setMsg(null);
     } catch (e: any) {
-      setMsg({ type: 'error', text: e?.message || '2FA 啟用失敗' });
+      setMsg({ type: 'error', text: e?.message || t('onboarding.enableFailed') });
     } finally {
       setLoading(false);
     }
@@ -112,7 +114,7 @@ export const OnboardingWizard: React.FC<{
     e.preventDefault();
     if (!session?.email) return;
     if (!pgpPassphrase) {
-      setMsg({ type: 'error', text: '請設定專用保護密碼 (Passphrase)' });
+      setMsg({ type: 'error', text: t('onboarding.needPassphrase') });
       return;
     }
     setLoading(true);
@@ -122,7 +124,7 @@ export const OnboardingWizard: React.FC<{
       refreshPgp();
       finishOnboarding();
     } catch (e: any) {
-      setMsg({ type: 'error', text: '生成 PGP 金鑰失敗: ' + (e?.message || e) });
+      setMsg({ type: 'error', text: t('onboarding.generateFailed', { error: e?.message || e }) });
     } finally {
       setLoading(false);
     }
@@ -131,7 +133,7 @@ export const OnboardingWizard: React.FC<{
   const handleImportPgp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!importedArmored.trim()) {
-      setMsg({ type: 'error', text: '請貼上 PGP PRIVATE KEY 區塊' });
+      setMsg({ type: 'error', text: t('onboarding.needPrivateBlock') });
       return;
     }
     setLoading(true);
@@ -141,7 +143,7 @@ export const OnboardingWizard: React.FC<{
       refreshPgp();
       finishOnboarding();
     } catch (e: any) {
-      setMsg({ type: 'error', text: '導入私鑰失敗: ' + (e?.message || e) });
+      setMsg({ type: 'error', text: t('onboarding.importFailed', { error: e?.message || e }) });
     } finally {
       setLoading(false);
     }
@@ -172,14 +174,14 @@ export const OnboardingWizard: React.FC<{
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
           <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-base">
             <Shield className="w-5 h-5 text-blue-600" />
-            安全設定
+            {t('onboarding.title')}
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            為保護你嘅帳號，首次登入需要完成以下兩步：
+            {t('onboarding.intro')}
           </p>
           <div className="flex gap-4 mt-3 text-[11px] font-semibold">
-            <span className={step === '2fa' ? 'text-blue-600' : 'text-slate-400'}>1. 兩步驟驗證</span>
-            <span className={step === 'pgp' || step === 'done' ? 'text-blue-600' : 'text-slate-400'}>2. PGP 金鑰</span>
+            <span className={step === '2fa' ? 'text-blue-600' : 'text-slate-400'}>{t('onboarding.step2fa')}</span>
+            <span className={step === 'pgp' || step === 'done' ? 'text-blue-600' : 'text-slate-400'}>{t('onboarding.stepPgp')}</span>
           </div>
         </div>
 
@@ -190,14 +192,14 @@ export const OnboardingWizard: React.FC<{
               <div className="flex items-start gap-3 p-3.5 rounded-xl bg-blue-50 border border-blue-200/60">
                 <Lock className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
                 <div className="text-xs text-blue-800 leading-relaxed">
-                  <div className="font-bold mb-0.5">兩步驟驗證 (2FA / TOTP)</div>
-                  使用 Authenticator App（如 Google Authenticator / 1Password）掃描下面 QR 碼，然後輸入 App 顯示嘅 6 位驗證碼。
+                  <div className="font-bold mb-0.5">{t('onboarding.twoFaTitle')}</div>
+                  {t('onboarding.twoFaHint')}
                 </div>
               </div>
 
               {loading ? (
                 <div className="flex items-center justify-center p-8 text-slate-400 text-xs">
-                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> 正在產生驗證碼...
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> {t('onboarding.generatingCode')}
                 </div>
               ) : (
                 <>
@@ -207,7 +209,7 @@ export const OnboardingWizard: React.FC<{
                     </div>
                   )}
                   <div className="flex items-center gap-2 text-[11px]">
-                    <span className="text-slate-500">或手動輸入 Secret:</span>
+                    <span className="text-slate-500">{t('onboarding.orEnterSecret')}</span>
                     <code className="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded">{secret}</code>
                     <button type="button" onClick={copyOtpauth} className="text-blue-600 hover:underline">
                       <Copy className="w-3.5 h-3.5 inline" />
@@ -217,7 +219,7 @@ export const OnboardingWizard: React.FC<{
               )}
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">6 位驗證碼</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('security.sixDigit')}</label>
                 <input
                   type="text"
                   required
@@ -238,7 +240,7 @@ export const OnboardingWizard: React.FC<{
               )}
 
               <button type="submit" disabled={loading} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50">
-                {loading ? '驗證中...' : '驗證並繼續'}
+                {loading ? t('onboarding.verifying') : t('onboarding.verifyContinue')}
               </button>
             </form>
           )}
@@ -249,8 +251,8 @@ export const OnboardingWizard: React.FC<{
               <div className="flex items-start gap-3 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200/60">
                 <Shield className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                 <div className="text-xs text-emerald-800 leading-relaxed">
-                  <div className="font-bold mb-0.5">2FA 已啟用</div>
-                  保存以下備份碼（一次性使用，遺失可重新產生）—— 請妥善保管，用嚟喺 Authenticator 失效時登入。
+                  <div className="font-bold mb-0.5">{t('onboarding.twoFaEnabled')}</div>
+                  {t('onboarding.backupCodesSave')}
                 </div>
               </div>
 
@@ -265,13 +267,13 @@ export const OnboardingWizard: React.FC<{
               <div className="border-t border-slate-200 dark:border-slate-800 pt-4">
                 <div className="flex items-center gap-2 mb-3 text-xs font-bold text-slate-700">
                   <Key className="w-4 h-4 text-blue-600" />
-                  設定 PGP 端到端加密金鑰
+                  {t('onboarding.setupPgp')}
                 </div>
 
                 {!showImport ? (
                   <form onSubmit={handleGeneratePgp} className="space-y-3">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">金鑰名稱 (Name)</label>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">{t('pgp.keyName')}</label>
                       <input
                         type="text"
                         value={pgpName}
@@ -282,17 +284,17 @@ export const OnboardingWizard: React.FC<{
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        專用保護密碼 (Passphrase) <span className="text-red-500">*</span>
+                        {t('pgp.passphrase')} <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="password"
                         required
                         value={pgpPassphrase}
                         onChange={(e) => setPgpPassphrase(e.target.value)}
-                        placeholder="加密私鑰用（唔係登入密碼）"
+                        placeholder={t('onboarding.passphrasePlaceholder')}
                         className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-sky-400"
                       />
-                      <p className="mt-1 text-[10px] text-slate-400">解密/簽名時需輸入此密碼；請緊記，遺失將無法解密。</p>
+                      <p className="mt-1 text-[10px] text-slate-400">{t('onboarding.passphraseHint')}</p>
                     </div>
 
                     {msg && (
@@ -304,10 +306,10 @@ export const OnboardingWizard: React.FC<{
 
                     <div className="flex items-center gap-2">
                       <button type="submit" disabled={loading} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition disabled:opacity-50">
-                        {loading ? '生成中...' : '生成並完成'}
+                        {loading ? t('onboarding.generating') : t('onboarding.generateFinish')}
                       </button>
                       <button type="button" onClick={() => setShowImport(true)} className="px-3 py-2.5 text-xs text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50">
-                        匯入既有私鑰
+                        {t('onboarding.importExisting')}
                       </button>
                     </div>
                   </form>
@@ -320,7 +322,7 @@ export const OnboardingWizard: React.FC<{
                         className="flex items-center gap-1 text-xs text-blue-600 hover:underline font-semibold"
                       >
                         <Upload className="w-3.5 h-3.5" />
-                        選擇 .asc 檔案
+                        {t('pgp.chooseAsc')}
                       </button>
                       <input
                         ref={importFileRef}
@@ -341,7 +343,7 @@ export const OnboardingWizard: React.FC<{
                       type="password"
                       value={importPassphrase}
                       onChange={(e) => setImportPassphrase(e.target.value)}
-                      placeholder="私鑰 Passphrase（若私鑰已加密需輸入；留空=未加密）"
+                      placeholder={t('onboarding.importPassphrase')}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-sky-400"
                     />
                     {msg && (
@@ -352,10 +354,10 @@ export const OnboardingWizard: React.FC<{
                     )}
                     <div className="flex items-center gap-2">
                       <button type="submit" disabled={loading} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition disabled:opacity-50">
-                        {loading ? '導入中...' : '導入並完成'}
+                        {loading ? t('onboarding.importing') : t('onboarding.importFinish')}
                       </button>
                       <button type="button" onClick={() => setShowImport(false)} className="px-3 py-2.5 text-xs text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50">
-                        返回生成
+                        {t('pgp.backToGenerate')}
                       </button>
                     </div>
                   </form>
@@ -370,10 +372,10 @@ export const OnboardingWizard: React.FC<{
               <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
                 <Check className="w-8 h-8 text-emerald-600" />
               </div>
-              <div className="text-sm font-bold text-slate-900 dark:text-white">安全設定完成！</div>
-              <p className="text-xs text-slate-500">2FA 同 PGP 金鑰都設定好晒，而家可以開始用你嘅郵件。</p>
+              <div className="text-sm font-bold text-slate-900 dark:text-white">{t('onboarding.completeTitle')}</div>
+              <p className="text-xs text-slate-500">{t('onboarding.allSet')}</p>
               <button onClick={handleDone} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition">
-                進入信箱
+                {t('onboarding.enterMailbox')}
               </button>
             </div>
           )}

@@ -1,4 +1,5 @@
 import { request } from './client';
+import { t } from '../i18n';
 import {
   FolderInfo,
   MessageListResult,
@@ -81,7 +82,7 @@ export const mailApi = {
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
     if (!res.ok) {
-      throw new Error(`取得原始郵件失敗: HTTP ${res.status}`);
+      throw new Error(t('api.rawMailFailed', { status: res.status }));
     }
     return res.text();
   },

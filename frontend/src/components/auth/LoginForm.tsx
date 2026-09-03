@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Lock, Eye, EyeOff, ChevronDown, ChevronUp, Loader2, AlertCircle, ShieldAlert, Sparkles, Server, KeyRound, ArrowLeft } from 'lucide-react';
 import { useAuthStore } from '../../stores/useAuthStore';
+import { useI18n } from '../../i18n';
 
 interface ServerDefaults {
   imapHost: string;
@@ -27,6 +28,7 @@ const KNOWN_DOMAINS: Record<string, { imapHost: string; imapPort: number; smtpHo
 };
 
 export const LoginForm: React.FC = () => {
+  const { t } = useI18n();
   const { login, verify2fa } = useAuthStore();
 
   const [email, setEmail] = useState('');
@@ -107,7 +109,7 @@ export const LoginForm: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password) {
-      setError('請輸入電子郵件與密碼');
+      setError(t('login.needEmailPassword'));
       return;
     }
 
@@ -125,7 +127,7 @@ export const LoginForm: React.FC = () => {
     }
 
     if (!finalImapHost || !finalSmtpHost) {
-      setError('無法自動判斷郵件伺服器，請展開進階設定輸入主機位址');
+      setError(t('login.needServer'));
       setShowAdvanced(true);
       return;
     }
@@ -160,7 +162,7 @@ export const LoginForm: React.FC = () => {
         setPassword('');
       }
     } catch (err: any) {
-      setError(err.message || '登入失敗，請檢查密碼或展開進階設定確認伺服器主機');
+      setError(err.message || t('login.loginFailed'));
     } finally {
       setLoading(false);
     }
@@ -169,7 +171,7 @@ export const LoginForm: React.FC = () => {
   const handleTwoFASubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!challenge || !twoFACode.trim()) {
-      setError('請輸入驗證碼');
+      setError(t('login.needCode'));
       return;
     }
 
@@ -179,7 +181,7 @@ export const LoginForm: React.FC = () => {
     try {
       await verify2fa(challenge, twoFACode.trim());
     } catch (err: any) {
-      setError(err.message || '驗證碼錯誤，請重試');
+      setError(err.message || t('login.codeError'));
       setTwoFACode('');
     } finally {
       setTwoFALoading(false);
@@ -201,10 +203,10 @@ export const LoginForm: React.FC = () => {
             <Mail className="w-6 h-6" />
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            登入 e2Mail
+            {t('login.title')}
           </h1>
           <p className="text-sm text-slate-500 mt-1.5">
-            輸入帳號與密碼即可自動連線
+            {t('login.subtitle')}
           </p>
         </div>
 
@@ -221,7 +223,7 @@ export const LoginForm: React.FC = () => {
           <div className="mb-5 flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-50 text-amber-800 text-xs border border-amber-200/70 leading-relaxed animate-in fade-in">
             <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
             <span>
-              首次登入即建立你的郵件帳號。帳號密碼會<strong className="font-semibold">加密儲存於伺服器</strong>；請緊記你嘅登入密碼——遺失將永久無法解鎖所有帳號。
+              {t('login.firstLoginHint')}
             </span>
           </div>
         )}
@@ -232,14 +234,14 @@ export const LoginForm: React.FC = () => {
             <div className="flex items-start gap-3 p-3.5 rounded-xl bg-blue-50 border border-blue-200/60">
               <KeyRound className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
               <div className="text-xs text-blue-800 leading-relaxed">
-                <div className="font-bold mb-0.5">兩步驟驗證 (2FA)</div>
-                此帳號已啟用兩步驟驗證。請輸入 Authenticator App 顯示嘅 6 位數驗證碼，或其中一個備份碼。
+                <div className="font-bold mb-0.5">{t('login.twoFactorTitle')}</div>
+                {t('login.twoFactorHint')}
               </div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                驗證碼
+                {t('login.verificationCode')}
               </label>
               <input
                 type="text"
@@ -262,10 +264,10 @@ export const LoginForm: React.FC = () => {
               {twoFALoading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  正在驗證...
+                  {t('login.verifying')}
                 </>
               ) : (
-                '驗證並登入'
+                t('login.verifyAndSignIn')
               )}
             </button>
 
@@ -275,7 +277,7 @@ export const LoginForm: React.FC = () => {
               className="w-full flex items-center justify-center gap-1.5 text-xs text-slate-500 hover:text-sky-600 transition font-medium"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              返回重新輸入帳號密碼
+              {t('login.backToCredentials')}
             </button>
           </form>
         ) : (
@@ -284,12 +286,12 @@ export const LoginForm: React.FC = () => {
           <div>
             <div className="flex items-center justify-between mb-1.5 gap-2">
               <label className="block text-xs font-semibold text-slate-700">
-                電子郵件地址
+                {t('login.email')}
               </label>
               {detectedDomain && (
                 <span className="flex items-center gap-1 text-[11px] text-sky-600 font-medium animate-in fade-in shrink-0">
                   <Sparkles className="w-3 h-3" />
-                  自動適配 @{detectedDomain}
+                  {t('login.autoMatched', { domain: detectedDomain })}
                 </span>
               )}
             </div>
@@ -310,7 +312,7 @@ export const LoginForm: React.FC = () => {
             </div>
             {autofillHint && (
               <p className="mt-1 text-[10px] text-slate-400">
-                將以 <span className="font-mono text-slate-500">{autofillHint}</span> 登入（可省略 @網域部分）
+                {t('login.autofillHint', { email: autofillHint })}
               </p>
             )}
           </div>
@@ -318,7 +320,7 @@ export const LoginForm: React.FC = () => {
           {/* 密碼輸入框 */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              郵件密碼
+              {t('login.mailPassword')}
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -334,7 +336,7 @@ export const LoginForm: React.FC = () => {
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
-                aria-label={showPassword ? '隱藏密碼' : '顯示密碼'}
+                aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -349,7 +351,7 @@ export const LoginForm: React.FC = () => {
               className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-sky-600 transition font-medium select-none"
             >
               <Server className="w-3.5 h-3.5" />
-              <span>{showAdvanced ? '隱藏進階伺服器設定' : '進階伺服器設定'}</span>
+              <span>{showAdvanced ? t('login.advancedHide') : t('login.advancedShow')}</span>
               {showAdvanced ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
 
@@ -357,7 +359,7 @@ export const LoginForm: React.FC = () => {
               <div className="mt-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 animate-in fade-in duration-150">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                    IMAP 伺服器 (收信)
+                    {t('login.imapServer')}
                   </label>
                   <div className="flex gap-2">
                     <input
@@ -379,7 +381,7 @@ export const LoginForm: React.FC = () => {
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                    SMTP 伺服器 (發信)
+                    {t('login.smtpServer')}
                   </label>
                   <div className="flex gap-2">
                     <input
@@ -409,7 +411,7 @@ export const LoginForm: React.FC = () => {
                     />
                     <span className="flex items-center gap-1">
                       <ShieldAlert className="w-3 h-3 text-amber-500 shrink-0" />
-                      允許自簽/未驗證的 TLS 憑證
+                      {t('login.allowInsecure')}
                     </span>
                   </label>
                 </div>
@@ -426,10 +428,10 @@ export const LoginForm: React.FC = () => {
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                正在登入...
+                {t('login.signingIn')}
               </>
             ) : (
-              '登入信箱'
+              t('login.signIn')
             )}
           </button>
         </form>

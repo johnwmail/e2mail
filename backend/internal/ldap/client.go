@@ -33,7 +33,7 @@ type Conn interface {
 }
 
 // Client 對 OpenBSD ldapd 做用戶 self-bind 驗證與 rootdn Modify 改密。
-// 設計與格式依據見 repo 根目錄 LDAP.md。
+// 設計與格式依據見 docs/LDAP.md。
 type Client struct {
 	opts config.LDAPConfig
 	dial func() (Conn, error)

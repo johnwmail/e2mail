@@ -5,6 +5,7 @@ import { SieveRule, SieveCondition, SieveAction, SieveActionType } from '../../t
 import { rulesToSieve } from '../../utils/sieveGenerator';
 import { sieveApi } from '../../api/sieve';
 import { mailApi } from '../../api/mail';
+import { useI18n } from '../../i18n';
 
 interface Props {
   accountId: string;
@@ -35,6 +36,7 @@ const newAction = (): SieveAction => ({ id: uid(), type: 'fileinto', mailbox: 'I
 const FLAG_OPTIONS = ['\\Seen', '\\Flagged', '\\Answered', '$Junk', '$NotJunk'];
 
 export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, setRules, onSaved }) => {
+  const { t } = useI18n();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +59,7 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
       ...prev,
       {
         id: uid(),
-        name: `規則 ${prev.length + 1}`,
+        name: t('sieve.ruleN', { n: prev.length + 1 }),
         enabled: true,
         conditionJoin: 'allof',
         conditions: [newCondition()],
@@ -96,7 +98,7 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
       if (activate) await sieveApi.activate(scriptName, accountId);
       onSaved();
     } catch (e: any) {
-      setError(e.message || '儲存失敗');
+      setError(e.message || t('sieve.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -111,21 +113,21 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2 flex-wrap">
         <button onClick={addRule} className="px-3 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1.5">
-          <Plus className="w-3.5 h-3.5" /> 新增規則
+          <Plus className="w-3.5 h-3.5" /> {t('sieve.addRule')}
         </button>
         <button
           onClick={() => handleSave(false)}
           disabled={saving}
           className="px-4 py-1.5 text-xs font-semibold border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 flex items-center gap-1.5"
         >
-          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} 儲存
+          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} {t('common.save')}
         </button>
         <button
           onClick={() => handleSave(true)}
           disabled={saving}
           className="px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/30 disabled:opacity-50"
         >
-          儲存並啟用
+          {t('sieve.saveAndActivate')}
         </button>
       </div>
 
@@ -133,25 +135,25 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
 
       {rules.length === 0 && (
         <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg">
-          尚未建立規則，點擊「新增規則」開始（例：若 From 地址包含「noreply」則設為已讀並移至「廣告」）
+          {t('sieve.emptyRules')}
         </div>
       )}
 
       {rules.map((rule, idx) => (
         <div key={rule.id} className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-500">#{idx + 1}</span>
+            <span className="text-xs font-bold text-slate-500 shrink-0">#{idx + 1}</span>
             <input
               value={rule.name}
               onChange={(e) => updateRule(rule.id, { name: e.target.value })}
-              className="flex-1 px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="規則名稱"
+              className="flex-1 min-w-0 px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder={t('sieve.ruleName')}
             />
-            <label className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300">
+            <label className="flex items-center gap-1 shrink-0 text-xs text-slate-600 dark:text-slate-300">
               <input type="checkbox" checked={rule.enabled} onChange={(e) => updateRule(rule.id, { enabled: e.target.checked })} className="w-4 h-4" />
-              啟用
+              {t('sieve.enabled')}
             </label>
-            <button onClick={() => removeRule(rule.id)} className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg" aria-label="刪除規則">
+            <button onClick={() => removeRule(rule.id)} className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg" aria-label={t('sieve.deleteRule')}>
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
@@ -159,33 +161,33 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
           {/* 條件 */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-slate-500">若符合</span>
+              <span className="text-[11px] font-semibold text-slate-500">{t('sieve.ifMatch')}</span>
               <select
                 value={rule.conditionJoin}
                 onChange={(e) => updateRule(rule.id, { conditionJoin: e.target.value as 'allof' | 'anyof' })}
                 className={selCls}
               >
-                <option value="allof">全部條件</option>
-                <option value="anyof">任一條件</option>
+                <option value="allof">{t('sieve.allConditions')}</option>
+                <option value="anyof">{t('sieve.anyCondition')}</option>
               </select>
               <button onClick={() => addCondition(rule.id)} className="ml-auto px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800">
-                + 條件
+                {t('sieve.addCondition')}
               </button>
             </div>
             {rule.conditions.map((c) => (
               <div key={c.id} className="flex items-center gap-1.5 flex-wrap">
                 <select value={c.test} onChange={(e) => updateCondition(rule.id, c.id, { test: e.target.value as SieveCondition['test'] })} className={selCls}>
-                  <option value="header">標頭</option>
-                  <option value="address">地址</option>
-                  <option value="exists">標頭存在</option>
-                  <option value="true">一律符合</option>
+                  <option value="header">{t('sieve.header')}</option>
+                  <option value="address">{t('sieve.address')}</option>
+                  <option value="exists">{t('sieve.exists')}</option>
+                  <option value="true">{t('sieve.always')}</option>
                 </select>
                 {c.test === 'address' && (
-                  <select value={c.part} onChange={(e) => updateCondition(rule.id, c.id, { part: e.target.value as SieveCondition['part'] })} className={selCls} title="地址比對部位">
-                    <option value="">完整地址</option>
-                    <option value="domain">域名</option>
-                    <option value="localpart">本機部分</option>
-                    <option value="user">使用者名</option>
+                  <select value={c.part} onChange={(e) => updateCondition(rule.id, c.id, { part: e.target.value as SieveCondition['part'] })} className={selCls} title={t('sieve.addressPart')}>
+                    <option value="">{t('sieve.wholeAddress')}</option>
+                    <option value="domain">{t('sieve.domain')}</option>
+                    <option value="localpart">{t('sieve.localpart')}</option>
+                    <option value="user">{t('sieve.user')}</option>
                   </select>
                 )}
                 {needsHeader(c) && (
@@ -194,35 +196,35 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
                     onChange={(e) => updateCondition(rule.id, c.id, { header: e.target.value })}
                     className={`${inCls} w-32`}
                     placeholder="From,To"
-                    title="標頭（逗號分隔多個；address 留空=所有地址欄）"
+                    title={t('sieve.headerTitle')}
                   />
                 )}
                 {c.test !== 'exists' && c.test !== 'true' && (
                   <>
                     <select value={c.op} onChange={(e) => updateCondition(rule.id, c.id, { op: e.target.value as SieveCondition['op'] })} className={selCls}>
-                      <option value="contains">包含</option>
-                      <option value="is">等於</option>
-                      <option value="matches">萬用字元</option>
+                      <option value="contains">{t('sieve.contains')}</option>
+                      <option value="is">{t('sieve.equals')}</option>
+                      <option value="matches">{t('sieve.matches')}</option>
                     </select>
-                    <label className="flex items-center gap-1 text-[11px] text-slate-500" title="not 反轉">
+                    <label className="flex items-center gap-1 text-[11px] text-slate-500" title={t('sieve.not')}>
                       <input type="checkbox" checked={c.negated} onChange={(e) => updateCondition(rule.id, c.id, { negated: e.target.checked })} className="w-3.5 h-3.5" />
-                      非
+                      {t('sieve.not')}
                     </label>
                     <input
                       value={c.value}
                       onChange={(e) => updateCondition(rule.id, c.id, { value: e.target.value })}
                       className={`${inCls} flex-1 min-w-[100px]`}
-                      placeholder="比對值"
+                      placeholder={t('sieve.matchValue')}
                     />
                   </>
                 )}
                 {c.test === 'exists' && (
                   <label className="flex items-center gap-1 text-[11px] text-slate-500">
                     <input type="checkbox" checked={c.negated} onChange={(e) => updateCondition(rule.id, c.id, { negated: e.target.checked })} className="w-3.5 h-3.5" />
-                    不存在
+                    {t('sieve.notExists')}
                   </label>
                 )}
-                <button onClick={() => removeCondition(rule.id, c.id)} className="p-1 text-slate-400 hover:text-red-600" aria-label="刪除條件">
+                <button onClick={() => removeCondition(rule.id, c.id)} className="p-1 text-slate-400 hover:text-red-600" aria-label={t('sieve.deleteCondition')}>
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -232,9 +234,9 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
           {/* 動作 */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-slate-500">則執行</span>
+              <span className="text-[11px] font-semibold text-slate-500">{t('sieve.then')}</span>
               <button onClick={() => addAction(rule.id)} className="ml-auto px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800">
-                + 動作
+                {t('sieve.addAction')}
               </button>
             </div>
             {rule.actions.map((a) => {
@@ -242,15 +244,15 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
               return (
                 <div key={a.id} className="flex items-center gap-1.5 flex-wrap">
                   <select value={a.type} onChange={(e) => updateAction(rule.id, a.id, { type: e.target.value as SieveActionType })} className={selCls}>
-                    <option value="fileinto">移至資料夾</option>
-                    <option value="redirect">轉寄至</option>
-                    <option value="reject">拒絕並回覆</option>
-                    <option value="discard">捨棄</option>
-                    <option value="keep">保留 (keep)</option>
-                    <option value="setflag">設旗標</option>
-                    <option value="addflag">加旗標</option>
-                    <option value="removeflag">去旗標</option>
-                    <option value="stop">停止 (stop)</option>
+                    <option value="fileinto">{t('sieve.fileinto')}</option>
+                    <option value="redirect">{t('sieve.redirect')}</option>
+                    <option value="reject">{t('sieve.reject')}</option>
+                    <option value="discard">{t('sieve.discard')}</option>
+                    <option value="keep">{t('sieve.keep')}</option>
+                    <option value="setflag">{t('sieve.setflag')}</option>
+                    <option value="addflag">{t('sieve.addflag')}</option>
+                    <option value="removeflag">{t('sieve.removeflag')}</option>
+                    <option value="stop">{t('sieve.stop')}</option>
                   </select>
                   {a.type === 'fileinto' && (
                     <>
@@ -259,11 +261,11 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
                         value={a.mailbox || ''}
                         onChange={(e) => updateAction(rule.id, a.id, { mailbox: e.target.value })}
                         className={`${inCls} flex-1 min-w-[120px]`}
-                        placeholder="選或輸入資料夾（逗號分隔多個）"
+                        placeholder={t('sieve.folderPlaceholder')}
                       />
-                      <label className="flex items-center gap-1 text-[11px] text-slate-500" title="保留副本">
+                      <label className="flex items-center gap-1 text-[11px] text-slate-500" title={t('sieve.keepCopy')}>
                         <input type="checkbox" checked={!!a.copy} onChange={(e) => updateAction(rule.id, a.id, { copy: e.target.checked })} className="w-3.5 h-3.5" />
-                        副本
+                        {t('sieve.copy')}
                       </label>
                     </>
                   )}
@@ -271,7 +273,7 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
                     <input value={a.address || ''} onChange={(e) => updateAction(rule.id, a.id, { address: e.target.value })} className={`${inCls} flex-1 min-w-[100px]`} placeholder="forward@example.com" />
                   )}
                   {a.type === 'reject' && (
-                    <input value={a.text || ''} onChange={(e) => updateAction(rule.id, a.id, { text: e.target.value })} className={`${inCls} flex-1 min-w-[100px]`} placeholder="拒絕原因" />
+                    <input value={a.text || ''} onChange={(e) => updateAction(rule.id, a.id, { text: e.target.value })} className={`${inCls} flex-1 min-w-[100px]`} placeholder={t('sieve.rejectReason')} />
                   )}
                   {isFlag && (
                     <input
@@ -282,7 +284,7 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
                       placeholder="\Seen"
                     />
                   )}
-                  <button onClick={() => removeAction(rule.id, a.id)} className="p-1 text-slate-400 hover:text-red-600" aria-label="刪除動作">
+                  <button onClick={() => removeAction(rule.id, a.id)} className="p-1 text-slate-400 hover:text-red-600" aria-label={t('sieve.deleteAction')}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -307,7 +309,7 @@ export const RuleBuilder: React.FC<Props> = ({ accountId, scriptName, rules, set
       </datalist>
 
       <details className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
-        <summary className="text-xs font-semibold cursor-pointer select-none">Sieve 預覽（自動生成）</summary>
+        <summary className="text-xs font-semibold cursor-pointer select-none">{t('sieve.preview')}</summary>
         <pre className="mt-2 p-3 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] leading-4 overflow-x-auto whitespace-pre-wrap">{preview}</pre>
       </details>
     </div>

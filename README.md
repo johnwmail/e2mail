@@ -28,6 +28,57 @@ and the API from a single Go binary in one container.
   the admin so users don't have to fill the advanced settings.
 - **Secure by default** — `allowInsecureTls` is off unless explicitly enabled.
 
+## Web UI
+
+Sign-in only asks for email and password; IMAP/SMTP host and port can be
+pre-filled by the admin through env vars, and the advanced panel stays
+collapsed for everyone else.
+
+![Sign-in screen](docs/screenshots/login.png)
+
+Everything account-related lives on one settings page — 2FA and password,
+PGP keys, mail accounts, Sieve filters, and appearance — with a sidebar on
+desktop and a scrollable tab strip on narrow screens.
+
+![Settings, account security section](docs/screenshots/settings-security.png)
+
+PGP key pairs are generated in the browser and backed up to the server only in
+passphrase-encrypted form, so the same key can be picked up on another device
+without the passphrase ever being uploaded. Contact public keys are imported
+from files, pasted blocks, or a keyserver lookup.
+
+![Settings, PGP keys section](docs/screenshots/settings-pgp.png)
+
+Several mail accounts can be managed in one session, each with its own
+IMAP/SMTP endpoints, TLS flags, and encrypted-at-rest password.
+
+![Settings, mail accounts section](docs/screenshots/settings-accounts.png)
+
+Sieve filters are edited as visual rules, and the generated script stays
+visible so you can check exactly what gets uploaded to the server.
+
+![Settings, Sieve filter rule builder](docs/screenshots/settings-filters.png)
+
+Theme, interface language, and message-vs-conversation list mode are chosen
+under Appearance. All three are stored as server-side user preferences, so the
+choices follow the account to another browser or device.
+
+![Settings, appearance section](docs/screenshots/settings-appearance.png)
+
+![Settings in dark theme](docs/screenshots/settings-filters-dark.png)
+
+![Settings in Traditional Chinese](docs/screenshots/settings-appearance-zh.png)
+
+Every screen is built for phones as well as desktops:
+
+<p>
+  <img src="docs/screenshots/settings-mobile-security.png" alt="Account security on a phone" width="32%">
+  <img src="docs/screenshots/settings-mobile-filters.png" alt="Sieve filters on a phone" width="32%">
+  <img src="docs/screenshots/settings-mobile-appearance.png" alt="Appearance settings on a phone" width="32%">
+</p>
+
+*Screenshots use sample accounts and keys.*
+
 ## Architecture
 
 ```
@@ -127,6 +178,19 @@ WAL mode is enabled (`journal_mode=WAL`, `busy_timeout=5000`); the
 `-shm` / `-wal` siblings accompany the main file inside the same
 `webmail-data` named volume.
 
+## Documentation
+
+Per-feature design notes and implementation plans live in [`docs/`](docs/):
+
+| Document | Scope | Status |
+|----------|-------|--------|
+| [`LDAP.md`](docs/LDAP.md) | Login password change through OpenBSD `ldapd`, including DEK re-wrap ordering and rollback | implemented |
+| [`SIEVE.md`](docs/SIEVE.md) | ManageSieve integration and the visual rule builder | implemented |
+| [`THREADS.md`](docs/THREADS.md) | Gmail-style conversation grouping from IMAP headers | implemented |
+| [`MultiAccounts.md`](docs/MultiAccounts.md) | Multiple mail accounts in one session | implemented |
+| [`MAIL-RENDER.md`](docs/MAIL-RENDER.md) | HTML mail sanitising, fit-to-width, remote-image blocking | implemented |
+| [`CONTACTS.md`](docs/CONTACTS.md) | Per-user address book with vCard/CSV import | draft |
+
 ## Development
 
 ### Backend
@@ -143,6 +207,16 @@ npm install
 npm run dev         # http://localhost:5173, proxies /api to :8080
 npm run build
 ```
+
+`http://localhost:5173/preview.html` renders the settings page on its own with
+a stubbed session and canned API responses, so layout (including phone widths)
+can be checked without a backend or a real mail server. Append `?2fa=on` to see
+the enabled-2FA state. The file is dev-only — `vite build` only emits
+`index.html`, so it never reaches the container image.
+
+The README screenshots are regenerated from that preview with
+`node scripts/screenshots.mjs` (needs a running dev server and a Playwright
+Chromium; see the header of the script).
 
 ## Security notes
 

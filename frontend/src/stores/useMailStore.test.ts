@@ -11,6 +11,8 @@ describe('useMailStore', () => {
       isComposerOpen: false,
       composerDraft: null,
       isSidebarOpen: false,
+      view: 'mail',
+      settingsSection: 'security',
     });
   });
 
@@ -81,6 +83,22 @@ describe('useMailStore', () => {
     expect(useMailStore.getState().isSidebarOpen).toBe(true);
     useMailStore.getState().toggleSidebar();
     expect(useMailStore.getState().isSidebarOpen).toBe(false);
+  });
+
+  it('opens a requested settings section and closes the sidebar', () => {
+    useMailStore.getState().setSidebarOpen(true);
+    useMailStore.getState().openSettings('sieve');
+
+    const s = useMailStore.getState();
+    expect(s.view).toBe('settings');
+    expect(s.settingsSection).toBe('sieve');
+    expect(s.isSidebarOpen).toBe(false);
+  });
+
+  it('persists the selected theme', () => {
+    useMailStore.getState().setTheme('dark');
+    expect(useMailStore.getState().theme).toBe('dark');
+    expect(localStorage.getItem('webmail_theme')).toBe('dark');
   });
 
   it('setListMode toggles instantly, resets page/selection and persists', () => {

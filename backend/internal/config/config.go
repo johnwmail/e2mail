@@ -25,7 +25,7 @@ type ServerConfig struct {
 }
 
 // LDAPConfig OpenBSD ldapd 連接設定（僅用於變更密碼；登入仍為 IMAP bind）。
-// 文檔見 repo 根目錄 LDAP.md。
+// 文檔見 docs/LDAP.md。
 type LDAPConfig struct {
 	Enabled          bool
 	URL              string // ldaps://host:636 或 ldap://host:389（配 StartTLS）

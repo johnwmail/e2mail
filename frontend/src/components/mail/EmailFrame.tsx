@@ -4,6 +4,7 @@ import { ShieldAlert, Image, Lock, Unlock, ShieldCheck, Key } from 'lucide-react
 import { AttachmentInfo } from '../../types/api';
 import { mailApi } from '../../api/mail';
 import { pgpService } from '../../api/pgp';
+import { useI18n } from '../../i18n';
 
 interface EmailFrameProps {
   uid: number;
@@ -15,7 +16,7 @@ interface EmailFrameProps {
   trustedSender?: boolean;
 }
 
-// 寬度自適應（fit-to-width）常量 — 見 MAIL-RENDER.md §4.1
+// 寬度自適應（fit-to-width）常量 — 見 docs/MAIL-RENDER.md §4.1
 const WIDTH_EPS = 40; // 只處理超出閱讀欄 40px 以上的闊郵件，避免臨界抖動
 const WIDTH_MAX_FRAMES = 8; // 穩定量度最多等 ~8 個 rAF（image load / table reflow）
 const WIDTH_MIN_SCALE = 0.45; // 縮放下限，再闊都用橫向捲動而非無限縮細
@@ -117,6 +118,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
   onDecryptedChange,
   trustedSender = false,
 }) => {
+  const { t } = useI18n();
   const [userAllowed, setUserAllowed] = useState(false);
   const [hasRemoteImages, setHasRemoteImages] = useState(false);
   // 可信寄件人（已在通訊錄）自動放行，無需 relogin
@@ -239,7 +241,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
     if (e) e.preventDefault();
     const keyPair = await pgpService.ensureKey();
     if (!keyPair) {
-      setDecryptError('請先在「PGP 金鑰設定」中生成或匯入你的私鑰');
+      setDecryptError(t('emailFrame.needPrivateKey'));
       return;
     }
 
@@ -269,7 +271,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       // 通知外層 viewer 已解密，reply/forward 可用明文 quote
       onDecryptedChange?.(cleanDecryptedText);
     } catch (err: any) {
-      setDecryptError(err.message || '解密失敗，可能是 Passphrase 錯誤或非針對此金鑰加密');
+      setDecryptError(err.message || t('emailFrame.decryptFailed'));
     }
   };
 
@@ -354,7 +356,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
     }
 
     if (!content) {
-      return '<div style="color: #64748b; font-style: italic;">（此郵件無內文）</div>';
+      return `<div style="color: #64748b; font-style: italic;">${t('emailFrame.emptyBody')}</div>`;
     }
 
     // 替換 cid: 圖片為後端暫時下載 URL
@@ -389,7 +391,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
           (_m, _q: string, url: string) => ` data-blocked-src="${url.replace(/"/g, '&quot;')}" src=""`,
         );
         if (!/\salt=/i.test(next)) {
-          next = next.replace(/\s*\/?>$/, ' alt="[已阻擋外部圖片]">');
+          next = next.replace(/\s*\/?>$/, ` alt="${t('emailFrame.blockedImage')}">`);
         }
         return next;
       });
@@ -474,7 +476,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
         <div className="flex items-center justify-between px-4 py-2.5 bg-indigo-50 dark:bg-indigo-950/60 border-b border-indigo-200 dark:border-indigo-800/80 text-indigo-950 dark:text-indigo-200 text-xs">
           <div className="flex items-center gap-2">
             <Lock className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-            <span className="font-semibold">這是一封 PGP 端到端加密郵件</span>
+            <span className="font-semibold">{t('emailFrame.encryptedBanner')}</span>
           </div>
           <button
             onClick={() => {
@@ -484,7 +486,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
             className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition shadow-sm"
           >
             <Unlock className="w-3.5 h-3.5" />
-            立即解密
+            {t('emailFrame.decryptNow')}
           </button>
         </div>
       )}
@@ -494,7 +496,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
         <div className="flex items-center justify-between px-4 py-2 bg-emerald-50 dark:bg-emerald-950/50 border-b border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200 text-xs">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="font-semibold">已完成 PGP 解密</span>
+            <span className="font-semibold">{t('emailFrame.decrypted')}</span>
           </div>
           {isSignatureVerified !== null && (
             <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
@@ -503,8 +505,8 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
                 : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
             }`}>
               {isSignatureVerified
-                ? `✅ 數位簽名已驗證 ${signatureKeyId ? `(${signatureKeyId})` : ''}`
-                : '⚠️ 未簽名或未驗證簽名'}
+                ? t('emailFrame.sigOk', { keyId: signatureKeyId ? `(${signatureKeyId})` : '' })
+                : t('emailFrame.sigMissing')}
             </span>
           )}
         </div>
@@ -515,14 +517,14 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
         <div className="flex items-center justify-between px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs">
           <div className="flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>已攔截外部圖片連結以防追蹤像素。</span>
+            <span>{t('emailFrame.trackingBlocked')}</span>
           </div>
           <button
             onClick={() => setUserAllowed(true)}
             className="flex items-center gap-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium transition"
           >
             <Image className="w-3.5 h-3.5" />
-            顯示圖片
+            {t('emailFrame.showImages')}
           </button>
         </div>
       )}
@@ -563,10 +565,10 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
           <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-xl p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
             <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-white">
               <Key className="w-4 h-4 text-blue-600" />
-              <span>輸入 PGP 私鑰密碼 (Passphrase)</span>
+              <span>{t('emailFrame.passphraseTitle')}</span>
             </div>
             <p className="text-xs text-slate-500">
-              請輸入你<b>生成/導入 PGP 金鑰時設定嘅 Passphrase</b>（唔係登入密碼）。
+              {t('emailFrame.passphraseHint')}
             </p>
 
             {decryptError && (
@@ -580,7 +582,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
                 type="password"
                 value={passphrase}
                 onChange={(e) => setPassphrase(e.target.value)}
-                placeholder="輸入 PGP 私鑰 Passphrase"
+                placeholder={t('emailFrame.passphrasePlaceholder')}
                 className="w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                 autoFocus
               />
@@ -590,13 +592,13 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
                   onClick={() => setShowPassModal(false)}
                   className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-lg"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg font-semibold"
                 >
-                  確認解密
+                  {t('emailFrame.confirmDecrypt')}
                 </button>
               </div>
             </form>
