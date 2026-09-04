@@ -2,6 +2,8 @@ package ldap
 
 import (
 	"crypto/sha1" //nolint:gosec // SSHA 格式測試
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -62,12 +64,70 @@ func TestHashSSHA_RandomSaltPerCall(t *testing.T) {
 func TestClientHashPassword_Scheme(t *testing.T) {
 	c := New(config.LDAPConfig{PasswordScheme: "sha"})
 	if _, err := c.HashPassword("x"); err == nil {
-		t.Fatal("scheme 'sha' should be rejected in v1")
+		t.Fatal("scheme 'sha' should be rejected")
 	}
 	c = New(config.LDAPConfig{PasswordScheme: "SSHA"}) // case-insensitive
 	got, err := c.HashPassword("x")
 	if err != nil || !strings.HasPrefix(got, "{SSHA}") {
 		t.Fatalf("ssha scheme: %q, %v", got, err)
+	}
+	c = New(config.LDAPConfig{PasswordScheme: "ssha256"})
+	got, err = c.HashPassword("x")
+	if err != nil || !strings.HasPrefix(got, "{SSHA256}") {
+		t.Fatalf("ssha256 scheme: %q, %v", got, err)
+	}
+	c = New(config.LDAPConfig{PasswordScheme: "ssha512"})
+	got, err = c.HashPassword("x")
+	if err != nil || !strings.HasPrefix(got, "{SSHA512}") {
+		t.Fatalf("ssha512 scheme: %q, %v", got, err)
+	}
+	c = New(config.LDAPConfig{PasswordScheme: "rfc3062"})
+	if _, err := c.HashPassword("x"); err == nil {
+		t.Fatal("rfc3062 must not pre-hash")
+	}
+}
+
+func TestFormatSSHA256_CanonicalLayout(t *testing.T) {
+	pw := "S3cr3t-Pässwörd!"
+	salt := []byte("0123456789abcdef")
+	got := formatSSHA256(pw, salt)
+	if !strings.HasPrefix(got, "{SSHA256}") {
+		t.Fatalf("prefix: %q", got)
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(got, "{SSHA256}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != sha256.Size+len(salt) {
+		t.Fatalf("decoded len = %d, want %d", len(raw), sha256.Size+len(salt))
+	}
+	h := sha256.New()
+	h.Write([]byte(pw))
+	h.Write(salt)
+	if string(raw[:sha256.Size]) != string(h.Sum(nil)) {
+		t.Fatal("digest mismatch")
+	}
+	if string(raw[sha256.Size:]) != string(salt) {
+		t.Fatal("salt mismatch")
+	}
+}
+
+func TestFormatSSHA512_CanonicalLayout(t *testing.T) {
+	pw := "S3cr3t-Pässwörd!"
+	salt := []byte("0123456789abcdef")
+	got := formatSSHA512(pw, salt)
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(got, "{SSHA512}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != sha512.Size+len(salt) {
+		t.Fatalf("decoded len = %d, want %d", len(raw), sha512.Size+len(salt))
+	}
+	h := sha512.New()
+	h.Write([]byte(pw))
+	h.Write(salt)
+	if string(raw[:sha512.Size]) != string(h.Sum(nil)) {
+		t.Fatal("digest mismatch")
 	}
 }
 
@@ -121,10 +181,12 @@ type recordedCall struct {
 }
 
 type fakeConn struct {
-	bindErr   error
-	modifyErr error
-	binds     []recordedCall
-	changes   []recordedCall // dn + 修改值（userPassword 寫入值）
+	bindErr            error
+	modifyErr          error
+	passwordModifyErr  error
+	binds              []recordedCall
+	changes            []recordedCall // dn + 修改值（userPassword 寫入值）
+	passwordModifies   []recordedCall // userIdentity + newPassword
 }
 
 func (f *fakeConn) Bind(username, password string) error {
@@ -144,6 +206,11 @@ func (f *fakeConn) Modify(req *goldap.ModifyRequest) error {
 	}
 	f.changes = append(f.changes, recordedCall{req.DN, val})
 	return f.modifyErr
+}
+
+func (f *fakeConn) PasswordModify(req *goldap.PasswordModifyRequest) (*goldap.PasswordModifyResult, error) {
+	f.passwordModifies = append(f.passwordModifies, recordedCall{req.UserIdentity, req.NewPassword})
+	return &goldap.PasswordModifyResult{}, f.passwordModifyErr
 }
 
 func (f *fakeConn) Close() error { return nil }
@@ -218,6 +285,56 @@ func TestChangePassword_RootBindFailure(t *testing.T) {
 	}
 	if len(f.changes) != 0 {
 		t.Fatal("must not modify after failed root bind")
+	}
+}
+
+func TestChangePassword_SSHA256Modify(t *testing.T) {
+	f := &fakeConn{}
+	c := newTestClient(config.LDAPConfig{
+		RootDN:         "cn=root",
+		RootPW:         "pw",
+		PasswordScheme: "ssha256",
+	}, f)
+	if err := c.ChangePassword("uid=alice,dc=x", "NewPass123"); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.passwordModifies) != 0 {
+		t.Fatal("ssha256 must use Modify, not RFC 3062")
+	}
+	if len(f.changes) != 1 || !strings.HasPrefix(f.changes[0].pass, "{SSHA256}") {
+		t.Fatalf("changes = %+v", f.changes)
+	}
+}
+
+func TestChangePassword_RFC3062(t *testing.T) {
+	f := &fakeConn{}
+	c := newTestClient(config.LDAPConfig{
+		RootDN:         "cn=root,dc=example,dc=com",
+		RootPW:         "rootpw",
+		PasswordScheme: "rfc3062",
+	}, f)
+	const userDN = "uid=alice,ou=people,dc=example,dc=com"
+	const newPass = "NewPass123"
+	if err := c.ChangePassword(userDN, newPass); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.changes) != 0 {
+		t.Fatalf("rfc3062 must not Modify userPassword: %+v", f.changes)
+	}
+	if len(f.passwordModifies) != 1 {
+		t.Fatalf("passwordModifies = %+v", f.passwordModifies)
+	}
+	if f.passwordModifies[0].dn != userDN || f.passwordModifies[0].pass != newPass {
+		t.Fatalf("extended op payload = %+v", f.passwordModifies[0])
+	}
+}
+
+func TestChangePassword_RFC3062_Failure(t *testing.T) {
+	f := &fakeConn{passwordModifyErr: ldapErr(goldap.LDAPResultUnwillingToPerform)}
+	c := newTestClient(config.LDAPConfig{RootDN: "cn=root", RootPW: "pw", PasswordScheme: "rfc3062"}, f)
+	err := c.ChangePassword("uid=a", "x")
+	if err == nil {
+		t.Fatal("want error")
 	}
 }
 

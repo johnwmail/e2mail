@@ -1,6 +1,7 @@
-# LDAP Password Change (branch: `ldap`)
+# LDAP Password Change (branch: `slapdv3`)
 
-Status: implemented on the **`ldap`** branch. `main` is never modified by this feature.
+Status: implemented on **`slapdv3`** (OpenLDAP RFC 3062 + extra hash schemes)
+and originally on **`ldap`**. Feature is inert until `LDAP_ENABLED=true`.
 
 ## Goal
 
@@ -32,37 +33,46 @@ can re-wrap without ever needing the old password for key recovery. A separate
 app would need e2Mail's SQLite DB + `SESSION_SECRET` + crypto internals to do
 the same — strictly worse coupling and a second privileged surface.
 
-## Target: OpenBSD `ldapd` specifics
+## Target: OpenBSD `ldapd` vs OpenLDAP `slapd`
 
-Verified against `ldapd(8)` / `ldapd.conf(5)`:
+Verified against `ldapd(8)` / `ldapd.conf(5)` and OpenLDAP’s RFC 3062 Password
+Modify:
 
-1. **No RFC 3062 Password Modify extended operation.** `ldapd` only implements
-   bind/search/compare/add/delete/modify (STANDARDS: RFC 4511/4512; "not yet
-   fully LDAPv3 compliant"). Password change uses a **Modify** request that
-   REPLACES the `userPassword` attribute.
+1. **`ldapd` has no RFC 3062.** It only implements bind/search/compare/add/delete/modify
+   (STANDARDS: RFC 4511/4512; "not yet fully LDAPv3 compliant"). Password change
+   uses a **Modify** that REPLACES `userPassword`.
 2. **`ldapd` does not hash on write.** It stores `userPassword` verbatim and
    only interprets `{SHA}/{SSHA}/{CRYPT}/{BSDAUTH}` when **verifying a bind**.
-   Therefore **e2Mail generates the `{SSHA}` digest itself**.
-3. **Dovecot authenticates by binding to `ldapd`** (confirmed). The stored
-   scheme must be one `ldapd` verifies on bind → `{SSHA}` (salted SHA-1).
-4. **TLS is required for password ops.** `ldapd` accepts plaintext-password
-   binds/modifies only on secure connections (`tls`/STARTTLS :389, `ldaps`
-   :636, unix socket, or `secure`). e2Mail must connect via `ldaps://` or
-   STARTTLS.
-5. **Service-account change.** Use the namespace `rootdn`/`rootpw`, which
-   "is always allowed to read and write entries in all local namespaces", to
-   perform the Modify. (Old-password verification is done separately via the
-   user's own self-bind.)
+   Therefore **e2Mail generates `{SSHA}` itself** (`LDAP_PASSWORD_SCHEME=ssha`).
+3. **OpenLDAP slapd (v3)** typically **does** hash on write (`olcPasswordHash`)
+   and **does** implement RFC 3062. Set `LDAP_PASSWORD_SCHEME=rfc3062`. e2Mail
+   sends the new password in the clear over TLS; slapd chooses the algorithm
+   (SSHA, SSHA512, Argon2, …). Do **not** also set `ssha` against slapd unless
+   you have confirmed it stores RFC 2307 strings as-is (otherwise it may
+   double-hash).
+4. **Dovecot authenticates by binding** to the directory. The stored scheme
+   must be one the directory verifies on bind.
+5. **TLS is required for password ops.** Connect via `ldaps://` or STARTTLS.
+6. **Service-account change.** Bind as `LDAP_ROOT_DN` / `LDAP_ROOT_PW` (ldapd
+   namespace `rootdn`, or any slapd DN with write access to `userPassword`).
+   Old-password verification is a separate self-bind as the user DN.
 
-Mail users' `userPassword` is currently stored as native `{SSHA}`/`{SHA}`
+Mail users' `userPassword` on ldapd is stored as native `{SSHA}`/`{SHA}`
 (not `{BSDAUTH}`), so a `userPassword` Modify genuinely changes the login
 credential.
 
-### `{SSHA}` format
+### `LDAP_PASSWORD_SCHEME`
 
-`"{SSHA}" + base64( SHA1(newPassword || salt) || salt )`, salt = 16 random
-bytes. This is the canonical SSHA layout `ldapd`'s `{SSHA}` verifier expects.
-Implemented with Go stdlib (`crypto/sha1`, `crypto/rand`, `encoding/base64`).
+| Value | Write path | Use |
+|-------|------------|-----|
+| `ssha` (default) | Modify `userPassword={SSHA}…` | OpenBSD **ldapd** |
+| `ssha256` / `ssha512` | Modify `{SSHA256}` / `{SSHA512}` RFC 2307bis | Only if the directory **stores hashed values as-is** |
+| `rfc3062` | Password Modify extended op, **no** client hash | OpenLDAP **slapd** (and other LDAPv3 servers with RFC 3062) |
+
+### `{SSHA}` / `{SSHA256}` / `{SSHA512}` format
+
+`"{TAG}" + base64( HASH(newPassword || salt) || salt )`, salt = 16 random
+bytes. `{SSHA}` uses SHA-1 (ldapd). `{SSHA256}`/`{SSHA512}` use SHA-256/512.
 
 ## Flow: `POST /api/auth/change-password`
 
@@ -79,9 +89,13 @@ target account ID for multi-account sessions; omit = login-identity account).
    drift-safe (works even if the password was changed outside e2Mail since the
    last login). The DEK is taken from the active session
    (`authCtx.DEK`), not from the old password.
-3. **Bind as `rootdn`/`rootpw`** and **Modify** the user entry, REPLACE
-   `userPassword = {SSHA}(newPassword)`. Any LDAP failure → abort; **no local
-   state is touched** (user's e2Mail keeps working with the old password).
+3. **Bind as `rootdn`/`rootpw`** and write the new password:
+   - `ssha` / `ssha256` / `ssha512`: **Modify** REPLACE
+     `userPassword` with the client-generated RFC 2307 string.
+   - `rfc3062`: **Password Modify** extended operation with plaintext
+     `newPassword` (slapd hashes).
+   Any LDAP failure → abort; **no local state is touched** (user's e2Mail
+   keeps working with the old password).
 4. On LDAP success, re-sync local state using the SAME DEK (in this order):
    a. (Login-identity account only — its password IS the Master Password) New
       `salt` + `newPassword` → Argon2id MasterKey → wrap the existing DEK →
@@ -115,7 +129,7 @@ target account ID for multi-account sessions; omit = login-identity account).
 | `LDAP_ROOT_DN` | Service/root bind DN (namespace rootdn) | — |
 | `LDAP_ROOT_PW` | Root bind password — **secret, env/secret-injected only** | — |
 | `LDAP_USER_DN_TEMPLATE` | e.g. `uid=%s,ou=people,dc=example,dc=com` | — |
-| `LDAP_PASSWORD_SCHEME` | `ssha` (v1; `sha`/`crypt` reserved) | `ssha` |
+| `LDAP_PASSWORD_SCHEME`    | `ssha`  | `ssha` = ldapd (client `{SSHA}`); `rfc3062` = OpenLDAP slapd; `ssha256`/`ssha512` = client RFC 2307bis Modify |
 | `LDAP_ALLOW_INSECURE_TLS` | Self-signed certs, dev only | `false` |
 
 `LDAP_ROOT_PW` is never logged and never persisted to the DB.
@@ -124,8 +138,8 @@ target account ID for multi-account sessions; omit = login-identity account).
 
 - `backend/go.mod` — add `github.com/go-ldap/ldap/v3`.
 - `backend/internal/config/config.go` — LDAP_* env vars.
-- `backend/internal/ldap/client.go` (new) — `HashSSHA`, `VerifyUserBind(dn,pass)`,
-  `ChangeUserPassword(rootDN,rootPW,userDN,new)`; interface-injectable for tests.
+- `backend/internal/ldap/client.go` — `HashSSHA`/`HashSSHA256`/`HashSSHA512`,
+  `VerifyUserBind`, `ChangePassword` (Modify or RFC 3062).
 - `backend/internal/api/handler/auth.go` — `ChangePassword` handler.
 - `backend/internal/api/handler/config.go` — expose `ldapEnabled` to SPA.
 - `backend/internal/api/router.go` — register the route.
@@ -146,16 +160,16 @@ target account ID for multi-account sessions; omit = login-identity account).
 ## Out of scope (v1)
 
 - Using LDAP for **login** (login stays IMAP-bind). Only change-password touches LDAP.
-- Active Directory (`unicodePwd`) and `{CRYPT}`/bcrypt schemes — the
-  `LDAP_PASSWORD_SCHEME` hook leaves room for them.
+- Active Directory (`unicodePwd`) and `{CRYPT}`/bcrypt/Argon2 **client-side**
+  hashes — slapd Argon2 belongs in `olcPasswordHash` with `rfc3062`.
 - A standalone self-service portal / nginx `auth_request` SSO — deliberately
   avoided (see "Why this lives inside e2Mail").
 - Password history/expiry policy enforcement.
 
 ## Testing
 
-- `internal/ldap/client_test.go`: `{SSHA}` vector correctness; Modify request
-  construction; error mapping (fake conn, no live server).
+- `internal/ldap/client_test.go`: `{SSHA}`/`{SSHA256}`/`{SSHA512}` layout;
+  RFC 3062 uses PasswordModify not Modify; error mapping (fake conn).
 - Handler tests: self-bind fail → 401; LDAP modify fail → no `UpdateUserCredential`
   / no account change; success → new password unwraps DEK, old password does not.
 - Frontend: form validation + API call (Vitest).
@@ -163,6 +177,7 @@ target account ID for multi-account sessions; omit = login-identity account).
 
 ## Rollout
 
-Develop and land on the **`ldap`** branch. Enable by setting `LDAP_ENABLED=true`
-+ LDAP_* env on the deployment. Feature is inert (`ldapEnabled=false`) until
-configured, so it can merge without changing behaviour for existing installs.
+Develop and land on the **`slapdv3`** branch (OpenLDAP write path) or **`ldap`**
+(original ldapd work). Enable with `LDAP_ENABLED=true` + LDAP_* env.
+`LDAP_PASSWORD_SCHEME=ssha` for ldapd, `rfc3062` for slapd. Feature is inert
+(`ldapEnabled=false`) until configured.

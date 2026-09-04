@@ -184,7 +184,7 @@ Per-feature design notes and implementation plans live in [`docs/`](docs/):
 
 | Document | Scope | Status |
 |----------|-------|--------|
-| [`LDAP.md`](docs/LDAP.md) | Login password change through OpenBSD `ldapd`, including DEK re-wrap ordering and rollback | implemented |
+| [`LDAP.md`](docs/LDAP.md) | Login password change through OpenBSD `ldapd` or OpenLDAP slapd (RFC 3062), including DEK re-wrap ordering and rollback | implemented |
 | [`SIEVE.md`](docs/SIEVE.md) | ManageSieve integration and the visual rule builder | implemented |
 | [`THREADS.md`](docs/THREADS.md) | Gmail-style conversation grouping from IMAP headers | implemented |
 | [`MultiAccounts.md`](docs/MultiAccounts.md) | Multiple mail accounts in one session | implemented |

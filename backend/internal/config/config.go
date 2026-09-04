@@ -24,16 +24,16 @@ type ServerConfig struct {
 	LDAP                         *LDAPConfig
 }
 
-// LDAPConfig OpenBSD ldapd 連接設定（僅用於變更密碼；登入仍為 IMAP bind）。
+// LDAPConfig LDAP 連接設定（僅用於變更密碼；登入仍為 IMAP bind）。
 // 文檔見 docs/LDAP.md。
 type LDAPConfig struct {
 	Enabled          bool
 	URL              string // ldaps://host:636 或 ldap://host:389（配 StartTLS）
 	StartTLS         bool   // ldap:// URL 上以 STARTTLS 升級
-	RootDN           string // 服務帳號（ldapd namespace rootdn）
+	RootDN           string // 服務帳號（ldapd namespace rootdn 或 slapd 有寫權嘅 bind DN）
 	RootPW           string // 服務帳號密碼 —— 只由 env/secret 注入，永不 log
 	UserDNTemplate   string // 例 "uid=%s,ou=people,dc=example,dc=com"；%s=全 email，%u=local part
-	PasswordScheme   string // v1 僅 "ssha"
+	PasswordScheme   string // ssha（ldapd 預設）| ssha256 | ssha512 | rfc3062（OpenLDAP slapd）
 	AllowInsecureTLS bool   // 自簽憑證（僅開發，跳過校驗）
 	CAFile           string // 自簽 RootCA 路徑（例 /certs/rootCA.crt）；有值時用佢做信任庫
 }

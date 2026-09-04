@@ -590,7 +590,7 @@ const (
 	pwChangeFailureWindow = 10 * time.Minute
 )
 
-// ChangePassword 將新密碼寫入 OpenBSD ldapd（rootdn Modify userPassword={SSHA}），
+// ChangePassword 將新密碼寫入 LDAP（ldapd：Modify {SSHA*}；slapd：RFC 3062），
 // 再同步本地儲存。順序與回滾設計見 docs/LDAP.md：
 // self-bind 驗證舊密 → 預算本地新值 → LDAP 改密 → 本地寫入（失敗即回滾 LDAP）。
 // 多帳號：req.Account 指定目標帳號；若該帳號即登入身分（email == session.Email），

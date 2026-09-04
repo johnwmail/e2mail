@@ -3,11 +3,14 @@ package ldap
 import (
 	"crypto/rand"
 	"crypto/sha1" //nolint:gosec // {SSHA} 格式由 OpenBSD ldapd 規範指定
+	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"net"
 	"os"
@@ -29,11 +32,12 @@ const sshaSaltLen = 16
 type Conn interface {
 	Bind(username, password string) error
 	Modify(req *goldap.ModifyRequest) error
+	PasswordModify(req *goldap.PasswordModifyRequest) (*goldap.PasswordModifyResult, error)
 	Close() error
 }
 
-// Client 對 OpenBSD ldapd 做用戶 self-bind 驗證與 rootdn Modify 改密。
-// 設計與格式依據見 docs/LDAP.md。
+// Client 對 LDAP 目錄做用戶 self-bind 驗證與管理員改密。
+// ldapd：客戶端預先 {SSHA*} 再 Modify；OpenLDAP slapd：RFC 3062。見 docs/LDAP.md。
 type Client struct {
 	opts config.LDAPConfig
 	dial func() (Conn, error)
@@ -44,6 +48,14 @@ func New(opts config.LDAPConfig) *Client {
 	c := &Client{opts: opts}
 	c.dial = c.dialConn
 	return c
+}
+
+func (c *Client) scheme() string {
+	s := strings.ToLower(strings.TrimSpace(c.opts.PasswordScheme))
+	if s == "" {
+		return "ssha"
+	}
+	return s
 }
 
 // tlsConfig 按 opts 組裝 TLS 設定（支援自簽 RootCA）
@@ -115,13 +127,10 @@ func (c *Client) VerifyUserBind(userDN, password string) error {
 	return wrapLDAPerr(conn.Bind(userDN, password))
 }
 
-// ChangePassword 以 rootdn bind 後將用戶 entry 的 userPassword REPLACE 為
-// {SSHA}(newPassword)。ldapd 唔會喺寫入時 hash，故 digest 必須由我哋產生。
+// ChangePassword 以管理員 DN bind 後改密。
+// rfc3062：RFC 3062 Password Modify（明文；slapd 自行 hash）。
+// 其餘：Modify REPLACE userPassword 為客戶端預先產生嘅 RFC 2307 字串（ldapd 必須）。
 func (c *Client) ChangePassword(userDN, newPassword string) error {
-	hashed, err := c.HashPassword(newPassword)
-	if err != nil {
-		return err
-	}
 	conn, err := c.dial()
 	if err != nil {
 		return err
@@ -131,6 +140,19 @@ func (c *Client) ChangePassword(userDN, newPassword string) error {
 	if err := conn.Bind(c.opts.RootDN, c.opts.RootPW); err != nil {
 		return fmt.Errorf("ldap root bind failed: %w", wrapLDAPerr(err))
 	}
+
+	if c.scheme() == "rfc3062" {
+		req := goldap.NewPasswordModifyRequest(userDN, "", newPassword)
+		if _, err := conn.PasswordModify(req); err != nil {
+			return fmt.Errorf("ldap password modify failed: %w", wrapLDAPerr(err))
+		}
+		return nil
+	}
+
+	hashed, err := c.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
 	req := goldap.NewModifyRequest(userDN, nil)
 	req.Replace("userPassword", []string{hashed})
 	if err := conn.Modify(req); err != nil {
@@ -139,33 +161,82 @@ func (c *Client) ChangePassword(userDN, newPassword string) error {
 	return nil
 }
 
-// HashPassword 按配置之 scheme 產生 userPassword 寫入值（v1 僅 ssha）
+// HashPassword 按配置之 scheme 產生 userPassword 寫入值（Modify 路徑；rfc3062 唔用）
 func (c *Client) HashPassword(password string) (string, error) {
-	switch strings.ToLower(c.opts.PasswordScheme) {
-	case "", "ssha":
+	switch c.scheme() {
+	case "ssha":
 		return HashSSHA(password)
+	case "ssha256":
+		return HashSSHA256(password)
+	case "ssha512":
+		return HashSSHA512(password)
+	case "rfc3062":
+		return "", errors.New("LDAP_PASSWORD_SCHEME=rfc3062 does not pre-hash (server hashes)")
 	default:
 		return "", errors.New("unsupported LDAP_PASSWORD_SCHEME")
 	}
 }
 
-// HashSSHA 產生 ldapd bind 驗證器認可行為 canonical SSHA 格式：
-// "{SSHA}" + base64( SHA1(password || salt) || salt )
-func HashSSHA(password string) (string, error) {
+func randomSalt() ([]byte, error) {
 	salt := make([]byte, sshaSaltLen)
 	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
-		return "", fmt.Errorf("failed to generate SSHA salt: %w", err)
+		return nil, fmt.Errorf("failed to generate password salt: %w", err)
+	}
+	return salt, nil
+}
+
+// HashSSHA 產生 ldapd bind 驗證器認可嘅 canonical SSHA 格式：
+// "{SSHA}" + base64( SHA1(password || salt) || salt )
+func HashSSHA(password string) (string, error) {
+	salt, err := randomSalt()
+	if err != nil {
+		return "", err
 	}
 	return formatSSHA(password, salt), nil
 }
 
-// formatSSHA 以指定 salt 產生 SSHA（拆出以便測試向量斷言）
+// HashSSHA256 RFC 2307bis：{SSHA256} + base64( SHA256(password || salt) || salt )
+func HashSSHA256(password string) (string, error) {
+	salt, err := randomSalt()
+	if err != nil {
+		return "", err
+	}
+	return formatSSHA256(password, salt), nil
+}
+
+// HashSSHA512 RFC 2307bis：{SSHA512} + base64( SHA512(password || salt) || salt )
+func HashSSHA512(password string) (string, error) {
+	salt, err := randomSalt()
+	if err != nil {
+		return "", err
+	}
+	return formatSSHA512(password, salt), nil
+}
+
 func formatSSHA(password string, salt []byte) string {
 	h := sha1.New() //nolint:gosec
 	h.Write([]byte(password)) // codeql[go/weak-cryptographic-algorithm] - {SSHA} 格式由 OpenBSD ldapd 規範強制為 SHA-1
 	h.Write(salt)
+	return encodeSalted("{SSHA}", h, salt)
+}
+
+func formatSSHA256(password string, salt []byte) string {
+	h := sha256.New()
+	h.Write([]byte(password))
+	h.Write(salt)
+	return encodeSalted("{SSHA256}", h, salt)
+}
+
+func formatSSHA512(password string, salt []byte) string {
+	h := sha512.New()
+	h.Write([]byte(password))
+	h.Write(salt)
+	return encodeSalted("{SSHA512}", h, salt)
+}
+
+func encodeSalted(tag string, h hash.Hash, salt []byte) string {
 	digest := append(h.Sum(nil), salt...)
-	return "{SSHA}" + base64.StdEncoding.EncodeToString(digest)
+	return tag + base64.StdEncoding.EncodeToString(digest)
 }
 
 // wrapLDAPerr 將 go-ldap 的 invalidCredentials 錯誤正規化為 ErrInvalidCredentials
