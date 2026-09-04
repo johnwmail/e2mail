@@ -161,28 +161,25 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 		log.Printf("[SIEVE] banner ok %s sasl=%v tlsCap=%v", addr, c.sasl, c.tlsCap)
 	}
 
-	// 明文且伺服器宣告 STARTTLS：一律嘗試升級
-	// （Dovecot disable_plaintext_auth=yes 時 TLS 前 "SASL" 為空）
-	if !isTLSConn(conn) && c.tlsCap {
+	// 明文連線必須 STARTTLS；失敗即斷線，永不明文認證
+	if !isTLSConn(conn) {
+		if !c.tlsCap {
+			_ = c.Close()
+			return nil, fmt.Errorf("sieve %s does not offer STARTTLS (plaintext is not allowed)", addr)
+		}
 		if err := c.doSTARTTLS(cfg); err != nil {
-			if cfg.UseTLS {
-				_ = c.Close()
-				return nil, fmt.Errorf("sieve STARTTLS failed %s: %w", addr, err)
-			}
-			if cfg.Debug {
-				log.Printf("[SIEVE] STARTTLS failed but UseTLS=false, continuing plain %s: %v", addr, err)
-			}
-		} else {
-			c.caps = make(map[string]string)
-			c.sasl = nil
-			c.tlsCap = false
-			if err := c.readPostTLSCapabilities(); err != nil {
-				_ = c.Close()
-				return nil, fmt.Errorf("sieve post-STARTTLS capability failed %s: %w", addr, err)
-			}
-			if cfg.Debug {
-				log.Printf("[SIEVE] post-STARTTLS capability ok %s sasl=%v", addr, c.sasl)
-			}
+			_ = c.Close()
+			return nil, fmt.Errorf("sieve STARTTLS failed %s: %w", addr, err)
+		}
+		c.caps = make(map[string]string)
+		c.sasl = nil
+		c.tlsCap = false
+		if err := c.readPostTLSCapabilities(); err != nil {
+			_ = c.Close()
+			return nil, fmt.Errorf("sieve post-STARTTLS capability failed %s: %w", addr, err)
+		}
+		if cfg.Debug {
+			log.Printf("[SIEVE] post-STARTTLS capability ok %s sasl=%v", addr, c.sasl)
 		}
 	}
 
@@ -199,6 +196,17 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 func isTLSConn(conn net.Conn) bool {
 	_, ok := conn.(*tls.Conn)
 	return ok
+}
+
+func sieveTLSConfig(cfg Config) *tls.Config {
+	serverName := cfg.Host
+	if net.ParseIP(serverName) != nil {
+		serverName = ""
+	}
+	return &tls.Config{
+		ServerName:         serverName,
+		InsecureSkipVerify: cfg.AllowInsecureTLS, //nolint:gosec // 僅 AllowInsecureTLS
+	}
 }
 
 func (c *Client) readBanner() error {
@@ -257,16 +265,7 @@ func (c *Client) doSTARTTLS(cfg Config) error {
 	if !strings.HasPrefix(strings.ToUpper(trimmed), "OK") {
 		return fmt.Errorf("STARTTLS rejected: %s", trimmed)
 	}
-	// 對 IP 主機，ServerName 用空避免 SNI 驗證失敗
-	serverName := cfg.Host
-	if net.ParseIP(serverName) != nil {
-		serverName = ""
-	}
-	tlsCfg := &tls.Config{
-		ServerName:         serverName,
-		InsecureSkipVerify: cfg.AllowInsecureTLS || serverName == "",
-	}
-	tlsConn := tls.Client(c.conn, tlsCfg)
+	tlsConn := tls.Client(c.conn, sieveTLSConfig(cfg))
 	if err := tlsConn.Handshake(); err != nil {
 		return fmt.Errorf("TLS handshake failed: %w", err)
 	}

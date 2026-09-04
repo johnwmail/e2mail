@@ -136,6 +136,7 @@ const FolderBranch: React.FC<{
             onClick={() => onToggle(node.path)}
             className="flex items-center justify-center w-5 h-5 shrink-0 text-slate-400 hover:text-slate-600"
             title={isExpanded ? t('sidebar.collapse') : t('sidebar.expand')}
+            aria-label={isExpanded ? t('sidebar.collapse') : t('sidebar.expand')}
           >
             {isExpanded ? <Minus className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
           </button>
@@ -414,6 +415,7 @@ export const Sidebar: React.FC = () => {
           <button
             onClick={() => setSidebarOpen(false)}
             className="p-1.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 rounded-lg shrink-0"
+            aria-label={t('common.close')}
           >
             <X className="w-5 h-5" />
           </button>

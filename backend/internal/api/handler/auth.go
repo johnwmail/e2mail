@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -85,6 +86,79 @@ func (h *AuthHandler) setSessionCookie(w http.ResponseWriter, r *http.Request, s
 	})
 }
 
+func requestIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return strings.TrimSpace(r.RemoteAddr)
+	}
+	return host
+}
+
+func (h *AuthHandler) loginIPKey(r *http.Request) string {
+	return "login:ip:" + requestIP(r)
+}
+
+func (h *AuthHandler) loginEmailKey(email string) string {
+	return "login:email:" + normalizeEmail(email)
+}
+
+func (h *AuthHandler) totpIPKey(r *http.Request) string {
+	return "totp:ip:" + requestIP(r)
+}
+
+func (h *AuthHandler) totpEmailKey(email string) string {
+	return "totp:email:" + normalizeEmail(email)
+}
+
+func (h *AuthHandler) loginBlocked(w http.ResponseWriter, r *http.Request, email string) bool {
+	if h.pwLimiter.Blocked(h.loginIPKey(r), loginMaxIP, loginFailureWindow) ||
+		h.pwLimiter.Blocked(h.loginEmailKey(email), loginMaxEmail, loginFailureWindow) {
+		response.Error(w, http.StatusTooManyRequests, "too many failed login attempts, try again later")
+		return true
+	}
+	return false
+}
+
+func (h *AuthHandler) totpBlocked(w http.ResponseWriter, r *http.Request, email string) bool {
+	if h.pwLimiter.Blocked(h.totpIPKey(r), totpMaxFailures, totpFailureWindow) {
+		response.Error(w, http.StatusTooManyRequests, "too many failed 2FA attempts, try again later")
+		return true
+	}
+	if email != "" && h.pwLimiter.Blocked(h.totpEmailKey(email), totpMaxFailures, totpFailureWindow) {
+		response.Error(w, http.StatusTooManyRequests, "too many failed 2FA attempts, try again later")
+		return true
+	}
+	return false
+}
+
+func (h *AuthHandler) recordLoginFailure(r *http.Request, email string) {
+	h.pwLimiter.RecordFailure(h.loginIPKey(r))
+	if email != "" {
+		h.pwLimiter.RecordFailure(h.loginEmailKey(email))
+	}
+}
+
+func (h *AuthHandler) resetLoginFailures(r *http.Request, email string) {
+	h.pwLimiter.Reset(h.loginIPKey(r))
+	if email != "" {
+		h.pwLimiter.Reset(h.loginEmailKey(email))
+	}
+}
+
+func (h *AuthHandler) recordTOTPFailure(r *http.Request, email string) {
+	h.pwLimiter.RecordFailure(h.totpIPKey(r))
+	if email != "" {
+		h.pwLimiter.RecordFailure(h.totpEmailKey(email))
+	}
+}
+
+func (h *AuthHandler) resetTOTPFailures(r *http.Request, email string) {
+	h.pwLimiter.Reset(h.totpIPKey(r))
+	if email != "" {
+		h.pwLimiter.Reset(h.totpEmailKey(email))
+	}
+}
+
 // LoginRequest 登入參數結構
 type LoginRequest struct {
 	Email                string `json:"email"`
@@ -124,6 +198,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if req.Email == "" || req.Password == "" || req.IMAPHost == "" || req.SMTPHost == "" {
 		response.BadRequest(w, "email, password, imapHost, and smtpHost are required")
+		return
+	}
+
+	if h.loginBlocked(w, r, req.Email) {
 		return
 	}
 
@@ -168,6 +246,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Printf("[AUTH ERROR] IMAP auth failed for %s: %v", req.Email, err)
+		h.recordLoginFailure(r, req.Email)
 		response.Unauthorized(w, "IMAP authentication failed: "+err.Error())
 		return
 	}
@@ -265,6 +344,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// 6. 設定 HttpOnly Cookie（TTL 與 Secure 由 env 控制）
 	h.setSessionCookie(w, r, savedSess.ID)
+	h.resetLoginFailures(r, req.Email)
 
 	log.Printf("[AUTH SUCCESS] Login successful for %s (Session ID: %s)", req.Email, savedSess.ID)
 
@@ -372,8 +452,18 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pl := h.pendingLogin.Get(req.Challenge)
+	plPeek := h.pendingLogin.Get(req.Challenge)
+	emailHint := ""
+	if plPeek != nil {
+		emailHint = plPeek.Email
+	}
+	if h.totpBlocked(w, r, emailHint) {
+		return
+	}
+
+	pl := plPeek
 	if pl == nil {
+		h.recordTOTPFailure(r, "")
 		response.Unauthorized(w, "驗證已逾時或無效，請重新登入")
 		return
 	}
@@ -420,6 +510,7 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.pendingLogin.MarkFailed(req.Challenge)
+	h.recordTOTPFailure(r, pl.Email)
 	log.Printf("[AUTH] 2FA code verification failed for %s", pl.Email)
 	response.Unauthorized(w, "驗證碼錯誤，請重試")
 }
@@ -490,6 +581,8 @@ func (h *AuthHandler) completeLogin(w http.ResponseWriter, r *http.Request, pl *
 	h.pendingLogin.Delete(challenge)
 
 	h.setSessionCookie(w, r, savedSess.ID)
+	h.resetLoginFailures(r, pl.Email)
+	h.resetTOTPFailures(r, pl.Email)
 
 	log.Printf("[AUTH SUCCESS] Login successful for %s (Session ID: %s, via 2FA)", pl.Email, savedSess.ID)
 	response.Success(w, LoginResponse{
@@ -588,6 +681,11 @@ const (
 	minNewPasswordLen     = 8
 	pwChangeMaxFailures   = 10
 	pwChangeFailureWindow = 10 * time.Minute
+	loginMaxIP            = 20
+	loginMaxEmail         = 10
+	loginFailureWindow    = 15 * time.Minute
+	totpMaxFailures       = 8
+	totpFailureWindow     = 10 * time.Minute
 )
 
 // ChangePassword 將新密碼寫入 OpenBSD ldapd（rootdn Modify userPassword={SSHA}），

@@ -70,7 +70,7 @@ func NewClient(config ConnectionConfig) (*Client, error) {
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 	tlsConfig := &tls.Config{
 		ServerName:         config.Host,
-		InsecureSkipVerify: config.AllowInsecureTLS,
+		InsecureSkipVerify: config.AllowInsecureTLS, //nolint:gosec
 	}
 	dialOptions := func() *imapclient.Options {
 		opts := &imapclient.Options{TLSConfig: tlsConfig}
@@ -87,19 +87,7 @@ func NewClient(config ConnectionConfig) (*Client, error) {
 	var raw *imapclient.Client
 	var err error
 
-	if config.UseTLS || config.Port == 993 {
-		raw, err = imapclient.DialTLS(addr, dialOptions())
-	} else if config.Port == 143 {
-		// 嘗試 STARTTLS 協商
-		raw, err = imapclient.DialStartTLS(addr, dialOptions())
-		if err != nil {
-			// 若 STARTTLS 失敗，嘗試非加密直連
-			raw, err = imapclient.DialInsecure(addr, dialOptions())
-		}
-	} else {
-		raw, err = imapclient.DialInsecure(addr, dialOptions())
-	}
-
+	raw, err = dialIMAP(addr, config, dialOptions)
 	if err != nil {
 		return nil, fmt.Errorf("IMAP connection failed to %s: %w", addr, err)
 	}
@@ -107,16 +95,10 @@ func NewClient(config ConnectionConfig) (*Client, error) {
 	// 登入驗證：支援完整 Email 帳號與純使用者名稱 (@ 前綴) 自動適配
 	loginErr := raw.Login(config.Username, config.Password).Wait()
 	if loginErr != nil && strings.Contains(config.Username, "@") {
-		// 重新連線以嘗試純帳號登入 (部分 Dovecot/Linux 系統要求純帳號名)
 		_ = raw.Close()
 		prefixUser := strings.Split(config.Username, "@")[0]
 
-		if config.UseTLS || config.Port == 993 {
-			raw, err = imapclient.DialTLS(addr, dialOptions())
-		} else {
-			raw, err = imapclient.DialInsecure(addr, dialOptions())
-		}
-
+		raw, err = dialIMAP(addr, config, dialOptions)
 		if err == nil {
 			if retryErr := raw.Login(prefixUser, config.Password).Wait(); retryErr == nil {
 				config.Username = prefixUser
@@ -137,6 +119,18 @@ func NewClient(config ConnectionConfig) (*Client, error) {
 		config:    config,
 		lastUsed:  time.Now(),
 	}, nil
+}
+
+// dialIMAP 一律加密：implicit TLS（993 或 UseTLS）或 STARTTLS。永不明文。
+func dialIMAP(addr string, config ConnectionConfig, dialOptions func() *imapclient.Options) (*imapclient.Client, error) {
+	if config.UseTLS || config.Port == 993 {
+		return imapclient.DialTLS(addr, dialOptions())
+	}
+	c, err := imapclient.DialStartTLS(addr, dialOptions())
+	if err != nil {
+		return nil, fmt.Errorf("IMAP STARTTLS required (plaintext is not allowed): %w", err)
+	}
+	return c, nil
 }
 
 // Raw 取得底層 go-imap client
@@ -297,6 +291,29 @@ func (c *Client) FindSentFolder(ctx context.Context) string {
 		}
 	}
 	return "Sent"
+}
+
+// FindDraftsFolder 尋找 IMAP Drafts 特殊用途資料夾
+func (c *Client) FindDraftsFolder(ctx context.Context) string {
+	if folders, err := c.ListFolders(ctx); err == nil {
+		for _, f := range folders {
+			if strings.EqualFold(f.SpecialUse, "drafts") {
+				return f.Name
+			}
+			for _, attr := range f.Attributes {
+				if strings.EqualFold(attr, `\Drafts`) || strings.EqualFold(attr, "drafts") {
+					return f.Name
+				}
+			}
+		}
+		for _, f := range folders {
+			nameLower := strings.ToLower(f.Name)
+			if nameLower == "drafts" || nameLower == "draft" || strings.Contains(nameLower, "draft") {
+				return f.Name
+			}
+		}
+	}
+	return "Drafts"
 }
 
 // AppendMessage 將郵件附加寫入指定資料夾 (例如 "Sent" 資料夾)

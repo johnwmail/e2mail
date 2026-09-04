@@ -100,6 +100,7 @@ func NewRouter(
 				mail.Post("/messages/delete", mailH.DeleteMessages)
 				mail.Post("/messages/empty", mailH.EmptyFolder)
 				mail.Post("/send", mailH.SendMessage)
+				mail.Post("/drafts", mailH.SaveDraft)
 			})
 
 			// PGP 雲端加密金鑰庫同步

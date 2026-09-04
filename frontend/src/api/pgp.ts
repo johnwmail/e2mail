@@ -621,6 +621,42 @@ export const pgpService = {
     return encrypted as string;
   },
 
+  encryptBinary: async ({
+    data,
+    recipientPublicKeysArmored,
+    signerPrivateKeyArmored,
+    passphrase,
+  }: {
+    data: Uint8Array;
+    recipientPublicKeysArmored: string[];
+    signerPrivateKeyArmored?: string;
+    passphrase?: string;
+  }): Promise<Uint8Array> => {
+    const encryptionKeys = await Promise.all(
+      recipientPublicKeysArmored.map((armoredKey) => openpgp.readKey({ armoredKey }))
+    );
+    let signingKeys;
+    if (signerPrivateKeyArmored) {
+      let privateKey = await openpgp.readPrivateKey({ armoredKey: signerPrivateKeyArmored });
+      if (!privateKey.isDecrypted()) {
+        privateKey = await openpgp.decryptKey({
+          privateKey,
+          passphrase: passphrase || '',
+        });
+      }
+      signingKeys = privateKey;
+    }
+    const message = await openpgp.createMessage({ binary: data });
+    const encrypted = await openpgp.encrypt({
+      message,
+      encryptionKeys,
+      signingKeys,
+      format: 'binary',
+    });
+    if (encrypted instanceof Uint8Array) return encrypted;
+    return new Uint8Array(await new Response(encrypted as Blob | ArrayBuffer | ReadableStream<Uint8Array>).arrayBuffer());
+  },
+
   // 9. 解密 PGP 郵件（支援自動簽名校驗與明文純淨還原）
   decrypt: async ({
     armoredMessage,

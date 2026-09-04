@@ -151,7 +151,7 @@ func GetCurrentAccountPassword(authCtx *AuthContext, acc *storage.Account) strin
 	return authCtx.Passwords[acc.ID]
 }
 
-// extractToken 優先從 Header、Cookie 與 Query 提取 Token
+// extractToken 由 Authorization、X-Session-ID 或 HttpOnly cookie 提取會話
 func extractToken(r *http.Request) string {
 	// 1. Authorization: Bearer <token>
 	authHeader := r.Header.Get("Authorization")
@@ -164,14 +164,9 @@ func extractToken(r *http.Request) string {
 		return strings.TrimSpace(xSession)
 	}
 
-	// 3. Cookie
+	// 3. Cookie（SSE／附件下載用；唔再接受 ?token= 以免入 Referer／proxy log）
 	if cookie, err := r.Cookie("e2Mail_session"); err == nil && cookie.Value != "" {
 		return strings.TrimSpace(cookie.Value)
-	}
-
-	// 4. Query string (用於 SSE 或 附件下載)
-	if qToken := r.URL.Query().Get("token"); qToken != "" {
-		return strings.TrimSpace(qToken)
 	}
 
 	return ""
