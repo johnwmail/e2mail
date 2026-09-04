@@ -43,7 +43,7 @@ RUN mkdir -p /data && chown 8080:8080 /data
 FROM gcr.io/distroless/static:latest
 
 WORKDIR /app
-COPY --from=backend-builder --chown=8080:8080 /app/server /app/server
+COPY --from=backend-builder /app/server /app/server
 # /data 已預設 uid/gid 8080；fresh named volume 會繼承此權限。
 # 注意：已存在的 volume 仍是 root 持有，需一次性 chown。
 COPY --from=backend-builder --chown=8080:8080 /data /data
