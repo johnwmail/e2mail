@@ -132,32 +132,34 @@ export const mailApi = {
   },
 
   sendMessage: async (msg: OutgoingMessage, account?: string): Promise<void> => {
-    if (msg.attachments && msg.attachments.length > 0) {
-      const formData = new FormData();
-      if (msg.from) formData.append('from', msg.from);
-      formData.append('to', msg.to.join(','));
-      if (msg.cc) formData.append('cc', msg.cc.join(','));
-      if (msg.bcc) formData.append('bcc', msg.bcc.join(','));
-      formData.append('subject', msg.subject);
-      if (msg.inReplyTo) formData.append('inReplyTo', msg.inReplyTo);
-      if (msg.references) formData.append('references', msg.references);
-      if (msg.textBody) formData.append('textBody', msg.textBody);
-      if (msg.htmlBody) formData.append('htmlBody', msg.htmlBody);
-      if (account) formData.append('account', account);
+    return postOutgoing(`/mail/send${accountParam(account)}`, msg, account);
+  },
 
-      msg.attachments.forEach((file) => {
-        formData.append('attachments', file);
-      });
-
-      return request<void>(`/mail/send${accountParam(account)}`, {
-        method: 'POST',
-        body: formData,
-      });
-    }
-
-    return request<void>(`/mail/send${accountParam(account)}`, {
-      method: 'POST',
-      body: JSON.stringify(msg),
-    });
+  saveDraft: async (msg: OutgoingMessage, account?: string): Promise<void> => {
+    return postOutgoing(`/mail/drafts${accountParam(account)}`, msg, account);
   },
 };
+
+function postOutgoing(path: string, msg: OutgoingMessage, account?: string): Promise<void> {
+  if (msg.attachments && msg.attachments.length > 0) {
+    const formData = new FormData();
+    if (msg.from) formData.append('from', msg.from);
+    formData.append('to', (msg.to || []).join(','));
+    if (msg.cc) formData.append('cc', msg.cc.join(','));
+    if (msg.bcc) formData.append('bcc', msg.bcc.join(','));
+    formData.append('subject', msg.subject || '');
+    if (msg.inReplyTo) formData.append('inReplyTo', msg.inReplyTo);
+    if (msg.references) formData.append('references', msg.references);
+    if (msg.textBody) formData.append('textBody', msg.textBody);
+    if (msg.htmlBody) formData.append('htmlBody', msg.htmlBody);
+    if (account) formData.append('account', account);
+    msg.attachments.forEach((file) => {
+      formData.append('attachments', file);
+    });
+    return request<void>(path, { method: 'POST', body: formData });
+  }
+  return request<void>(path, {
+    method: 'POST',
+    body: JSON.stringify(msg),
+  });
+}

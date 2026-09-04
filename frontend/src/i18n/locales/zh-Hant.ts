@@ -193,6 +193,11 @@ export const zhHant = {
     bccLabel: '密件副本：',
     subjectLabel: '主旨：',
     send: '發送',
+    saveDraft: '儲存草稿',
+    savingDraft: '正在儲存草稿…',
+    draftFailed: '無法寫入 IMAP Drafts，瀏覽器內仍保留本機草稿。',
+    discardTitle: '捨棄這封信？',
+    discardConfirm: '未寄出的內容會暫存在本瀏覽器。可以儲存到 IMAP 草稿匣，或捨棄並刪除本機副本。',
   },
   emailFrame: {
     needPrivateKey: '請先在「設定 → PGP 金鑰」中生成或匯入你的私鑰',
@@ -514,6 +519,8 @@ export const zhHant = {
     empty: '未有聯絡人 — 可用上面「新增」手動輸入 email，或匯入 CSV/vCard',
     addContact: '新增聯絡人',
     editContact: '編輯聯絡人',
+    hasPgp: '已有 PGP 公鑰',
+    pgpKeyPlaceholder: '可選：貼上 PGP PUBLIC KEY 區塊',
   },
   onboarding: {
     title: '設定你的帳號',

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Search, Upload, Download, Trash2, Edit2, UserPlus, Users, Image as ImageIcon, X } from 'lucide-react';
+import { ArrowLeft, Search, Upload, Download, Trash2, Edit2, UserPlus, Users, Image as ImageIcon, X, KeyRound } from 'lucide-react';
 import { contactsApi, Contact } from '../../api/addressBook';
+import { pgpService } from '../../api/pgp';
 import { useMailStore } from '../../stores/useMailStore';
 import { toast } from '../../stores/useToastStore';
 import { useI18n } from '../../i18n';
@@ -28,16 +29,18 @@ interface ContactsPageProps {
   embedded?: boolean;
 }
 
+type MergedContact = Contact & { hasPgp: boolean; publicKeyArmored?: string; pgpOnly?: boolean };
+
 export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) => {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const setView = useMailStore((s) => s.setView);
   const [q, setQ] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [editing, setEditing] = useState<Contact | null>(null);
-  const [editForm, setEditForm] = useState({ displayName: '', email: '', note: '' });
+  const [editing, setEditing] = useState<MergedContact | null>(null);
+  const [editForm, setEditForm] = useState({ displayName: '', email: '', note: '', publicKeyArmored: '' });
   const [creating, setCreating] = useState(false);
-  const [createForm, setCreateForm] = useState({ email: '', displayName: '', note: '' });
+  const [createForm, setCreateForm] = useState({ email: '', displayName: '', note: '', publicKeyArmored: '' });
   const [importMode, setImportMode] = useState<'skip' | 'overwrite'>('skip');
   const [importResult, setImportResult] = useState<{ saved: number; skipped: string[]; invalid: number } | null>(null);
 
@@ -46,36 +49,99 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
     queryFn: () => contactsApi.list(q || undefined),
     staleTime: 10000,
   });
+  const { data: pgpKeys } = useQuery({
+    queryKey: ['pgp-contact-keys'],
+    queryFn: () => pgpService.getContactKeys(),
+    staleTime: 10000,
+  });
+  const keyByEmail = new Map((pgpKeys || []).map((k) => [k.email.toLowerCase(), k]));
+  const merged: MergedContact[] = [
+    ...(contacts || []).map((c) => {
+      const k = keyByEmail.get(c.email.toLowerCase());
+      return { ...c, hasPgp: !!k, publicKeyArmored: k?.publicKeyArmored };
+    }),
+  ];
+  for (const k of pgpKeys || []) {
+    if (merged.some((c) => c.email.toLowerCase() === k.email.toLowerCase())) continue;
+    if (q && !k.email.toLowerCase().includes(q.toLowerCase()) && !(k.name || '').toLowerCase().includes(q.toLowerCase())) continue;
+    merged.push({
+      id: `pgp:${k.email}`,
+      email: k.email,
+      displayName: k.name || k.email,
+      hasAvatar: false,
+      hasPgp: true,
+      publicKeyArmored: k.publicKeyArmored,
+      pgpOnly: true,
+      createdAt: '',
+      updatedAt: '',
+    });
+  }
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => contactsApi.remove(id),
+    mutationFn: async (c: MergedContact) => {
+      if (!c.pgpOnly && !c.id.startsWith('pgp:')) {
+        await contactsApi.remove(c.id);
+      }
+      await pgpService.removeContactKey(c.email).catch(() => {});
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['pgp-contact-keys'] });
       toast(t('contacts.deleted'));
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: () => contactsApi.update(editing!.id, { displayName: editForm.displayName, email: editForm.email, note: editForm.note }),
+    mutationFn: async () => {
+      if (editing && !editing.id.startsWith('pgp:')) {
+        await contactsApi.update(editing.id, { displayName: editForm.displayName, email: editForm.email, note: editForm.note });
+      } else if (editing?.id.startsWith('pgp:')) {
+        try {
+          await contactsApi.create({
+            email: editForm.email.trim(),
+            displayName: editForm.displayName.trim(),
+            note: editForm.note.trim(),
+            source: 'manual',
+          });
+        } catch {
+          /* already in address book */
+        }
+      }
+      const armored = editForm.publicKeyArmored.trim();
+      const email = editForm.email.trim();
+      if (armored) {
+        await pgpService.saveContactKey(email, armored, editForm.displayName.trim());
+      } else if (editing?.hasPgp) {
+        await pgpService.removeContactKey(email).catch(() => {});
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['pgp-contact-keys'] });
       setEditing(null);
       toast(t('contacts.updated'));
     },
   });
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      contactsApi.create({
+    mutationFn: async () => {
+      const c = await contactsApi.create({
         email: createForm.email.trim(),
         displayName: createForm.displayName.trim(),
         note: createForm.note.trim(),
         source: 'manual',
-      }),
+      });
+      const armored = createForm.publicKeyArmored.trim();
+      if (armored) {
+        await pgpService.saveContactKey(c.email, armored, c.displayName);
+      }
+      return c;
+    },
     onSuccess: (c) => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['pgp-contact-keys'] });
       setCreating(false);
-      setCreateForm({ email: '', displayName: '', note: '' });
+      setCreateForm({ email: '', displayName: '', note: '', publicKeyArmored: '' });
       toast(t('contacts.added', { name: c.displayName }));
     },
     onError: (err: any) => {
@@ -117,9 +183,9 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
     contactsApi.exportContacts(format).catch((err: any) => toast(t('contacts.exportFailed', { error: err?.message || String(err) })));
   };
 
-  const openEdit = (c: Contact) => {
+  const openEdit = (c: MergedContact) => {
     setEditing(c);
-    setEditForm({ displayName: c.displayName, email: c.email, note: c.note || '' });
+    setEditForm({ displayName: c.displayName, email: c.email, note: c.note || '', publicKeyArmored: c.publicKeyArmored || '' });
   };
 
   const handleAvatarUpload = async (c: Contact, file: File) => {
@@ -141,7 +207,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
           </button>
           <Users className="w-5 h-5 text-blue-600" />
           <h1 className="font-bold text-sm md:text-base flex-1">{t('contacts.title')}</h1>
-          <span className="text-xs text-slate-400">{t('contacts.count', { count: contacts?.length ?? 0 })}</span>
+          <span className="text-xs text-slate-400">{t('contacts.count', { count: merged.length })}</span>
         </div>
       )}
 
@@ -155,7 +221,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
         </form>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => { setCreateForm({ email: '', displayName: '', note: '' }); setCreating(true); }}
+            onClick={() => { setCreateForm({ email: '', displayName: '', note: '', publicKeyArmored: '' }); setCreating(true); }}
             className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold"
           >
             <UserPlus className="w-3.5 h-3.5" /> {t('common.add')}
@@ -185,27 +251,32 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
       <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
         {isLoading ? (
           <div className="p-8 text-center text-xs text-slate-400">{t('common.loading')}</div>
-        ) : !contacts || contacts.length === 0 ? (
+        ) : merged.length === 0 ? (
           <div className="p-12 text-center text-slate-400 flex flex-col items-center gap-2">
             <UserPlus className="w-10 h-10 text-slate-300" />
             <p className="text-xs">{t('contacts.empty')}</p>
           </div>
         ) : (
-          contacts.map((c) => (
+          merged.map((c) => (
             <div key={c.id} className="flex items-center gap-3 px-3 md:px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50">
               <ContactAvatar contact={c} />
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold truncate">{c.displayName}</div>
+                <div className="text-sm font-semibold truncate flex items-center gap-1.5">
+                  {c.displayName}
+                  {c.hasPgp && <KeyRound className="w-3.5 h-3.5 text-indigo-600 shrink-0" aria-label={t('contacts.hasPgp')} />}
+                </div>
                 <div className="text-xs text-slate-500 truncate">{c.email}</div>
                 {c.note && <div className="text-[11px] text-slate-400 truncate">{c.note}</div>}
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                {!c.pgpOnly && (
                 <label className="p-1.5 hover:bg-slate-200 rounded-lg cursor-pointer text-slate-500" title={t('contacts.uploadAvatar')}>
                   <ImageIcon className="w-4 h-4" />
                   <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(e) => e.target.files?.[0] && handleAvatarUpload(c, e.target.files[0])} className="hidden" />
                 </label>
-                <button onClick={() => openEdit(c)} className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-500"><Edit2 className="w-4 h-4" /></button>
-                <button onClick={() => deleteMutation.mutate(c.id)} className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                )}
+                <button onClick={() => openEdit(c)} className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-500" aria-label={t('contacts.editContact')}><Edit2 className="w-4 h-4" /></button>
+                <button onClick={() => deleteMutation.mutate(c)} className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-lg" aria-label={t('contacts.deleted')}><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
           ))
@@ -248,6 +319,13 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
               className="w-full px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
               rows={2}
             />
+            <textarea
+              value={createForm.publicKeyArmored}
+              onChange={(e) => setCreateForm((s) => ({ ...s, publicKeyArmored: e.target.value }))}
+              placeholder={t('contacts.pgpKeyPlaceholder')}
+              className="w-full px-3 py-2 text-sm font-mono border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+              rows={4}
+            />
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setCreating(false)} className="px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 rounded-lg">{t('common.cancel')}</button>
               <button
@@ -269,6 +347,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
             <input value={editForm.displayName} onChange={(e) => setEditForm((s) => ({ ...s, displayName: e.target.value }))} placeholder={t('contacts.displayName')} className="w-full px-3 py-2 text-sm border rounded-lg" />
             <input value={editForm.email} onChange={(e) => setEditForm((s) => ({ ...s, email: e.target.value }))} placeholder="Email" className="w-full px-3 py-2 text-sm border rounded-lg" />
             <textarea value={editForm.note} onChange={(e) => setEditForm((s) => ({ ...s, note: e.target.value }))} placeholder={t('contacts.notes')} className="w-full px-3 py-2 text-sm border rounded-lg" rows={3} />
+            <textarea value={editForm.publicKeyArmored} onChange={(e) => setEditForm((s) => ({ ...s, publicKeyArmored: e.target.value }))} placeholder={t('contacts.pgpKeyPlaceholder')} className="w-full px-3 py-2 text-sm font-mono border rounded-lg" rows={4} />
             <div className="flex justify-end gap-2">
               <button onClick={() => setEditing(null)} className="px-3 py-1.5 text-xs bg-slate-100 rounded-lg">{t('common.cancel')}</button>
               <button onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg disabled:opacity-50">{updateMutation.isPending ? t('common.saving') : t('common.save')}</button>

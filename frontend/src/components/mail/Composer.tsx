@@ -18,6 +18,9 @@ import { contactsApi } from '../../api/addressBook';
 import { pgpService } from '../../api/pgp';
 import { useQuery } from '@tanstack/react-query';
 import { useI18n } from '../../i18n';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+
+const LOCAL_DRAFT_KEY = 'e2Mail_composer_local';
 
 export const Composer: React.FC = () => {
   const { t } = useI18n();
@@ -36,6 +39,8 @@ export const Composer: React.FC = () => {
   const [statusText, setStatusText] = useState<string | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
 
   // PGP 切換開關
   const [enablePgpEncrypt, setEnablePgpEncrypt] = useState(false);
@@ -74,6 +79,26 @@ export const Composer: React.FC = () => {
     enabled: bccSuggestOpen && bccLastToken.length >= 1,
     staleTime: 10000,
   });
+  const { data: pgpKeys } = useQuery({
+    queryKey: ['pgp-contact-keys'],
+    queryFn: () => pgpService.getContactKeys(),
+    staleTime: 30000,
+  });
+  const mergeSuggest = (list: { id: string; email: string; displayName: string }[] | undefined, token: string) => {
+    const tkn = token.toLowerCase();
+    const fromBook = list || [];
+    const extra = (pgpKeys || [])
+      .filter(
+        (k) =>
+          k.email.toLowerCase().includes(tkn) || (k.name || '').toLowerCase().includes(tkn)
+      )
+      .filter((k) => !fromBook.some((c) => c.email.toLowerCase() === k.email.toLowerCase()))
+      .map((k) => ({ id: `pgp:${k.email}`, email: k.email, displayName: k.name || k.email }));
+    return [...fromBook, ...extra];
+  };
+  const toSuggestMerged = mergeSuggest(toSuggest, toLastToken);
+  const ccSuggestMerged = mergeSuggest(ccSuggest, ccLastToken);
+  const bccSuggestMerged = mergeSuggest(bccSuggest, bccLastToken);
   const applySuggest = (field: 'to' | 'cc' | 'bcc', email: string) => {
     const setter = field === 'to' ? setTo : field === 'cc' ? setCc : setBcc;
     const cur = field === 'to' ? to : field === 'cc' ? cc : bcc;
@@ -90,6 +115,25 @@ export const Composer: React.FC = () => {
   useEffect(() => {
     if (!isComposerOpen || !composerDraft) return;
     const d = composerDraft;
+    const incomingEmpty = !(d.to?.length || d.cc?.length || d.bcc?.length || d.subject || d.textBody);
+    if (incomingEmpty) {
+      try {
+        const raw = localStorage.getItem(LOCAL_DRAFT_KEY);
+        if (raw) {
+          const saved = JSON.parse(raw) as { to?: string; cc?: string; bcc?: string; subject?: string; body?: string };
+          setTo(saved.to || '');
+          setCc(saved.cc || '');
+          setBcc(saved.bcc || '');
+          setShowCc(!!saved.cc);
+          setShowBcc(!!saved.bcc);
+          setSubject(saved.subject || '');
+          setBody(saved.body || '');
+          setAttachments([]);
+          setError(null);
+          return;
+        }
+      } catch { /* ignore */ }
+    }
     setTo(d.to?.join(', ') || '');
     setCc(d.cc?.join(', ') || '');
     setBcc(d.bcc?.join(', ') || '');
@@ -102,6 +146,19 @@ export const Composer: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isComposerOpen, composerDraft]);
 
+  useEffect(() => {
+    if (!isComposerOpen) return;
+    const id = window.setTimeout(() => {
+      try {
+        localStorage.setItem(
+          LOCAL_DRAFT_KEY,
+          JSON.stringify({ to, cc, bcc, subject, body })
+        );
+      } catch { /* ignore */ }
+    }, 800);
+    return () => window.clearTimeout(id);
+  }, [isComposerOpen, to, cc, bcc, subject, body]);
+
   if (!isComposerOpen) return null;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,6 +169,46 @@ export const Composer: React.FC = () => {
 
   const removeAttachment = (index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const hasUnsaved = !!(to.trim() || cc.trim() || bcc.trim() || subject.trim() || body.trim() || attachments.length);
+  const requestClose = () => {
+    if (hasUnsaved) {
+      setConfirmClose(true);
+      return;
+    }
+    closeComposer();
+  };
+  const discardAndClose = () => {
+    try { localStorage.removeItem(LOCAL_DRAFT_KEY); } catch { /* ignore */ }
+    setConfirmClose(false);
+    closeComposer();
+  };
+  const saveImapDraft = async () => {
+    setSavingDraft(true);
+    setError(null);
+    try {
+      await mailApi.saveDraft({
+        from: activeAccount?.email,
+        to: to.split(',').map((s) => s.trim()).filter(Boolean),
+        cc: cc.split(',').map((s) => s.trim()).filter(Boolean),
+        bcc: bcc.split(',').map((s) => s.trim()).filter(Boolean),
+        subject,
+        textBody: body,
+        htmlBody: '',
+        inReplyTo: composerDraft?.inReplyTo,
+        references: composerDraft?.references,
+        attachments,
+      }, activeAccount?.id);
+      try { localStorage.removeItem(LOCAL_DRAFT_KEY); } catch { /* ignore */ }
+      setConfirmClose(false);
+      closeComposer();
+    } catch (err: any) {
+      setError(err.message || t('composer.draftFailed'));
+      setConfirmClose(false);
+    } finally {
+      setSavingDraft(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -148,6 +245,7 @@ export const Composer: React.FC = () => {
     const bccList = bcc.split(',').map((s) => s.trim()).filter(Boolean);
 
     let finalBody = body;
+    let sendAttachments = attachments;
     const isPgpActive = enablePgpEncrypt || enablePgpSign;
 
     // 處理 PGP 加密與簽名 (支援自動自 keyserver 抓取收件人公鑰)
@@ -199,6 +297,21 @@ export const Composer: React.FC = () => {
           signerPrivateKeyArmored: enablePgpSign ? myKeyPair?.privateKeyArmored : undefined,
           passphrase: passphraseToUse,
         });
+        if (enablePgpEncrypt && attachments.length > 0) {
+          const encFiles: File[] = [];
+          for (const file of attachments) {
+            const buf = new Uint8Array(await file.arrayBuffer());
+            const enc = await pgpService.encryptBinary({
+              data: buf,
+              recipientPublicKeysArmored: recipientKeys.length > 0 ? recipientKeys : (myKeyPair ? [myKeyPair.publicKeyArmored] : []),
+              signerPrivateKeyArmored: enablePgpSign ? myKeyPair?.privateKeyArmored : undefined,
+              passphrase: passphraseToUse,
+            });
+            const name = file.name.endsWith('.pgp') ? file.name : `${file.name}.pgp`;
+            encFiles.push(new File([new Blob([enc as BlobPart])], name, { type: 'application/pgp-encrypted' }));
+          }
+          sendAttachments = encFiles;
+        }
       } catch (pgpErr: any) {
         setError(t('composer.pgpFailed', { error: pgpErr.message }));
         setIsSending(false);
@@ -220,10 +333,11 @@ export const Composer: React.FC = () => {
         htmlBody: isPgpActive ? '' : `<div>${finalBody.replace(/\n/g, '<br/>')}</div>`,
         inReplyTo: composerDraft?.inReplyTo,
         references: composerDraft?.references,
-        attachments,
+        attachments: sendAttachments,
       }, activeAccount?.id);
 
       setShowSignPassModal(false);
+      try { localStorage.removeItem(LOCAL_DRAFT_KEY); } catch { /* ignore */ }
       closeComposer();
     } catch (err: any) {
       setError(err.message || t('composer.sendFailed'));
@@ -234,6 +348,7 @@ export const Composer: React.FC = () => {
   };
 
   return (
+    <>
     <div
       className={`fixed z-50 bg-white dark:bg-slate-900 shadow-2xl border border-slate-300 dark:border-slate-700 flex flex-col transition-all duration-200 overflow-hidden ${
         isMinimized
@@ -257,7 +372,7 @@ export const Composer: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={closeComposer}
+            onClick={requestClose}
             className="p-1 hover:text-white rounded hover:bg-slate-800 transition"
             title={t('composer.close')}
           >
@@ -317,9 +432,9 @@ export const Composer: React.FC = () => {
                 </button>
               )}
             </div>
-            {toSuggestOpen && toSuggest && toSuggest.length > 0 && (
+            {toSuggestOpen && toSuggestMerged.length > 0 && (
               <div className="absolute left-16 right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
-                {toSuggest.map((c) => (
+                {toSuggestMerged.map((c) => (
                   <button key={c.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applySuggest('to', c.email)} className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-700 text-left">
                     <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">{(c.displayName || c.email)[0].toUpperCase()}</div>
                     <div className="min-w-0 flex-1">
@@ -348,9 +463,9 @@ export const Composer: React.FC = () => {
                 placeholder="cc@example.com"
                 className="flex-1 text-sm outline-none bg-transparent min-w-0"
               />
-              {ccSuggestOpen && ccSuggest && ccSuggest.length > 0 && (
+              {ccSuggestOpen && ccSuggestMerged.length > 0 && (
                 <div className="absolute left-16 right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
-                  {ccSuggest.map((c) => (
+                  {ccSuggestMerged.map((c) => (
                     <button key={c.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applySuggest('cc', c.email)} className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-700 text-left">
                       <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">{(c.displayName || c.email)[0].toUpperCase()}</div>
                       <div className="min-w-0 flex-1">
@@ -380,9 +495,9 @@ export const Composer: React.FC = () => {
                 placeholder="bcc@example.com"
                 className="flex-1 text-sm outline-none bg-transparent min-w-0"
               />
-              {bccSuggestOpen && bccSuggest && bccSuggest.length > 0 && (
+              {bccSuggestOpen && bccSuggestMerged.length > 0 && (
                 <div className="absolute left-16 right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
-                  {bccSuggest.map((c) => (
+                  {bccSuggestMerged.map((c) => (
                     <button key={c.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => applySuggest('bcc', c.email)} className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-700 text-left">
                       <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">{(c.displayName || c.email)[0].toUpperCase()}</div>
                       <div className="min-w-0 flex-1">
@@ -488,9 +603,18 @@ export const Composer: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={closeComposer}
+                onClick={() => void saveImapDraft()}
+                disabled={savingDraft || isSending}
+                className="hidden sm:flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+              >
+                {savingDraft ? t('composer.savingDraft') : t('composer.saveDraft')}
+              </button>
+              <button
+                type="button"
+                onClick={requestClose}
                 className="p-2 text-slate-400 hover:text-red-600 rounded-lg transition"
                 title={t('composer.discard')}
+                aria-label={t('composer.discard')}
               >
                 <Trash2 className="w-5 h-5 md:w-4 md:h-4" />
               </button>
@@ -566,5 +690,20 @@ export const Composer: React.FC = () => {
         </div>
       )}
     </div>
+    <ConfirmDialog
+      isOpen={confirmClose}
+      danger
+      loading={savingDraft}
+      title={t('composer.discardTitle')}
+      message={t('composer.discardConfirm')}
+      confirmText={t('composer.discard')}
+      cancelText={t('composer.saveDraft')}
+      onConfirm={discardAndClose}
+      onCancel={() => {
+        setConfirmClose(false);
+        void saveImapDraft();
+      }}
+    />
+    </>
   );
 };

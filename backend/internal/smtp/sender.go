@@ -26,38 +26,52 @@ type SMTPConfig struct {
 	Password         string
 }
 
-// TestSMTPConnection 只測試 SMTP 連線 + 認證（唔發送任何郵件）
-func TestSMTPConnection(ctx context.Context, config SMTPConfig) error {
-	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-	tlsConfig := &tls.Config{
+func smtpTLSConfig(config SMTPConfig) *tls.Config {
+	return &tls.Config{
 		ServerName:         config.Host,
-		InsecureSkipVerify: config.AllowInsecureTLS,
+		InsecureSkipVerify: config.AllowInsecureTLS, //nolint:gosec
 	}
+}
 
-	var client *netsmtp.Client
+// dialSMTPClient 465 implicit TLS；其餘必須 STARTTLS。永不明文 AUTH。
+func dialSMTPClient(config SMTPConfig) (*netsmtp.Client, error) {
+	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+	tlsConfig := smtpTLSConfig(config)
 
 	if config.Port == 465 {
 		conn, err := tls.Dial("tcp", addr, tlsConfig)
 		if err != nil {
-			return fmt.Errorf("SMTP SSL dial failed to %s: %w", addr, err)
+			return nil, fmt.Errorf("SMTP TLS dial failed to %s: %w", addr, err)
 		}
-		defer func() { _ = conn.Close() }()
-		client, err = netsmtp.NewClient(conn, config.Host)
+		client, err := netsmtp.NewClient(conn, config.Host)
 		if err != nil {
-			return fmt.Errorf("SMTP SSL client init failed: %w", err)
+			_ = conn.Close()
+			return nil, fmt.Errorf("SMTP TLS client init failed: %w", err)
 		}
-	} else {
-		c, err := netsmtp.Dial(addr)
-		if err != nil {
-			return fmt.Errorf("SMTP connection failed to %s: %w", addr, err)
-		}
-		client = c
-		if ok, _ := client.Extension("STARTTLS"); ok {
-			if err := client.StartTLS(tlsConfig); err != nil {
-				_ = client.Close()
-				return fmt.Errorf("SMTP STARTTLS negotiation failed on %s: %w", addr, err)
-			}
-		}
+		return client, nil
+	}
+
+	c, err := netsmtp.Dial(addr)
+	if err != nil {
+		return nil, fmt.Errorf("SMTP connection failed to %s: %w", addr, err)
+	}
+	ok, _ := c.Extension("STARTTLS")
+	if !ok {
+		_ = c.Close()
+		return nil, fmt.Errorf("SMTP server %s does not offer STARTTLS (plaintext is not allowed)", addr)
+	}
+	if err := c.StartTLS(tlsConfig); err != nil {
+		_ = c.Close()
+		return nil, fmt.Errorf("SMTP STARTTLS negotiation failed on %s: %w", addr, err)
+	}
+	return c, nil
+}
+
+// TestSMTPConnection 只測試 SMTP 連線 + 認證（唔發送任何郵件）
+func TestSMTPConnection(ctx context.Context, config SMTPConfig) error {
+	client, err := dialSMTPClient(config)
+	if err != nil {
+		return err
 	}
 	defer func() { _ = client.Quit() }()
 
@@ -315,41 +329,9 @@ func (s *Sender) Send(ctx context.Context, config SMTPConfig, msg OutgoingMessag
 		return errors.New("no valid recipient addresses specified")
 	}
 
-	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-	tlsConfig := &tls.Config{
-		ServerName:         config.Host,
-		InsecureSkipVerify: config.AllowInsecureTLS,
-	}
-
-	var client *netsmtp.Client
-
-	// 1. 連線協定判斷：只有 Port 465 採用直接 SMTPS (Implicit TLS)
-	if config.Port == 465 {
-		conn, err := tls.Dial("tcp", addr, tlsConfig)
-		if err != nil {
-			return fmt.Errorf("SMTP SSL dial failed to %s: %w", addr, err)
-		}
-		defer func() { _ = conn.Close() }()
-
-		client, err = netsmtp.NewClient(conn, config.Host)
-		if err != nil {
-			return fmt.Errorf("SMTP SSL client init failed: %w", err)
-		}
-	} else {
-		// Port 587, 25 或其他端口：先建立一般連線，再透過 STARTTLS 協商升級
-		c, err := netsmtp.Dial(addr)
-		if err != nil {
-			return fmt.Errorf("SMTP connection failed to %s: %w", addr, err)
-		}
-		client = c
-
-		// 檢查並執行 STARTTLS
-		if ok, _ := client.Extension("STARTTLS"); ok {
-			if err := client.StartTLS(tlsConfig); err != nil {
-				_ = client.Close()
-				return fmt.Errorf("SMTP STARTTLS negotiation failed on %s: %w", addr, err)
-			}
-		}
+	client, err := dialSMTPClient(config)
+	if err != nil {
+		return err
 	}
 	defer func() { _ = client.Quit() }()
 

@@ -194,6 +194,11 @@ export const en = {
     bccLabel: 'Bcc:',
     subjectLabel: 'Subject:',
     send: 'Send',
+    saveDraft: 'Save draft',
+    savingDraft: 'Saving draft…',
+    draftFailed: 'Could not save the IMAP draft. It is still kept in this browser.',
+    discardTitle: 'Discard this message?',
+    discardConfirm: 'Unsaved text is kept in this browser until you discard. Save to IMAP Drafts, or discard and delete the local copy.',
   },
   emailFrame: {
     needPrivateKey: 'Generate or import a private key in Settings → PGP keys.',
@@ -517,6 +522,8 @@ export const en = {
     empty: 'No contacts yet — add one manually above, or import CSV/vCard.',
     addContact: 'Add contact',
     editContact: 'Edit contact',
+    hasPgp: 'Has PGP public key',
+    pgpKeyPlaceholder: 'Optional: paste PGP PUBLIC KEY block',
   },
   onboarding: {
     title: 'Set up your account',

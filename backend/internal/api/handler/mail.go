@@ -517,25 +517,13 @@ func (h *MailHandler) DeleteMessages(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, map[string]string{"message": "messages deleted successfully"})
 }
 
-// SendMessage 透過 SMTP 發送郵件並自動附加存入 IMAP「已發送 (Sent)」資料夾
-func (h *MailHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
-	authCtx, acc := middleware.GetCurrentAccount(r.Context(), r)
-	if authCtx == nil || acc == nil {
-		response.BadRequest(w, "no account selected")
-		return
-	}
-	accountPassword := middleware.GetCurrentAccountPassword(authCtx, acc)
-
+func parseOutgoingMessage(r *http.Request, acc *storage.Account) (smtp.OutgoingMessage, error) {
 	var outMsg smtp.OutgoingMessage
-
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		// 支援包含上傳附件的 multipart 請求（限制 32MB）
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			response.BadRequest(w, "failed to parse multipart form: "+err.Error())
-			return
+			return outMsg, err
 		}
-
 		outMsg.From = acc.Email
 		if fromForm := r.FormValue("from"); fromForm != "" {
 			outMsg.From = fromForm
@@ -554,8 +542,6 @@ func (h *MailHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		outMsg.References = r.FormValue("references")
 		outMsg.TextBody = r.FormValue("textBody")
 		outMsg.HTMLBody = r.FormValue("htmlBody")
-
-		// 處理上傳附件
 		if r.MultipartForm != nil && r.MultipartForm.File != nil {
 			for _, fileHeaders := range r.MultipartForm.File {
 				for _, fh := range fileHeaders {
@@ -572,15 +558,30 @@ func (h *MailHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-	} else {
-		// 標準 JSON 請求
-		if err := json.NewDecoder(r.Body).Decode(&outMsg); err != nil {
-			response.BadRequest(w, "invalid json payload: "+err.Error())
-			return
-		}
-		if outMsg.From == "" {
-			outMsg.From = acc.Email
-		}
+		return outMsg, nil
+	}
+	if err := json.NewDecoder(r.Body).Decode(&outMsg); err != nil {
+		return outMsg, err
+	}
+	if outMsg.From == "" {
+		outMsg.From = acc.Email
+	}
+	return outMsg, nil
+}
+
+// SendMessage 透過 SMTP 發送郵件並自動附加存入 IMAP「已發送 (Sent)」資料夾
+func (h *MailHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
+	authCtx, acc := middleware.GetCurrentAccount(r.Context(), r)
+	if authCtx == nil || acc == nil {
+		response.BadRequest(w, "no account selected")
+		return
+	}
+	accountPassword := middleware.GetCurrentAccountPassword(authCtx, acc)
+
+	outMsg, err := parseOutgoingMessage(r, acc)
+	if err != nil {
+		response.BadRequest(w, "invalid payload: "+err.Error())
+		return
 	}
 
 	if len(outMsg.To) == 0 {
@@ -642,4 +643,38 @@ func (h *MailHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Success(w, map[string]string{"message": "email sent successfully"})
+}
+
+// SaveDraft 將郵件 APPEND 到 IMAP Drafts（\Draft），唔經 SMTP
+func (h *MailHandler) SaveDraft(w http.ResponseWriter, r *http.Request) {
+	authCtx, acc := middleware.GetCurrentAccount(r.Context(), r)
+	if authCtx == nil || acc == nil {
+		response.BadRequest(w, "no account selected")
+		return
+	}
+	outMsg, err := parseOutgoingMessage(r, acc)
+	if err != nil {
+		response.BadRequest(w, "invalid payload: "+err.Error())
+		return
+	}
+	rawMIME, err := h.sender.BuildMIMEMessage(outMsg)
+	if err != nil {
+		response.InternalServerError(w, "failed to build draft: "+err.Error())
+		return
+	}
+	client, release, _, _, err := h.acquireClient(r.Context(), r)
+	if err != nil {
+		response.InternalServerError(w, "failed to get IMAP connection: "+err.Error())
+		return
+	}
+	defer release()
+	folder := client.FindDraftsFolder(r.Context())
+	if _, err := client.EnsureFolder(r.Context(), folder); err != nil {
+		log.Printf("[DRAFT] ensure folder %s: %v", folder, err)
+	}
+	if err := client.AppendMessage(r.Context(), folder, rawMIME, []imap.Flag{imap.FlagSeen, imap.FlagDraft}); err != nil {
+		response.InternalServerError(w, "failed to save draft: "+err.Error())
+		return
+	}
+	response.Success(w, map[string]string{"message": "draft saved", "folder": folder})
 }
