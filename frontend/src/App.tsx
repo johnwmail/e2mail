@@ -68,7 +68,7 @@ export const App: React.FC = () => {
         ]);
         if (mode === 'threads' || mode === 'messages') setListMode(mode);
         if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
-          localStorage.setItem('webmail_theme', savedTheme);
+          localStorage.setItem('e2Mail_theme', savedTheme);
           useMailStore.setState({ theme: savedTheme });
         }
         if (savedLocale === 'en' || savedLocale === 'zh-Hant') {

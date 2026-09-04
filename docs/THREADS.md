@@ -112,7 +112,7 @@ GET /api/mail/messages?folder=INBOX&page=1&limit=50&q=&thread=0|1
 
 - `MessageList` 頂欄加 `Mail / Threads` 兩個圖示按鈕（`Inbox` / `MessagesSquare` lucide icon），喺「共 N 封」右邊
 - **點擊即時生效**：切換即改 `listMode` 並即時以新 queryKey refetch（`enabled` 掛 `listMode`，**唔使手动刷新/重載頁**），按鈕以 `bg-blue-600 text-white` 高亮當前模式
-- 狀態入 `useMailStore.listMode: 'messages' | 'threads'`，持久化 `localStorage('webmail_list_mode')` **+ 後端 `user_prefs` 表（`/api/prefs/listMode`）**：本地寫入即時生效，後台異步 sync DB；登入後自 DB 載入覆蓋本地快取 → 跨裝置一致；切換時重置 `page=1`
+- 狀態入 `useMailStore.listMode: 'messages' | 'threads'`，持久化 `localStorage('e2Mail_list_mode')` **+ 後端 `user_prefs` 表（`/api/prefs/listMode`）**：本地寫入即時生效，後台異步 sync DB；登入後自 DB 載入覆蓋本地快取 → 跨裝置一致；切換時重置 `page=1`
 - **摺疊默認全收起**（已確認決定 2）；展開後組內子項 **Gmail 式最新喺頂**（決定 1）；`Sent` 照樣 thread（決定 3）
 - 每個 folder 共用同一模式（唔做 per-folder 設定，MVP）
 

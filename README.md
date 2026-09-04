@@ -22,7 +22,7 @@ and the API from a single Go binary in one container.
 - **Per-user contact keyrings** stored in SQLite, shared across browsers.
 - **Real-time push** via IMAP IDLE → SSE on `/api/events` (multiplexes all
   accounts over a single SSE connection).
-- **One-file storage** — `/data/webmail.db` (with WAL siblings). Legacy
+- **One-file storage** — `/data/e2Mail.db` (with WAL siblings). Legacy
   per-user JSON keyring files are auto-migrated on first boot.
 - **Container env defaults** — IMAP/SMTP host & port can be pre-configured by
   the admin so users don't have to fill the advanced settings.
@@ -93,7 +93,7 @@ Every screen is built for phones as well as desktops:
                                 └──────────────┬───────────────────┘
                                                │
                                                ▼
-                                /data/webmail.db  (named volume)
+                                /data/e2Mail.db  (named volume)
 ```
 
 The frontend `dist/` (React 19 + Vite 8 + Tailwind 4) is built during the Docker
@@ -119,7 +119,7 @@ open http://localhost:8080      # e2Mail UI (SPA + API on one port)
 curl http://localhost:8080/health   # health probe
 ```
 
-On first launch, `/data/webmail.db` is created and any legacy
+On first launch, `/data/e2Mail.db` is created and any legacy
 `/data/keyrings/*.json` files are auto-imported into the `personal_keyrings`
 table.
 
@@ -134,7 +134,7 @@ Uncomment in `docker-compose.yml` (or set via your orchestrator) to activate.
 | `DATA_DIR`                | `/data` | SQLite + keyring directory (must be on a persistent volume) |
 | `SESSION_TTL_HOURS`       | `24`    | Idle session expiry (hours, cookie `Expires`/`MaxAge` 同步) |
 | `SESSION_SECRET`          | (random)| 32-byte AES-GCM key for encrypting the per-session DEK at rest (raw 32 chars / base64 44 chars / hex 64 chars) |
-| `COOKIE_SECURE`           | `true`  | Set `Secure` flag on `webmail_session` cookie (set `false` for plain HTTP dev) |
+| `COOKIE_SECURE`           | `true`  | Set `Secure` flag on `e2Mail_session` cookie (set `false` for plain HTTP dev) |
 | `DEFAULT_IMAP_HOST`       | —       | Pre-fill IMAP host for users with custom domains        |
 | `DEFAULT_IMAP_PORT`       | `993`   | Pre-fill IMAP port                                      |
 | `DEFAULT_SMTP_HOST`       | —       | Pre-fill SMTP host                                      |
@@ -176,7 +176,7 @@ Everything user-private lives in one SQLite file:
 
 WAL mode is enabled (`journal_mode=WAL`, `busy_timeout=5000`); the
 `-shm` / `-wal` siblings accompany the main file inside the same
-`webmail-data` named volume.
+`data` named volume.
 
 ## Documentation
 

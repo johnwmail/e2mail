@@ -271,12 +271,12 @@ type SQLiteStore struct {
 	mu sync.Mutex
 }
 
-// NewSQLiteStore 於 dataDir/webmail.db 建立並初始化 SQLite 儲存
+// NewSQLiteStore 於 dataDir/e2Mail.db 建立並初始化 SQLite 儲存
 func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create storage dir: %w", err)
 	}
-	dbPath := filepath.Join(dataDir, "webmail.db")
+	dbPath := filepath.Join(dataDir, "e2Mail.db")
 	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)", dbPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {

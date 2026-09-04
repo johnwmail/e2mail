@@ -52,17 +52,14 @@ services:
       # - LDAP_CA_FILE=/certs/rootCA.crt         # 自簽 RootCA 容器內路徑（需配合 volumes 掛載）
       # - LDAP_ALLOW_INSECURE_TLS=false
     volumes:
-      - e2mail-data:/data
+      - data:/data
       # 自簽 CA 例子（將宿主機 ./certs/rootCA.crt 掛到容器 /certs/rootCA.crt）：
       # - ./certs/rootCA.crt:/certs/rootCA.crt:ro
     networks:
       - e2mail-net
 
 volumes:
-  # NOTE: older images used `webmail-data`. If upgrading from a prior install,
-  # the PGP keyring + DB already live there; one-time migrate:
-  #   docker run --rm -v webmail-data:/from -v e2mail-data:/to alpine cp -a /from/. /to/
-  e2mail-data:
+  data:
     driver: local
 
 networks:

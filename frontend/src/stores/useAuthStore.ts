@@ -20,11 +20,11 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  token: localStorage.getItem('webmail_token'),
-  session: localStorage.getItem('webmail_session')
-    ? JSON.parse(localStorage.getItem('webmail_session')!)
+  token: localStorage.getItem('e2Mail_token'),
+  session: localStorage.getItem('e2Mail_session')
+    ? JSON.parse(localStorage.getItem('e2Mail_session')!)
     : null,
-  isAuthenticated: !!localStorage.getItem('webmail_token'),
+  isAuthenticated: !!localStorage.getItem('e2Mail_token'),
   isLoading: true,
 
   login: async (req: LoginRequest) => {
@@ -32,8 +32,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (res.requires2fa) {
       return { requires2fa: true, challenge: res.challenge! };
     }
-    localStorage.setItem('webmail_token', res.token!);
-    localStorage.setItem('webmail_session', JSON.stringify(res.session));
+    localStorage.setItem('e2Mail_token', res.token!);
+    localStorage.setItem('e2Mail_session', JSON.stringify(res.session));
     set({
       token: res.token,
       session: res.session,
@@ -45,8 +45,8 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   verify2fa: async (challenge: string, code: string) => {
     const res = await authApi.verify2fa({ challenge, code });
-    localStorage.setItem('webmail_token', res.token!);
-    localStorage.setItem('webmail_session', JSON.stringify(res.session));
+    localStorage.setItem('e2Mail_token', res.token!);
+    localStorage.setItem('e2Mail_session', JSON.stringify(res.session));
     set({
       token: res.token,
       session: res.session,
@@ -61,8 +61,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch {
       // 忽略登出網路錯誤
     }
-    localStorage.removeItem('webmail_token');
-    localStorage.removeItem('webmail_session');
+    localStorage.removeItem('e2Mail_token');
+    localStorage.removeItem('e2Mail_session');
     // logout 同時清除 in-memory PGP key（唔留 localStorage），下次登入重新自 server fetch
     pgpService.clearKey();
     set({
@@ -74,7 +74,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   initAuth: async () => {
-    const token = localStorage.getItem('webmail_token');
+    const token = localStorage.getItem('e2Mail_token');
     if (!token) {
       set({ isLoading: false, isAuthenticated: false });
       return;
@@ -82,7 +82,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     try {
       const session = await authApi.getMe();
-      localStorage.setItem('webmail_session', JSON.stringify(session));
+      localStorage.setItem('e2Mail_session', JSON.stringify(session));
       set({
         token,
         session,
@@ -90,8 +90,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         isLoading: false,
       });
     } catch {
-      localStorage.removeItem('webmail_token');
-      localStorage.removeItem('webmail_session');
+      localStorage.removeItem('e2Mail_token');
+      localStorage.removeItem('e2Mail_session');
       set({
         token: null,
         session: null,

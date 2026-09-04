@@ -165,7 +165,7 @@ func extractToken(r *http.Request) string {
 	}
 
 	// 3. Cookie
-	if cookie, err := r.Cookie("webmail_session"); err == nil && cookie.Value != "" {
+	if cookie, err := r.Cookie("e2Mail_session"); err == nil && cookie.Value != "" {
 		return strings.TrimSpace(cookie.Value)
 	}
 

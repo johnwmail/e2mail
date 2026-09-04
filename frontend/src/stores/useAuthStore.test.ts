@@ -74,7 +74,7 @@ describe('useAuthStore', () => {
     const result = await useAuthStore.getState().login(loginReq);
 
     expect(result).toBeNull();
-    expect(localStorage.getItem('webmail_token')).toBe('tok');
+    expect(localStorage.getItem('e2Mail_token')).toBe('tok');
     expect(useAuthStore.getState().token).toBe('tok');
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
     expect(useAuthStore.getState().session?.email).toBe('a@b.c');
@@ -87,7 +87,7 @@ describe('useAuthStore', () => {
 
     expect(result).toEqual({ requires2fa: true, challenge: 'ch-1' });
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
-    expect(localStorage.getItem('webmail_token')).toBeNull();
+    expect(localStorage.getItem('e2Mail_token')).toBeNull();
   });
 
   it('verify2fa completes second stage login', async () => {
@@ -96,19 +96,19 @@ describe('useAuthStore', () => {
     await useAuthStore.getState().verify2fa('ch-1', '123456');
 
     expect(mockAuthApi.verify2fa).toHaveBeenCalledWith({ challenge: 'ch-1', code: '123456' });
-    expect(localStorage.getItem('webmail_token')).toBe('tok2');
+    expect(localStorage.getItem('e2Mail_token')).toBe('tok2');
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
   });
 
   it('logout clears everything even when API fails', async () => {
-    localStorage.setItem('webmail_token', 'tok');
-    localStorage.setItem('webmail_session', JSON.stringify(fakeSession));
+    localStorage.setItem('e2Mail_token', 'tok');
+    localStorage.setItem('e2Mail_session', JSON.stringify(fakeSession));
     useAuthStore.setState({ token: 'tok', session: fakeSession, isAuthenticated: true });
     mockAuthApi.logout.mockRejectedValue(new Error('network'));
 
     await useAuthStore.getState().logout();
 
-    expect(localStorage.getItem('webmail_token')).toBeNull();
+    expect(localStorage.getItem('e2Mail_token')).toBeNull();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
 
@@ -119,7 +119,7 @@ describe('useAuthStore', () => {
   });
 
   it('initAuth with valid token restores session', async () => {
-    localStorage.setItem('webmail_token', 'tok');
+    localStorage.setItem('e2Mail_token', 'tok');
     mockAuthApi.getMe.mockResolvedValue(fakeSession);
 
     await useAuthStore.getState().initAuth();
@@ -130,12 +130,12 @@ describe('useAuthStore', () => {
   });
 
   it('initAuth clears token when getMe fails', async () => {
-    localStorage.setItem('webmail_token', 'tok');
+    localStorage.setItem('e2Mail_token', 'tok');
     mockAuthApi.getMe.mockRejectedValue(new Error('expired'));
 
     await useAuthStore.getState().initAuth();
 
-    expect(localStorage.getItem('webmail_token')).toBeNull();
+    expect(localStorage.getItem('e2Mail_token')).toBeNull();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(useAuthStore.getState().isLoading).toBe(false);
   });

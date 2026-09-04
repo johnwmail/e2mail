@@ -10,7 +10,7 @@ export const LOCALES: Array<{ id: Locale; label: string }> = [
   { id: 'zh-Hant', label: '繁體中文' },
 ];
 
-export const LOCALE_STORAGE_KEY = 'webmail_locale';
+export const LOCALE_STORAGE_KEY = 'e2Mail_locale';
 
 const catalogs: Record<Locale, Record<string, unknown>> = {
   en,

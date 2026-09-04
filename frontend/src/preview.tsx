@@ -120,8 +120,8 @@ window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   });
 }) as typeof window.fetch;
 
-localStorage.setItem('webmail_token', 'preview-token');
-localStorage.setItem('webmail_session', JSON.stringify(session));
+localStorage.setItem('e2Mail_token', 'preview-token');
+localStorage.setItem('e2Mail_session', JSON.stringify(session));
 
 useAuthStore.setState({ token: 'preview-token', session, isAuthenticated: true, isLoading: false });
 useMailStore.setState({ view: 'settings', settingsSection: 'security', activeAccountId: accounts[0].id });

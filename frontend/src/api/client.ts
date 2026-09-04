@@ -14,7 +14,7 @@ export async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = localStorage.getItem('webmail_token');
+  const token = localStorage.getItem('e2Mail_token');
   const headers = new Headers(options.headers || {});
 
   if (token && !headers.has('Authorization')) {
@@ -48,8 +48,8 @@ export async function request<T>(
       !endpoint.startsWith('/auth/change-password') &&
       !window.location.pathname.includes('/login')
     ) {
-      localStorage.removeItem('webmail_token');
-      localStorage.removeItem('webmail_session');
+      localStorage.removeItem('e2Mail_token');
+      localStorage.removeItem('e2Mail_session');
       window.dispatchEvent(new Event('auth:unauthorized'));
     }
   }

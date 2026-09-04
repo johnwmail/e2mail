@@ -58,7 +58,7 @@ export const contactsApi = {
 
   fetchAvatarBlob: async (id: string): Promise<string | null> => {
     try {
-      const token = localStorage.getItem('webmail_token');
+      const token = localStorage.getItem('e2Mail_token');
       const res = await fetch(`/api/contacts/${encodeURIComponent(id)}/avatar`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -71,7 +71,7 @@ export const contactsApi = {
   },
 
   uploadAvatar: async (id: string, file: File): Promise<Contact> => {
-    const token = localStorage.getItem('webmail_token');
+    const token = localStorage.getItem('e2Mail_token');
     const form = new FormData();
     form.append('file', file);
     const res = await fetch(`/api/contacts/${encodeURIComponent(id)}/avatar`, {
@@ -92,7 +92,7 @@ export const contactsApi = {
   },
 
   importContacts: async (file: File, mode: 'skip' | 'overwrite' = 'skip'): Promise<{ saved: number; skipped: string[]; invalid: number }> => {
-    const token = localStorage.getItem('webmail_token');
+    const token = localStorage.getItem('e2Mail_token');
     const form = new FormData();
     form.append('file', file);
     const res = await fetch(`/api/contacts/import?mode=${mode}`, {
@@ -109,7 +109,7 @@ export const contactsApi = {
   },
 
   exportContacts: async (format: 'csv' | 'vcf' = 'csv'): Promise<void> => {
-    const token = localStorage.getItem('webmail_token');
+    const token = localStorage.getItem('e2Mail_token');
     const res = await fetch(`/api/contacts/export?format=${format}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });

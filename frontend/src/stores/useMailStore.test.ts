@@ -98,7 +98,7 @@ describe('useMailStore', () => {
   it('persists the selected theme', () => {
     useMailStore.getState().setTheme('dark');
     expect(useMailStore.getState().theme).toBe('dark');
-    expect(localStorage.getItem('webmail_theme')).toBe('dark');
+    expect(localStorage.getItem('e2Mail_theme')).toBe('dark');
   });
 
   it('setListMode toggles instantly, resets page/selection and persists', () => {
@@ -110,11 +110,11 @@ describe('useMailStore', () => {
     expect(s.listMode).toBe('threads');
     expect(s.page).toBe(1);
     expect(s.selectedUID).toBeNull();
-    expect(localStorage.getItem('webmail_list_mode')).toBe('threads');
+    expect(localStorage.getItem('e2Mail_list_mode')).toBe('threads');
 
     useMailStore.getState().setListMode('messages');
     s = useMailStore.getState();
     expect(s.listMode).toBe('messages');
-    expect(localStorage.getItem('webmail_list_mode')).toBe('messages');
+    expect(localStorage.getItem('e2Mail_list_mode')).toBe('messages');
   });
 });

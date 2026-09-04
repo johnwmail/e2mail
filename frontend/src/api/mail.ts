@@ -69,13 +69,13 @@ export const mailApi = {
   },
 
   getAttachmentUrl: (uid: number, attId: string, folder = 'INBOX', account?: string): string => {
-    const token = localStorage.getItem('webmail_token') || '';
+    const token = localStorage.getItem('e2Mail_token') || '';
     const accountQS = account ? `&account=${encodeURIComponent(account)}` : '';
     return `/api/mail/messages/${uid}/attachments/${encodeURIComponent(attId)}?folder=${encodeURIComponent(folder)}&token=${encodeURIComponent(token)}${accountQS}`;
   },
 
   getRawMessage: async (uid: number, folder = 'INBOX', account?: string): Promise<string> => {
-    const token = localStorage.getItem('webmail_token') || '';
+    const token = localStorage.getItem('e2Mail_token') || '';
     const accountQS = account ? `&account=${encodeURIComponent(account)}` : '';
     const url = `/api/mail/messages/${uid}/raw?folder=${encodeURIComponent(folder)}${accountQS}`;
     const res = await fetch(url, {

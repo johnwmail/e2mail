@@ -74,7 +74,7 @@ func (h *AuthHandler) cookieSecure(r *http.Request) bool {
 // setSessionCookie 統一設定 session cookie（TTL 與 Secure 由 env 控制）
 func (h *AuthHandler) setSessionCookie(w http.ResponseWriter, r *http.Request, sessionID string) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "webmail_session",
+		Name:     "e2Mail_session",
 		Value:    sessionID,
 		Path:     "/",
 		Expires:  time.Now().Add(h.sessionTTL),
@@ -551,7 +551,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	// 清除 Cookie
 	http.SetCookie(w, &http.Cookie{
-		Name:     "webmail_session",
+		Name:     "e2Mail_session",
 		Value:    "",
 		Path:     "/",
 		Expires:  time.Unix(0, 0),

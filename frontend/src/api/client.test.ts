@@ -14,7 +14,7 @@ describe('request', () => {
   });
 
   it('attaches bearer token and JSON content-type', async () => {
-    localStorage.setItem('webmail_token', 'token-123');
+    localStorage.setItem('e2Mail_token', 'token-123');
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ success: true, data: { ok: true } }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -51,33 +51,33 @@ describe('request', () => {
 
   describe('401 handling', () => {
     it('clears session and dispatches auth:unauthorized for non-2fa endpoints', async () => {
-      localStorage.setItem('webmail_token', 'tok');
+      localStorage.setItem('e2Mail_token', 'tok');
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ success: false, error: 'expired' }, 401)));
 
       await expect(request('/auth/me')).rejects.toThrow(ApiError);
 
-      expect(localStorage.getItem('webmail_token')).toBeNull();
+      expect(localStorage.getItem('e2Mail_token')).toBeNull();
       expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'auth:unauthorized' }));
     });
 
     it('does NOT clear session for /2fa/ endpoints (business error)', async () => {
-      localStorage.setItem('webmail_token', 'tok');
+      localStorage.setItem('e2Mail_token', 'tok');
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ success: false, error: 'wrong code' }, 401)));
 
       await expect(request('/2fa/enable')).rejects.toThrow(ApiError);
 
-      expect(localStorage.getItem('webmail_token')).toBe('tok');
+      expect(localStorage.getItem('e2Mail_token')).toBe('tok');
       expect(dispatchSpy).not.toHaveBeenCalled();
     });
 
     it('does NOT clear session for logout endpoint', async () => {
-      localStorage.setItem('webmail_token', 'tok');
+      localStorage.setItem('e2Mail_token', 'tok');
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ success: false, error: 'x' }, 401)));
 
       await expect(request('/auth/logout', { method: 'POST' })).rejects.toThrow(ApiError);
-      expect(localStorage.getItem('webmail_token')).toBe('tok');
+      expect(localStorage.getItem('e2Mail_token')).toBe('tok');
     });
 
     it('does NOT dispatch unauthorized when already on login page', async () => {
@@ -85,7 +85,7 @@ describe('request', () => {
         value: { ...window.location, pathname: '/login' },
         writable: true,
       });
-      localStorage.setItem('webmail_token', 'tok');
+      localStorage.setItem('e2Mail_token', 'tok');
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ success: false, error: 'x' }, 401)));
 
@@ -95,7 +95,7 @@ describe('request', () => {
   });
 
   it('does not override explicit Authorization header', async () => {
-    localStorage.setItem('webmail_token', 'tok');
+    localStorage.setItem('e2Mail_token', 'tok');
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ success: true, data: {} }));
     vi.stubGlobal('fetch', fetchMock);
 

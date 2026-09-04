@@ -62,9 +62,9 @@ export const useMailStore = create<MailState>((set) => ({
   view: 'mail',
   settingsSection: 'security',
   inboxUnread: 0,
-  listMode: (localStorage.getItem('webmail_list_mode') === 'threads' ? 'threads' : 'messages'),
+  listMode: (localStorage.getItem('e2Mail_list_mode') === 'threads' ? 'threads' : 'messages'),
   theme: (() => {
-    const stored = localStorage.getItem('webmail_theme');
+    const stored = localStorage.getItem('e2Mail_theme');
     return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
   })(),
 
@@ -110,7 +110,7 @@ export const useMailStore = create<MailState>((set) => ({
   setInboxUnread: (n) => set({ inboxUnread: n }),
 
   setListMode: (mode) => {
-    localStorage.setItem('webmail_list_mode', mode);
+    localStorage.setItem('e2Mail_list_mode', mode);
     set({ listMode: mode, page: 1, selectedUID: null, selectedFolder: null });
     // 同步到 DB（後台，失敗唔阻塞 UI）；加 catch 處理 import 於測試環境 teardown 時之錯誤
     void import('../api/prefs')
@@ -119,7 +119,7 @@ export const useMailStore = create<MailState>((set) => ({
   },
 
   setTheme: (theme) => {
-    localStorage.setItem('webmail_theme', theme);
+    localStorage.setItem('e2Mail_theme', theme);
     set({ theme });
     void import('../api/prefs')
       .then(({ prefsApi }) => prefsApi.set('theme', theme).catch(() => {}))

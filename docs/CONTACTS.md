@@ -145,7 +145,7 @@ contacts (通訊錄)  1 ── 0..1  contact_keys (PGP)
 - 純新增表與檔案目錄，無破壞性變更
 - 首次啟動 `NewSQLiteStore` 執行 `CREATE TABLE IF NOT EXISTS contacts`（寫入 `schema` 常量，`backend/internal/storage/sqlite.go:126`）
 - 舊有 `contact_keys` 保持不動；可選提供一次性「由 `contact_keys` 生成通訊錄」腳本（將已有 PGP 聯絡人 `email/name` 匯入 `contacts`，`source=auto_add`，不覆蓋已存在者）
-- 備份：`contacts` 與 `avatars/` 均在 `/data` volume 內，隨 `webmail-data` 持久化
+- 備份：`contacts` 與 `avatars/` 均在 `/data` volume 內，隨 `data` volume 持久化
 
 ---
 
@@ -163,7 +163,7 @@ contacts (通訊錄)  1 ── 0..1  contact_keys (PGP)
 
 ## 8. 為何保留 SQLite 而非轉 RDS
 
-- **自託管定位**：e2mail 為單節點 `docker-compose.yml` 單 service + `webmail-data` volume 設計（`AGENTS.md`），SQLite 零運維、備份即抄 `/data`，最吻合
+- **自託管定位**：e2mail 為單節點 `docker-compose.yml` 單 service + `data` volume 設計（`AGENTS.md`），SQLite 零運維、備份即抄 `/data`，最吻合
 - **規模匹配**：通訊錄每 user 數百至數千筆，讀多寫少，SQLite WAL 已足夠；`Store` 層已用 `sync.Mutex` + `SetMaxOpenConns(1)` 序列化寫入，無併發問題
 - **成本**：轉 Postgres/MariaDB 需新增 `db` service、密碼/連線池/健康檢查、重寫 `storage` 與 `Dockerfile`，為通訊錄此量級不值
 - **可移植**：本設計 SQL 保持 portable（僅 `TEXT/INTEGER/BLOB` + `UNIQUE` + `INDEX`），將來若真需橫向擴容，換 `postgres` driver + `golang-migrate` 即可遷移（`Store` 介面已抽象）

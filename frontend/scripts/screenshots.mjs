@@ -28,8 +28,8 @@ async function open({ viewport, dsf, url, locale = 'en', theme = 'light' }) {
   const ctx = await browser.newContext({ viewport, deviceScaleFactor: dsf });
   await ctx.addInitScript(
     ([l, t]) => {
-      localStorage.setItem('webmail_locale', l);
-      localStorage.setItem('webmail_theme', t);
+      localStorage.setItem('e2Mail_locale', l);
+      localStorage.setItem('e2Mail_theme', t);
     },
     [locale, theme]
   );

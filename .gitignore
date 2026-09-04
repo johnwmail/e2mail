@@ -59,7 +59,7 @@ Thumbs.db
 *.swp
 *.swo
 
-# Runtime data (kept on the named volume `webmail-data`, not in source)
+# Runtime data (kept on the named volume `data`, not in source)
 data/
 *.db
 *.db-shm
