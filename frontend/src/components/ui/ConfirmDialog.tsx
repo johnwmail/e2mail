@@ -40,7 +40,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             </span>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">{title}</h3>
           </div>
-          <button onClick={onCancel} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg transition">
+          <button onClick={onCancel} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg transition" aria-label={t('common.close')}>
             <X className="w-4 h-4" />
           </button>
         </div>

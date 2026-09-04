@@ -6,6 +6,7 @@ import { pgpService } from '../../api/pgp';
 import { useMailStore } from '../../stores/useMailStore';
 import { toast } from '../../stores/useToastStore';
 import { useI18n } from '../../i18n';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 const ContactAvatar: React.FC<{ contact: Contact }> = ({ contact }) => {
   const [url, setUrl] = useState<string | null>(null);
@@ -38,6 +39,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
   const [q, setQ] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [editing, setEditing] = useState<MergedContact | null>(null);
+  const [contactToDelete, setContactToDelete] = useState<MergedContact | null>(null);
   const [editForm, setEditForm] = useState({ displayName: '', email: '', note: '', publicKeyArmored: '' });
   const [creating, setCreating] = useState(false);
   const [createForm, setCreateForm] = useState({ email: '', displayName: '', note: '', publicKeyArmored: '' });
@@ -87,6 +89,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
       queryClient.invalidateQueries({ queryKey: ['pgp-contact-keys'] });
+      setContactToDelete(null);
       toast(t('contacts.deleted'));
     },
   });
@@ -202,7 +205,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
     <div className="h-full flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900">
       {!embedded && (
         <div className="h-14 border-b border-slate-200 dark:border-slate-800 px-3 md:px-4 flex items-center gap-2 shrink-0">
-          <button onClick={() => setView('mail')} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
+          <button onClick={() => setView('mail')} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg" aria-label={t('common.back')}>
             <ArrowLeft className="w-4 h-4" />
           </button>
           <Users className="w-5 h-5 text-blue-600" />
@@ -235,8 +238,8 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
             <option value="overwrite">{t('contacts.overwriteDuplicates')}</option>
           </select>
           <div className="flex gap-1">
-            <button onClick={() => handleExport('csv')} className="px-2.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold flex items-center gap-1"><Download className="w-3.5 h-3.5" />CSV</button>
-            <button onClick={() => handleExport('vcf')} className="px-2.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold flex items-center gap-1"><Download className="w-3.5 h-3.5" />vCard</button>
+            <button onClick={() => handleExport('csv')} className="px-2.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold flex items-center gap-1"><Download className="w-3.5 h-3.5" />{t('contacts.exportCsv')}</button>
+            <button onClick={() => handleExport('vcf')} className="px-2.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold flex items-center gap-1"><Download className="w-3.5 h-3.5" />{t('contacts.exportVcard')}</button>
           </div>
         </div>
       </div>
@@ -244,7 +247,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
       {importResult && (
         <div className="mx-3 mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center justify-between">
           <span>{t('contacts.importDetails', { saved: importResult.saved, skipped: importResult.skipped.length, list: importResult.skipped.slice(0,3).join(', '), more: importResult.skipped.length > 3 ? '…' : '', invalid: importResult.invalid })}</span>
-          <button onClick={() => setImportResult(null)} className="p-1 hover:bg-amber-100 rounded"><X className="w-3.5 h-3.5" /></button>
+          <button onClick={() => setImportResult(null)} className="p-1 hover:bg-amber-100 rounded" aria-label={t('common.dismiss')}><X className="w-3.5 h-3.5" /></button>
         </div>
       )}
 
@@ -277,13 +280,13 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {!c.pgpOnly && (
-                <label className="p-1.5 hover:bg-slate-200 rounded-lg cursor-pointer text-slate-500" title={t('contacts.uploadAvatar')}>
+                <label className="p-1.5 hover:bg-slate-200 rounded-lg cursor-pointer text-slate-500" title={t('contacts.uploadAvatar')} aria-label={t('contacts.uploadAvatar')}>
                   <ImageIcon className="w-4 h-4" />
                   <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(e) => e.target.files?.[0] && handleAvatarUpload(c, e.target.files[0])} className="hidden" />
                 </label>
                 )}
                 <button onClick={() => openEdit(c)} className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-500" aria-label={t('contacts.editContact')}><Edit2 className="w-4 h-4" /></button>
-                <button onClick={() => deleteMutation.mutate(c)} className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-lg" aria-label={t('contacts.deleted')}><Trash2 className="w-4 h-4" /></button>
+                <button onClick={() => setContactToDelete(c)} className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-lg" aria-label={t('contacts.deleteContact')}><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
           ))
@@ -299,7 +302,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
           >
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-sm">{t('contacts.addContact')}</h3>
-              <button type="button" onClick={() => setCreating(false)} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400">
+              <button type="button" onClick={() => setCreating(false)} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400" aria-label={t('common.close')}>
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -352,7 +355,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
           <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-xl p-4 space-y-3">
             <h3 className="font-bold text-sm">{t('contacts.editContact')}</h3>
             <input value={editForm.displayName} onChange={(e) => setEditForm((s) => ({ ...s, displayName: e.target.value }))} placeholder={t('contacts.displayName')} className="w-full px-3 py-2 text-sm border rounded-lg" />
-            <input value={editForm.email} onChange={(e) => setEditForm((s) => ({ ...s, email: e.target.value }))} placeholder="Email" className="w-full px-3 py-2 text-sm border rounded-lg" />
+            <input value={editForm.email} onChange={(e) => setEditForm((s) => ({ ...s, email: e.target.value }))} placeholder={t('contacts.email')} className="w-full px-3 py-2 text-sm border rounded-lg" />
             <textarea value={editForm.note} onChange={(e) => setEditForm((s) => ({ ...s, note: e.target.value }))} placeholder={t('contacts.notes')} className="w-full px-3 py-2 text-sm border rounded-lg" rows={3} />
             <textarea value={editForm.publicKeyArmored} onChange={(e) => setEditForm((s) => ({ ...s, publicKeyArmored: e.target.value }))} placeholder={t('contacts.pgpKeyPlaceholder')} className="w-full px-3 py-2 text-sm font-mono border rounded-lg" rows={4} />
             <div className="flex justify-end gap-2">
@@ -362,6 +365,20 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={contactToDelete !== null}
+        danger
+        loading={deleteMutation.isPending}
+        title={t('contacts.deleteTitle')}
+        message={t('contacts.deleteConfirm', {
+          name: contactToDelete?.displayName || contactToDelete?.email || '',
+        })}
+        confirmText={t('common.delete')}
+        onConfirm={() => {
+          if (contactToDelete) deleteMutation.mutate(contactToDelete);
+        }}
+        onCancel={() => setContactToDelete(null)}
+      />
     </div>
   );
 };

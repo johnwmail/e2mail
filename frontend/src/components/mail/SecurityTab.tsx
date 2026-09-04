@@ -440,6 +440,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                     onClick={() => setShowSecret(!showSecret)}
                     className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition"
                     title={showSecret ? t('security.hideSecret') : t('security.showSecret')}
+                    aria-label={showSecret ? t('security.hideSecret') : t('security.showSecret')}
                   >
                     {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>

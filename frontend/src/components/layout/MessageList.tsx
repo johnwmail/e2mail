@@ -913,6 +913,7 @@ export const MessageList: React.FC = () => {
                   : displayMessages.length > 0 && selectedUIDs.length === displayMessages.length
               }
               onChange={handleSelectAll}
+              aria-label={t('mailList.selectAll')}
               className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer"
             />
           )}
@@ -932,6 +933,7 @@ export const MessageList: React.FC = () => {
                 }
                 className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-slate-200/60 rounded-lg transition"
                 title={t('mailList.markRead')}
+                aria-label={t('mailList.markRead')}
               >
                 <MailCheck className="w-4 h-4" />
               </button>
@@ -945,6 +947,7 @@ export const MessageList: React.FC = () => {
                 }
                 className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-slate-200/60 rounded-lg transition"
                 title={t('mailList.markUnread')}
+                aria-label={t('mailList.markUnread')}
               >
                 <Mail className="w-4 h-4" />
               </button>
@@ -952,6 +955,7 @@ export const MessageList: React.FC = () => {
                 onClick={() => deleteMutation.mutate(selectedUIDs)}
                 className="p-1.5 text-slate-600 hover:text-red-600 hover:bg-slate-200/60 rounded-lg transition"
                 title={t('mailList.deleteSelected')}
+                aria-label={t('mailList.deleteSelected')}
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -995,6 +999,7 @@ export const MessageList: React.FC = () => {
             disabled={page <= 1}
             onClick={() => setPage(page - 1)}
             className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg disabled:opacity-20 transition"
+            aria-label={t('mailList.previousPage')}
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -1002,6 +1007,7 @@ export const MessageList: React.FC = () => {
             disabled={page >= totalPages}
             onClick={() => setPage(page + 1)}
             className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg disabled:opacity-20 transition"
+            aria-label={t('mailList.nextPage')}
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -1009,6 +1015,7 @@ export const MessageList: React.FC = () => {
             onClick={() => refetch()}
             className={`p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg ${isFetching ? 'animate-spin' : ''}`}
             title={t('common.refresh')}
+            aria-label={t('common.refresh')}
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -1248,6 +1255,7 @@ export const MessageList: React.FC = () => {
                   <button
                     onClick={(e) => toggleStar(msg, e)}
                     className="p-0.5 hover:scale-110 transition"
+                    aria-label={msg.starred ? t('mailList.unstar') : t('mailList.star')}
                   >
                     <Star
                       className={`w-4 h-4 ${

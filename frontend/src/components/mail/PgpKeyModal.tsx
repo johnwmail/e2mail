@@ -855,6 +855,7 @@ export const PgpKeyModal: React.FC<PgpKeyModalProps> = ({ isOpen = false, onClos
                           disabled={removingEmail !== null}
                           className="p-2 shrink-0 text-slate-400 hover:text-red-600 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                           title={removingEmail === c.email ? t('common.deleting') : t('pgp.removeThisKey')}
+                          aria-label={removingEmail === c.email ? t('common.deleting') : t('pgp.removeThisKey')}
                         >
                           {removingEmail === c.email ? (
                             <Loader2 className="w-4 h-4 animate-spin" />

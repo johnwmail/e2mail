@@ -211,7 +211,7 @@ export const OnboardingWizard: React.FC<{
                   <div className="flex items-center gap-2 text-[11px]">
                     <span className="text-slate-500">{t('onboarding.orEnterSecret')}</span>
                     <code className="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded">{secret}</code>
-                    <button type="button" onClick={copyOtpauth} className="text-blue-600 hover:underline">
+                    <button type="button" onClick={copyOtpauth} className="text-blue-600 hover:underline" aria-label={t('common.copy')}>
                       <Copy className="w-3.5 h-3.5 inline" />
                     </button>
                   </div>

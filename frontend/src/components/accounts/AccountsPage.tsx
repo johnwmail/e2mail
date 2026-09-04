@@ -339,6 +339,7 @@ export const AccountsPage: React.FC<AccountsPageProps> = ({ embedded = false }) 
                       disabled={acc.isDefault}
                       className="p-2 text-slate-500 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg disabled:opacity-30 transition"
                       title={t('accounts.setDefault')}
+                      aria-label={t('accounts.setDefault')}
                     >
                       <Star className={`w-4 h-4 ${acc.isDefault ? 'fill-amber-400 text-amber-400' : ''}`} />
                     </button>
@@ -349,6 +350,7 @@ export const AccountsPage: React.FC<AccountsPageProps> = ({ embedded = false }) 
                       }}
                       className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
                       title={t('common.edit')}
+                      aria-label={t('common.edit')}
                     >
                       <Pencil className="w-4 h-4" />
                     </button>
@@ -357,6 +359,7 @@ export const AccountsPage: React.FC<AccountsPageProps> = ({ embedded = false }) 
                       disabled={deletingId === acc.id || accounts?.length === 1}
                       className="p-2 text-slate-500 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg disabled:opacity-30 transition"
                       title={accounts?.length === 1 ? t('accounts.cannotDeleteLast') : t('common.delete')}
+                      aria-label={accounts?.length === 1 ? t('accounts.cannotDeleteLast') : t('common.delete')}
                     >
                       {deletingId === acc.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     </button>

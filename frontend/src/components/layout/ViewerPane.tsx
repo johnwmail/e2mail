@@ -326,10 +326,11 @@ export const ViewerPane: React.FC = () => {
 
     const quoteHeader = t('viewer.replyQuote', { date: message.date, from: fromAddr, subject: message.subject });
 
+    const replyPrefix = t('viewer.replySubjectPrefix');
     openComposer({
       to: toList,
       cc: replyAll ? (message.cc ?? []).map((c) => c.address) : [],
-      subject: message.subject.startsWith('Re:') ? message.subject : `Re: ${message.subject}`,
+      subject: message.subject.startsWith(replyPrefix) ? message.subject : `${replyPrefix} ${message.subject}`,
       textBody: quoteHeader + replyBodyText,
       inReplyTo: message.messageId,
       references: message.messageId,
@@ -345,9 +346,10 @@ export const ViewerPane: React.FC = () => {
       to: (message.to ?? []).map((recipient) => recipient.address).join(', '),
     });
 
+    const forwardPrefix = t('viewer.forwardSubjectPrefix');
     openComposer({
       to: [],
-      subject: message.subject.startsWith('Fwd:') ? message.subject : `Fwd: ${message.subject}`,
+      subject: message.subject.startsWith(forwardPrefix) ? message.subject : `${forwardPrefix} ${message.subject}`,
       textBody: quoteHeader + replyBodyText,
       references: message.messageId,
     });
@@ -390,7 +392,8 @@ export const ViewerPane: React.FC = () => {
               })
             }
             className="p-1.5 text-slate-500 hover:text-amber-500 rounded-lg transition"
-            title={t('viewer.star')}
+            title={message.starred ? t('viewer.unstar') : t('viewer.star')}
+            aria-label={message.starred ? t('viewer.unstar') : t('viewer.star')}
           >
             <Star
               className={`w-4 h-4 ${
@@ -407,6 +410,7 @@ export const ViewerPane: React.FC = () => {
             }
             className="p-1.5 text-slate-500 hover:text-blue-600 rounded-lg transition"
             title={t('viewer.markUnread')}
+            aria-label={t('viewer.markUnread')}
           >
             <Mail className="w-4 h-4" />
           </button>
@@ -416,6 +420,7 @@ export const ViewerPane: React.FC = () => {
               disabled={moveToJunkMutation.isPending}
               className="p-1.5 text-slate-500 hover:text-orange-600 rounded-lg transition disabled:opacity-40"
               title={t('viewer.moveToJunk')}
+              aria-label={t('viewer.moveToJunk')}
             >
               <AlertOctagon className="w-4 h-4" />
             </button>
@@ -424,6 +429,7 @@ export const ViewerPane: React.FC = () => {
             onClick={() => deleteMutation.mutate(message.uid)}
             className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg transition"
             title={t('viewer.delete')}
+            aria-label={t('viewer.delete')}
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -432,6 +438,7 @@ export const ViewerPane: React.FC = () => {
             onClick={handleShowRaw}
             className="p-1.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg transition"
             title={t('viewer.showSource')}
+            aria-label={t('viewer.showSource')}
           >
             <Code className="w-4 h-4" />
           </button>
@@ -458,7 +465,8 @@ export const ViewerPane: React.FC = () => {
                 })
               }
               className="p-1.5 text-slate-500 rounded-lg"
-              title={t('viewer.star')}
+              title={message.starred ? t('viewer.unstar') : t('viewer.star')}
+              aria-label={message.starred ? t('viewer.unstar') : t('viewer.star')}
             >
               <Star
                 className={`w-4 h-4 ${
@@ -475,6 +483,7 @@ export const ViewerPane: React.FC = () => {
               }
               className="p-1.5 text-slate-500 rounded-lg"
               title={t('viewer.markUnread')}
+              aria-label={t('viewer.markUnread')}
             >
               <Mail className="w-4 h-4" />
             </button>
@@ -482,6 +491,7 @@ export const ViewerPane: React.FC = () => {
               onClick={() => deleteMutation.mutate(message.uid)}
               className="p-1.5 text-slate-500 hover:text-red-600 rounded-lg"
               title={t('viewer.delete')}
+              aria-label={t('viewer.delete')}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -489,6 +499,7 @@ export const ViewerPane: React.FC = () => {
               onClick={handleShowRaw}
               className="p-1.5 text-slate-500 rounded-lg"
               title={t('viewer.showSource')}
+              aria-label={t('viewer.showSource')}
             >
               <Code className="w-4 h-4" />
             </button>
@@ -639,6 +650,7 @@ export const ViewerPane: React.FC = () => {
                 <button
                   onClick={() => setShowRaw(false)}
                   className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+                  aria-label={t('common.close')}
                 >
                   <X className="w-4 h-4" />
                 </button>

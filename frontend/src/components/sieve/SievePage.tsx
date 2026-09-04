@@ -152,7 +152,7 @@ export const SievePage: React.FC<SievePageProps> = ({ embedded = false, onOpenAc
       {/* Header */}
       <div className="flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
         {!embedded && (
-          <button onClick={() => setView('mail')} className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg">
+          <button onClick={() => setView('mail')} className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg" aria-label={t('common.back')}>
             <ArrowLeft className="w-5 h-5" />
           </button>
         )}
@@ -174,7 +174,7 @@ export const SievePage: React.FC<SievePageProps> = ({ embedded = false, onOpenAc
               ))}
             </select>
           )}
-          <button onClick={handleRefresh} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg" title={t('common.refresh')}>
+          <button onClick={handleRefresh} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg" title={t('common.refresh')} aria-label={t('common.refresh')}>
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
           </button>
         </div>
@@ -249,6 +249,7 @@ export const SievePage: React.FC<SievePageProps> = ({ embedded = false, onOpenAc
                             onClick={(e) => { e.stopPropagation(); handleActivate(s.name); }}
                             className="p-1 text-slate-400 hover:text-emerald-600 rounded"
                             title={t('sieve.setActive')}
+                            aria-label={t('sieve.setActive')}
                           >
                             <CheckCircle2 className="w-4 h-4" />
                           </button>
@@ -257,6 +258,7 @@ export const SievePage: React.FC<SievePageProps> = ({ embedded = false, onOpenAc
                           onClick={(e) => { e.stopPropagation(); setDeleteTarget(s.name); }}
                           className="p-1 text-slate-400 hover:text-red-600 rounded"
                           title={t('common.delete')}
+                          aria-label={t('common.delete')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
