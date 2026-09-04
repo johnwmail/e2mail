@@ -16,6 +16,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import { twoFApi } from '../../api/2fa';
 import { authApi } from '../../api/auth';
+import { useAuthStore } from '../../stores/useAuthStore';
 import { TwoFASetupResponse } from '../../types/api';
 import { useI18n } from '../../i18n';
 
@@ -25,15 +26,29 @@ interface SecurityTabProps {
 
 // ChangePasswordSection 經 ldapd 變更登入密碼（僅在伺服器 LDAP_ENABLED 時顯示）。
 // 設計見 docs/LDAP.md：後端驗證舊密碼 → 改 ldapd → re-wrap 本地 DEK，當前 session 不會被登出。
+// 多帳號時可選目標帳號（類似 Sieve 頁）：選非登入主帳號時只改該帳號嘅 IMAP/SMTP 密碼，唔郁 DEK。
 const ChangePasswordSection: React.FC = () => {
   const { t } = useI18n();
+  const session = useAuthStore((s) => s.session);
+  const accounts = session?.accounts ?? [];
+  const loginEmail = (session?.email || '').toLowerCase();
+  const isLoginEmail = (email: string) => !!loginEmail && email.toLowerCase() === loginEmail;
+
   const [enabled, setEnabled] = useState(false);
+  const [accountId, setAccountId] = useState('');
   const [oldPw, setOldPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const selected =
+    accounts.find((a) => a.id === accountId) ??
+    accounts.find((a) => isLoginEmail(a.email)) ??
+    accounts.find((a) => a.isDefault) ??
+    accounts[0];
+  const isLoginAccount = selected ? isLoginEmail(selected.email) : true;
 
   useEffect(() => {
     fetch('/api/server-config')
@@ -61,8 +76,15 @@ const ChangePasswordSection: React.FC = () => {
     }
     setSubmitting(true);
     try {
-      await authApi.changePassword(oldPw, newPw, confirmPw);
-      setMsg({ type: 'success', text: t('security.changed') });
+      await authApi.changePassword(oldPw, newPw, confirmPw, selected?.id);
+      setMsg(
+        isLoginAccount
+          ? { type: 'success', text: t('security.changed') }
+          : {
+              type: 'success',
+              text: t('security.changedAccount', { name: selected?.label || selected?.email || '' }),
+            }
+      );
       setOldPw('');
       setNewPw('');
       setConfirmPw('');
@@ -80,10 +102,32 @@ const ChangePasswordSection: React.FC = () => {
     <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
       <div className="flex items-center gap-2">
         <Lock className="w-4 h-4 text-slate-500 shrink-0" />
-        <h4 className="text-sm font-bold text-slate-900 dark:text-white">{t('security.changePassword')}</h4>
+        <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+          {isLoginAccount ? t('security.changePassword') : t('security.changePasswordAccount')}
+        </h4>
+        {accounts.length > 1 && (
+          <label className="ml-auto flex items-center gap-1.5 shrink-0">
+            <span className="text-[11px] text-slate-500">{t('security.accountSelectLabel')}</span>
+            <select
+              value={selected?.id ?? ''}
+              onChange={(e) => {
+                setAccountId(e.target.value);
+                setMsg(null);
+              }}
+              className="max-w-[40vw] lg:max-w-none px-2 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label || a.email}
+                  {isLoginEmail(a.email) ? t('security.loginAccountSuffix') : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        {t('security.changePasswordHint')}
+        {isLoginAccount ? t('security.changePasswordHint') : t('security.changePasswordAccountHint')}
       </p>
 
       {msg && (

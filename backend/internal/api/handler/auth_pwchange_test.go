@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,13 +25,16 @@ type fakeChanger struct {
 	changeErr   error
 	verifyCalls int
 	changedTo   []string
+	dns         []string
 }
 
 func (f *fakeChanger) UserDN(email string) (string, error) {
-	if f.dnString != "" {
-		return f.dnString, nil
+	dn := f.dnString
+	if dn == "" {
+		dn = "uid=" + email + ",ou=people,dc=test"
 	}
-	return "uid=" + email + ",ou=people,dc=test", nil
+	f.dns = append(f.dns, dn)
+	return dn, nil
 }
 
 func (f *fakeChanger) VerifyUserBind(userDN, password string) error {
@@ -251,6 +255,125 @@ func TestChangePassword_RateLimited(t *testing.T) {
 	w := call(t, h.ChangePassword, pwCtx(authCtx), pwBody("bad", "NewPass123", "NewPass123"))
 	if w.Code != http.StatusTooManyRequests {
 		t.Fatalf("code = %d, want 429", w.Code)
+	}
+}
+
+// addSecondaryAccount 加入第二帳號 bob@test.com（密碼 BobOld123），回傳該帳號列
+func addSecondaryAccount(t *testing.T, h *AuthHandler, authCtx *middleware.AuthContext) *storage.Account {
+	t.Helper()
+	bob := &storage.Account{
+		UserEmail:       authCtx.Session.Email,
+		Label:           "Bob",
+		Email:           "bob@test.com",
+		IMAPHost:        "127.0.0.1",
+		IMAPPort:        1,
+		Username:        "bob@test.com",
+		EncIMAPPassword: "BobOld123",
+		EncSMTPPassword: "BobOld123",
+	}
+	if err := h.encryptAccountPasswords(bob, authCtx.DEK); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.storage.CreateAccount(bob); err != nil {
+		t.Fatal(err)
+	}
+	authCtx.Session.Accounts = append(authCtx.Session.Accounts, *bob)
+	authCtx.Passwords[bob.ID] = "BobOld123"
+	return bob
+}
+
+func TestChangePassword_AccountNotFound(t *testing.T) {
+	f := &fakeChanger{}
+	h, authCtx := setupChangePassword(t, "OldPass123", f)
+	body := pwBody("OldPass123", "NewPass123", "NewPass123")
+	body["account"] = "no-such-account"
+	w := call(t, h.ChangePassword, pwCtx(authCtx), body)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("code = %d, want 400", w.Code)
+	}
+	if f.verifyCalls != 0 || len(f.changedTo) != 0 {
+		t.Fatal("no LDAP calls expected for unknown account")
+	}
+}
+
+func TestChangePassword_SecondaryAccount(t *testing.T) {
+	f := &fakeChanger{}
+	const oldPass, newPass = "OldPass123", "NewPass123!"
+	h, authCtx := setupChangePassword(t, oldPass, f)
+	bob := addSecondaryAccount(t, h, authCtx)
+	aliceID := authCtx.Session.Accounts[0].ID
+
+	body := pwBody("BobOld123", newPass, newPass)
+	body["account"] = bob.ID
+	w := call(t, h.ChangePassword, pwCtx(authCtx), body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200 (body %s)", w.Code, w.Body.String())
+	}
+
+	// 1. LDAP 目標為 bob 的 DN
+	if len(f.dns) == 0 || !strings.Contains(f.dns[0], "bob@test.com") {
+		t.Fatalf("LDAP DN = %v, want target bob", f.dns)
+	}
+	if len(f.changedTo) != 1 || f.changedTo[0] != newPass {
+		t.Fatalf("LDAP writes = %v", f.changedTo)
+	}
+
+	owner := authCtx.Session.Email
+
+	// 2. DEK 憑證不可被 re-wrap：舊登入密碼仍然解得到
+	cred, err := h.storage.GetUserCredential(owner)
+	if err != nil || cred == nil {
+		t.Fatalf("GetUserCredential: %v", err)
+	}
+	unwrapped, err := crypto.Decrypt(crypto.DeriveMasterKey(oldPass, cred.Salt), cred.WrappedDEK)
+	if err != nil || string(unwrapped) != string(authCtx.DEK) {
+		t.Fatalf("login credential must stay intact: %v", err)
+	}
+
+	// 3. 只有 bob 的儲存密碼被更新，alice 不動
+	dbBob, err := h.storage.GetAccount(owner, bob.ID)
+	if err != nil || dbBob == nil {
+		t.Fatalf("GetAccount bob: %v", err)
+	}
+	if pass, err := crypto.Decrypt(authCtx.DEK, dbBob.EncIMAPPassword); err != nil || string(pass) != newPass {
+		t.Fatalf("bob imap password not updated: %q %v", pass, err)
+	}
+	dbAlice, err := h.storage.GetAccount(owner, aliceID)
+	if err != nil || dbAlice == nil {
+		t.Fatalf("GetAccount alice: %v", err)
+	}
+	if pass, err := crypto.Decrypt(authCtx.DEK, dbAlice.EncIMAPPassword); err != nil || string(pass) != oldPass {
+		t.Fatalf("alice imap password must be untouched: %q %v", pass, err)
+	}
+	if authCtx.Passwords[bob.ID] != newPass || authCtx.Passwords[aliceID] != oldPass {
+		t.Fatalf("session password map stale: %v", authCtx.Passwords)
+	}
+}
+
+func TestChangePassword_LoginAccountByID(t *testing.T) {
+	f := &fakeChanger{}
+	const oldPass, newPass = "OldPass123", "NewPass123!"
+	h, authCtx := setupChangePassword(t, oldPass, f)
+	addSecondaryAccount(t, h, authCtx)
+	aliceID := authCtx.Session.Accounts[0].ID
+
+	body := pwBody(oldPass, newPass, newPass)
+	body["account"] = aliceID
+	w := call(t, h.ChangePassword, pwCtx(authCtx), body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200 (body %s)", w.Code, w.Body.String())
+	}
+
+	// 選登入帳號 = 舊行為：DEK 以新密碼 re-wrap
+	cred, err := h.storage.GetUserCredential(authCtx.Session.Email)
+	if err != nil || cred == nil {
+		t.Fatalf("GetUserCredential: %v", err)
+	}
+	if _, err := crypto.Decrypt(crypto.DeriveMasterKey(newPass, cred.Salt), cred.WrappedDEK); err != nil {
+		t.Fatalf("new password must unwrap DEK: %v", err)
+	}
+	if len(f.dns) == 0 || !strings.Contains(f.dns[0], "alice@test.com") {
+		t.Fatalf("LDAP DN = %v, want target alice", f.dns)
 	}
 }
 

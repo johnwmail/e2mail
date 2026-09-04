@@ -67,10 +67,13 @@ Implemented with Go stdlib (`crypto/sha1`, `crypto/rand`, `encoding/base64`).
 ## Flow: `POST /api/auth/change-password`
 
 Authed endpoint (behind `middleware.Auth`, `backend/internal/api/router.go:53`).
-Body: `{ oldPassword, newPassword, confirmPassword }`.
+Body: `{ oldPassword, newPassword, confirmPassword, account? }` (`account` =
+target account ID for multi-account sessions; omit = login-identity account).
 
-1. Resolve the user's LDAP entry DN from `LDAP_USER_DN_TEMPLATE`
-   (`%s` = full email, `%u` = local part).
+1. Resolve the target account: `account` ID (must belong to the logged-in
+   owner) or the login-identity account (`Email == session.Email`). Resolve its
+   LDAP entry DN from `LDAP_USER_DN_TEMPLATE` (`%s` = full email, `%u` = local
+   part).
 2. **Verify old password via self-bind**: connect (TLS) + bind as the user DN
    with `oldPassword`. Failure → `401`. This is the authoritative check and is
    drift-safe (works even if the password was changed outside e2Mail since the
@@ -80,11 +83,13 @@ Body: `{ oldPassword, newPassword, confirmPassword }`.
    `userPassword = {SSHA}(newPassword)`. Any LDAP failure → abort; **no local
    state is touched** (user's e2Mail keeps working with the old password).
 4. On LDAP success, re-sync local state using the SAME DEK (in this order):
-   a. New `salt` + `newPassword` → Argon2id MasterKey → wrap the existing DEK →
+   a. (Login-identity account only — its password IS the Master Password) New
+      `salt` + `newPassword` → Argon2id MasterKey → wrap the existing DEK →
       `UpdateUserCredential` (`backend/internal/storage/sqlite.go:1111`).
-   b. Update the account whose `Email == ownerEmail` (the LDAP/default identity):
-      re-encrypt `EncIMAPPassword`/`EncSMTPPassword` = DEK(newPassword) →
-      `UpdateAccount`. Other (non-LDAP) accounts are untouched.
+   b. Update the target account row's `EncIMAPPassword`/`EncSMTPPassword` =
+      DEK(newPassword) → `UpdateAccount`. When a secondary (non-login) account
+      is selected, only its own row changes and step (a) is skipped — the
+      Master Password / DEK wrap is untouched.
    c. `refreshSessionAccounts` so the in-memory session reflects new ciphertext.
    d. `poolMgr.DestroyPool` + `idleMgr.StopListener` → `GetOrStartListener` so
       background IMAP connections reconnect with the new password.

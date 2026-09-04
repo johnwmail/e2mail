@@ -318,6 +318,12 @@ export const zhHant = {
     sameAsOld: '新密碼與舊密碼相同',
     changed: '密碼已變更。你的加密資料已用新密碼重新包裝，目前登入不會被登出。',
     changeFailed: '密碼變更失敗，請重試',
+    changePasswordAccount: '變更帳號密碼',
+    changePasswordAccountHint:
+      '新密碼會寫入此帳號的 LDAP 帳戶，並即時更新 e2Mail 儲存的 IMAP/SMTP 密碼；不會影響你的登入密碼與本地加密資料。',
+    changedAccount: '密碼已變更。「{name}」的 IMAP/SMTP 密碼已即時更新，登入密碼與加密資料不受影響。',
+    accountSelectLabel: '帳號',
+    loginAccountSuffix: '（登入主帳號）',
     twoFaOff: '兩步驟驗證未啟用',
     twoFaOn: '兩步驟驗證已啟用',
     twoFaOffHint: '使用 Authenticator App 保護登入。',

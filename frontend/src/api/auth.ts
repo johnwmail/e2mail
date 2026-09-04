@@ -26,10 +26,10 @@ export const authApi = {
     return request<Session>('/auth/me');
   },
 
-  changePassword: async (oldPassword: string, newPassword: string, confirmPassword: string): Promise<{ changed: boolean }> => {
+  changePassword: async (oldPassword: string, newPassword: string, confirmPassword: string, account?: string): Promise<{ changed: boolean }> => {
     return request<{ changed: boolean }>('/auth/change-password', {
       method: 'POST',
-      body: JSON.stringify({ oldPassword, newPassword, confirmPassword }),
+      body: JSON.stringify({ oldPassword, newPassword, confirmPassword, ...(account ? { account } : {}) }),
     });
   },
 };

@@ -580,6 +580,8 @@ type ChangePasswordRequest struct {
 	OldPassword     string `json:"oldPassword"`
 	NewPassword     string `json:"newPassword"`
 	ConfirmPassword string `json:"confirmPassword"`
+	// Account 可選：目標帳號 ID（多帳號）。留空則沿用登入身分帳號（舊行為）。
+	Account string `json:"account,omitempty"`
 }
 
 const (
@@ -589,9 +591,12 @@ const (
 )
 
 // ChangePassword 將新密碼寫入 OpenBSD ldapd（rootdn Modify userPassword={SSHA}），
-// 再同步 re-wrap 本地 DEK 與 LDAP 身分帳號嘅儲存密碼。順序與回滾設計見 docs/LDAP.md：
+// 再同步本地儲存。順序與回滾設計見 docs/LDAP.md：
 // self-bind 驗證舊密 → 預算本地新值 → LDAP 改密 → 本地寫入（失敗即回滾 LDAP）。
-// Session DEK 由 server key 加密，故改密成功後當前 session 繼續有效（不強制登出）。
+// 多帳號：req.Account 指定目標帳號；若該帳號即登入身分（email == session.Email），
+// 會一併 re-wrap 本地 DEK（改 Master Password）；否則只更新該帳號嘅儲存密碼，
+// 不動 DEK。Session DEK 由 server key 加密，故改密成功後當前 session 繼續有效（不強制登出）。
+//
 //nolint:gocyclo // 密碼變更流程含多段校驗與回滾分支，拆分會降低可讀性；複雜度與 address_contacts 匯入邏輯同級
 func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	authCtx := middleware.GetAccountContext(r.Context())
@@ -627,15 +632,47 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ownerEmail := authCtx.Session.Email
-	limiterKey := authCtx.Session.ID
+
+	// 解析目標帳號：指定 account 時必須屬於本使用者；未指定則沿用登入身分帳號
+	accounts, err := h.storage.ListAccounts(ownerEmail)
+	if err != nil {
+		log.Printf("[PWCHANGE] list accounts failed for %s: %v", ownerEmail, err)
+		response.InternalServerError(w, "failed to load accounts")
+		return
+	}
+	var acc *storage.Account
+	for i := range accounts {
+		if req.Account != "" {
+			if accounts[i].ID == req.Account {
+				acc = &accounts[i]
+				break
+			}
+		} else if normalizeEmail(accounts[i].Email) == ownerEmail {
+			acc = &accounts[i]
+			break
+		}
+	}
+	if req.Account != "" && acc == nil {
+		response.BadRequest(w, "找不到指定的帳號")
+		return
+	}
+	isLoginIdentity := acc == nil || normalizeEmail(acc.Email) == ownerEmail
+
+	// 改密目標：登入身分用 session email（即使無帳號 row），否則用該帳號 email
+	pwEmail := ownerEmail
+	if !isLoginIdentity {
+		pwEmail = acc.Email
+	}
+
+	limiterKey := authCtx.Session.ID + "|" + normalizeEmail(pwEmail)
 	if h.pwLimiter.Blocked(limiterKey, pwChangeMaxFailures, pwChangeFailureWindow) {
 		response.Error(w, http.StatusTooManyRequests, "失敗次數過多，請等待幾分鐘後再試")
 		return
 	}
 
-	userDN, err := h.pwChanger.UserDN(ownerEmail)
+	userDN, err := h.pwChanger.UserDN(pwEmail)
 	if err != nil {
-		log.Printf("[PWCHANGE] build user DN failed for %s: %v", ownerEmail, err)
+		log.Printf("[PWCHANGE] build user DN failed for %s: %v", pwEmail, err)
 		response.InternalServerError(w, "failed to resolve LDAP user")
 		return
 	}
@@ -644,25 +681,30 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	if err := h.pwChanger.VerifyUserBind(userDN, req.OldPassword); err != nil {
 		if errors.Is(err, ldap.ErrInvalidCredentials) {
 			h.pwLimiter.RecordFailure(limiterKey)
-			log.Printf("[PWCHANGE] old password verification failed for %s", ownerEmail)
+			log.Printf("[PWCHANGE] old password verification failed for %s", pwEmail)
 			response.Unauthorized(w, "舊密碼不正確")
 			return
 		}
-		log.Printf("[PWCHANGE] ldap verify error for %s: %v", ownerEmail, err)
+		log.Printf("[PWCHANGE] ldap verify error for %s: %v", pwEmail, err)
 		response.Error(w, http.StatusBadGateway, "無法連線至 LDAP 伺服器")
 		return
 	}
 
 	// 2. 預算本地新憑證（DEK 不變，只換 wrap；減少 LDAP 已改而本地未同步嘅窗口）
-	newSalt, err := crypto.GenerateSalt()
-	if err != nil {
-		response.InternalServerError(w, "failed to derive credentials")
-		return
-	}
-	newWrappedDEK, err := crypto.Encrypt(crypto.DeriveMasterKey(req.NewPassword, newSalt), authCtx.DEK)
-	if err != nil {
-		response.InternalServerError(w, "failed to derive credentials")
-		return
+	var newSalt []byte
+	var newWrappedDEK string
+	if isLoginIdentity {
+		var err error
+		newSalt, err = crypto.GenerateSalt()
+		if err != nil {
+			response.InternalServerError(w, "failed to derive credentials")
+			return
+		}
+		newWrappedDEK, err = crypto.Encrypt(crypto.DeriveMasterKey(req.NewPassword, newSalt), authCtx.DEK)
+		if err != nil {
+			response.InternalServerError(w, "failed to derive credentials")
+			return
+		}
 	}
 	newEncIMAP, err := crypto.Encrypt(authCtx.DEK, []byte(req.NewPassword))
 	if err != nil {
@@ -677,7 +719,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	// 3. 寫入 ldapd
 	if err := h.pwChanger.ChangePassword(userDN, req.NewPassword); err != nil {
-		log.Printf("[PWCHANGE] ldap change failed for %s: %v", ownerEmail, err) // codeql[go/clear-text-logging] - err contains only result code, not password
+		log.Printf("[PWCHANGE] ldap change failed for %s: %v", pwEmail, err) // codeql[go/clear-text-logging] - err contains only result code, not password
 		if errors.Is(err, ldap.ErrInvalidCredentials) {
 			response.Error(w, http.StatusBadGateway, "LDAP 服務帳號認證失敗，請聯絡管理員")
 			return
@@ -687,29 +729,16 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. 本地同步（先帳號列、後憑證包；任何一步失敗都回滾先前寫入與 LDAP 端）
-	accounts, err := h.storage.ListAccounts(ownerEmail)
-	if err != nil {
-		h.rollbackLDAP(userDN, req.OldPassword, ownerEmail, "list accounts after LDAP change")
-		response.InternalServerError(w, "failed to sync password change")
-		return
-	}
-	targetIdx := -1
-	for i := range accounts {
-		if normalizeEmail(accounts[i].Email) == ownerEmail {
-			targetIdx = i
-			break
-		}
-	}
-	var origAcc storage.Account
+	origAcc := storage.Account{}
 	accUpdated := false
-	if targetIdx >= 0 {
-		origAcc = accounts[targetIdx] // 回滾用副本
-		accounts[targetIdx].EncIMAPPassword = newEncIMAP
-		accounts[targetIdx].EncSMTPPassword = newEncSMTP
-		if err := h.storage.UpdateAccount(&accounts[targetIdx]); err != nil {
-			log.Printf("[PWCHANGE] update account failed for %s: %v", ownerEmail, err)
-			accounts[targetIdx] = origAcc
-			h.rollbackLDAP(userDN, req.OldPassword, ownerEmail, "account update failed")
+	if acc != nil {
+		origAcc = *acc // 回滾用副本
+		acc.EncIMAPPassword = newEncIMAP
+		acc.EncSMTPPassword = newEncSMTP
+		if err := h.storage.UpdateAccount(acc); err != nil {
+			log.Printf("[PWCHANGE] update account failed for %s: %v", pwEmail, err)
+			*acc = origAcc
+			h.rollbackLDAP(userDN, req.OldPassword, pwEmail, "account update failed")
 			response.InternalServerError(w, "failed to sync password change（已回滾）")
 			return
 		}
@@ -718,31 +747,33 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[PWCHANGE] no LDAP-identity account row for %s; only DEK re-wrap applied", ownerEmail)
 	}
 
-	oldCred, err := h.storage.GetUserCredential(ownerEmail)
-	if err != nil {
-		log.Printf("[PWCHANGE] get old credential failed for %s: %v", ownerEmail, err)
-	}
-	newCred := &storage.UserCredential{UserEmail: ownerEmail, Salt: newSalt, WrappedDEK: newWrappedDEK}
-	if oldCred != nil {
-		err = h.storage.UpdateUserCredential(newCred)
-	} else {
-		err = h.storage.CreateUserCredential(newCred)
-	}
-	if err != nil {
-		log.Printf("[PWCHANGE] re-wrap DEK failed for %s: %v", ownerEmail, err)
-		if accUpdated {
-			if rErr := h.storage.UpdateAccount(&origAcc); rErr != nil {
-				log.Printf("[CRITICAL][PWCHANGE] account rollback failed for %s: %v", ownerEmail, rErr)
-			}
+	if isLoginIdentity {
+		oldCred, err := h.storage.GetUserCredential(ownerEmail)
+		if err != nil {
+			log.Printf("[PWCHANGE] get old credential failed for %s: %v", ownerEmail, err)
 		}
+		newCred := &storage.UserCredential{UserEmail: ownerEmail, Salt: newSalt, WrappedDEK: newWrappedDEK}
 		if oldCred != nil {
-			if rErr := h.storage.UpdateUserCredential(oldCred); rErr != nil {
-				log.Printf("[CRITICAL][PWCHANGE] credential rollback failed for %s: %v", ownerEmail, rErr)
-			}
+			err = h.storage.UpdateUserCredential(newCred)
+		} else {
+			err = h.storage.CreateUserCredential(newCred)
 		}
-		h.rollbackLDAP(userDN, req.OldPassword, ownerEmail, "DEK re-wrap failed")
-		response.InternalServerError(w, "failed to sync password change（已回滾）")
-		return
+		if err != nil {
+			log.Printf("[PWCHANGE] re-wrap DEK failed for %s: %v", ownerEmail, err)
+			if accUpdated {
+				if rErr := h.storage.UpdateAccount(&origAcc); rErr != nil {
+					log.Printf("[CRITICAL][PWCHANGE] account rollback failed for %s: %v", ownerEmail, rErr)
+				}
+			}
+			if oldCred != nil {
+				if rErr := h.storage.UpdateUserCredential(oldCred); rErr != nil {
+					log.Printf("[CRITICAL][PWCHANGE] credential rollback failed for %s: %v", ownerEmail, rErr)
+				}
+			}
+			h.rollbackLDAP(userDN, req.OldPassword, ownerEmail, "DEK re-wrap failed")
+			response.InternalServerError(w, "failed to sync password change（已回滾）")
+			return
+		}
 	}
 
 	// 5. 記憶體 session 同步 + 背景連線以新密碼重連
@@ -754,12 +785,12 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	authCtx.Passwords = newPasswords
-	if targetIdx >= 0 {
-		h.restartAccountConnections(authCtx.Session, &accounts[targetIdx], req.NewPassword)
+	if acc != nil {
+		h.restartAccountConnections(authCtx.Session, acc, req.NewPassword)
 	}
 
 	h.pwLimiter.Reset(limiterKey)
-	log.Printf("[PWCHANGE] password changed successfully for %s", ownerEmail)
+	log.Printf("[PWCHANGE] password changed successfully for %s (account=%v, loginIdentity=%v)", pwEmail, req.Account, isLoginIdentity)
 	response.Success(w, map[string]bool{"changed": true})
 }
 

@@ -320,6 +320,12 @@ export const en = {
     sameAsOld: 'New password must be different from the current password',
     changed: 'Password updated. Encrypted data was re-wrapped. You stay signed in.',
     changeFailed: 'Password change failed. Try again.',
+    changePasswordAccount: 'Change account password',
+    changePasswordAccountHint:
+      'The new password is written to this account’s LDAP entry and updates its stored IMAP/SMTP password in e2Mail. Your login password and local encrypted data are unaffected.',
+    changedAccount: 'Password updated for “{name}”. Its stored IMAP/SMTP password now uses the new password. Login password and encrypted data are unchanged.',
+    accountSelectLabel: 'Account',
+    loginAccountSuffix: ' (login account)',
     twoFaOff: 'Two-factor authentication is off',
     twoFaOn: 'Two-factor authentication is on',
     twoFaOffHint: 'Protect sign-in with an authenticator app.',
