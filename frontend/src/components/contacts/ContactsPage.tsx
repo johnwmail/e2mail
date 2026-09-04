@@ -133,7 +133,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900">
+    <div className="h-full flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900">
       {!embedded && (
         <div className="h-14 border-b border-slate-200 dark:border-slate-800 px-3 md:px-4 flex items-center gap-2 shrink-0">
           <button onClick={() => setView('mail')} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
