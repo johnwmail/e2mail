@@ -462,7 +462,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                   autoComplete="one-time-code"
                   inputMode="numeric"
                   value={verifyCode}
-                  onChange={(e) => setVerifyCode(e.target.value)}
+                  onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="••••••"
                   className="flex-1 px-3 py-2 text-sm text-center tracking-[0.4em] font-mono bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -557,7 +557,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                   autoComplete="one-time-code"
                   inputMode="numeric"
                   value={actionCode}
-                  onChange={(e) => setActionCode(e.target.value)}
+                  onChange={(e) => setActionCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder={t('security.sixDigit')}
                   className="flex-1 px-3 py-2 text-sm text-center tracking-[0.3em] font-mono bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-red-400"
                 />
@@ -601,7 +601,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                   autoComplete="one-time-code"
                   inputMode="numeric"
                   value={actionCode}
-                  onChange={(e) => setActionCode(e.target.value)}
+                  onChange={(e) => setActionCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder={t('security.sixDigit')}
                   className="flex-1 px-3 py-2 text-sm text-center tracking-[0.3em] font-mono bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                 />
