@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { OutgoingMessage } from '../types/api';
 
-export type SettingsSection = 'security' | 'pgp' | 'accounts' | 'sieve' | 'appearance';
+export type SettingsSection = 'security' | 'pgp' | 'accounts' | 'sieve' | 'contacts' | 'appearance';
 export type ThemePreference = 'light' | 'dark' | 'system';
 
 interface MailState {
@@ -18,7 +18,7 @@ interface MailState {
   composerDraft: Partial<OutgoingMessage> | null;
   composerKey: number;
   isSidebarOpen: boolean;
-  view: 'mail' | 'contacts' | 'settings';
+  view: 'mail' | 'settings';
   settingsSection: SettingsSection;
   inboxUnread: number;
   listMode: 'messages' | 'threads';
@@ -37,7 +37,7 @@ interface MailState {
   closeComposer: () => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
-  setView: (view: 'mail' | 'contacts' | 'settings') => void;
+  setView: (view: 'mail' | 'settings') => void;
   openSettings: (section?: SettingsSection) => void;
   setSettingsSection: (section: SettingsSection) => void;
   setInboxUnread: (n: number) => void;

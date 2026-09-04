@@ -566,6 +566,8 @@ export const zhHant = {
     accountsHint: 'IMAP、SMTP 與伺服器連線',
     sieve: '過濾器',
     sieveHint: '管理 Sieve 郵件規則',
+    contacts: '通訊錄',
+    contactsHint: '管理已儲存的聯絡人（收件人自動完成會用佢）',
     appearance: '外觀與顯示',
     appearanceHint: '主題、語言與郵件列表方式',
     theme: '色彩主題',

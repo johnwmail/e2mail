@@ -9,7 +9,6 @@ import { Sidebar } from './components/layout/Sidebar';
 import { MessageList } from './components/layout/MessageList';
 import { ViewerPane } from './components/layout/ViewerPane';
 import { Composer } from './components/mail/Composer';
-import { ContactsPage } from './components/contacts/ContactsPage';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { Toast } from './components/ui/Toast';
@@ -146,8 +145,6 @@ export const App: React.FC = () => {
       <div className="flex-1 flex overflow-hidden relative">
         {view === 'settings' ? (
           <SettingsPage />
-        ) : view === 'contacts' ? (
-          <ContactsPage />
         ) : (
           <>
             <Sidebar />

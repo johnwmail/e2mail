@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sun,
+  Users,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/useAuthStore';
 import {
@@ -21,6 +22,7 @@ import {
 import { LOCALES, Locale, useI18n } from '../../i18n';
 import { prefsApi } from '../../api/prefs';
 import { AccountsPage } from '../accounts/AccountsPage';
+import { ContactsPage } from '../contacts/ContactsPage';
 import { PgpKeyModal } from '../mail/PgpKeyModal';
 import { SecurityTab } from '../mail/SecurityTab';
 import { SievePage } from '../sieve/SievePage';
@@ -35,6 +37,7 @@ const sectionMeta: Array<{
   { id: 'pgp', labelKey: 'settings.pgp', hintKey: 'settings.pgpHint', icon: KeyRound },
   { id: 'accounts', labelKey: 'settings.accounts', hintKey: 'settings.accountsHint', icon: Mail },
   { id: 'sieve', labelKey: 'settings.sieve', hintKey: 'settings.sieveHint', icon: SlidersHorizontal },
+  { id: 'contacts', labelKey: 'settings.contacts', hintKey: 'settings.contactsHint', icon: Users },
   { id: 'appearance', labelKey: 'settings.appearance', hintKey: 'settings.appearanceHint', icon: Palette },
 ];
 
@@ -167,6 +170,8 @@ export const SettingsPage: React.FC = () => {
         return <AccountsPage embedded />;
       case 'sieve':
         return <SievePage embedded onOpenAccounts={() => setSection('accounts')} />;
+      case 'contacts':
+        return <ContactsPage embedded />;
       case 'appearance':
         return <AppearanceSettings />;
       case 'security':

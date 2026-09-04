@@ -570,6 +570,8 @@ export const en = {
     accountsHint: 'IMAP, SMTP, and server connection',
     sieve: 'Filters',
     sieveHint: 'Manage Sieve mail rules',
+    contacts: 'Address book',
+    contactsHint: 'Manage saved contacts (used for recipient autocomplete)',
     appearance: 'Appearance',
     appearanceHint: 'Theme, language, and message list',
     theme: 'Color theme',

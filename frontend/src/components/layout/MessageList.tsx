@@ -532,82 +532,86 @@ export const MessageList: React.FC = () => {
     },
   });
 
+  // 由清單移除（刪除/搬走）某些 uid 後，若而家揀中嘅被封移除，自動揀下一封，唔留空白 viewer
+  const reselectAfterRemoval = (removed: number[]) => {
+    const deletedSet = new Set(removed);
+    const needReselect = selectedUID != null && deletedSet.has(selectedUID);
+    if (!needReselect) return;
+    let nextUID: number | null = null;
+    let nextFolder: string | null = null;
+    if (isUnreadView) {
+      const idx = displayMessages.findIndex((m) => m.uid === selectedUID);
+      const realIdx = idx !== -1 ? idx : displayMessages.findIndex((m) => deletedSet.has(m.uid));
+      let cand: MessageSummary | null = null;
+      for (let i = (realIdx !== -1 ? realIdx : 0) + 1; i < displayMessages.length; i++) if (!deletedSet.has(displayMessages[i].uid)) { cand = displayMessages[i]; break; }
+      if (!cand && realIdx !== -1) for (let i = realIdx - 1; i >= 0; i--) if (!deletedSet.has(displayMessages[i].uid)) { cand = displayMessages[i]; break; }
+      if (!cand) {
+        const remain = displayMessages.filter((m) => !deletedSet.has(m.uid));
+        cand = remain[0] ?? null;
+      }
+      if (cand) { nextUID = cand.uid; nextFolder = (cand as any).folder ?? null; }
+    } else if (threadMode) {
+      const tIdx = displayThreads.findIndex((t) => t.messages.some((m) => m.uid === selectedUID));
+      if (tIdx !== -1) {
+        // 剩餘 threads（成個 thread 被刪就消失）
+        const remainThreads = displayThreads.filter((t) => !t.messages.every((m) => deletedSet.has(m.uid)));
+        // 同 thread 內仲有未刪嘅 message 就留喺同 thread（揀下一個 message）
+        const curThread = displayThreads[tIdx];
+        const remainMsgsInThread = curThread ? curThread.messages.filter((m) => !deletedSet.has(m.uid)) : [];
+        if (remainMsgsInThread.length > 0) {
+          const newest = remainMsgsInThread.reduce((a, b) => (new Date(a.date) >= new Date(b.date) ? a : b), remainMsgsInThread[0]);
+          nextUID = newest.uid;
+        } else {
+          // 成個 thread 冇咗，揀下一個 thread
+          let candThread: typeof displayThreads[0] | null = null;
+          // 搵原位置之後第一個未刪嘅 thread
+          for (let i = tIdx + 1; i < displayThreads.length; i++) if (!displayThreads[i].messages.every((m) => deletedSet.has(m.uid))) { candThread = displayThreads[i]; break; }
+          if (!candThread) for (let i = tIdx - 1; i >= 0; i--) if (!displayThreads[i].messages.every((m) => deletedSet.has(m.uid))) { candThread = displayThreads[i]; break; }
+          if (!candThread) candThread = remainThreads[0] ?? null;
+          if (candThread) {
+            const newest = candThread.messages.reduce((a, b) => (new Date(a.date) >= new Date(b.date) ? a : b), candThread.messages[0]);
+            nextUID = newest.uid;
+          }
+        }
+      }
+    } else {
+      const idx = displayMessages.findIndex((m) => m.uid === selectedUID);
+      let cand: MessageSummary | null = null;
+      for (let i = idx + 1; i < displayMessages.length; i++) if (!deletedSet.has(displayMessages[i].uid)) { cand = displayMessages[i]; break; }
+      if (!cand) for (let i = idx - 1; i >= 0; i--) if (!deletedSet.has(displayMessages[i].uid)) { cand = displayMessages[i]; break; }
+      if (!cand) cand = displayMessages.filter((m) => !deletedSet.has(m.uid))[0] ?? null;
+      if (cand) nextUID = cand.uid;
+    }
+    if (nextUID != null) {
+      if (isUnreadView && nextFolder) setSelectedFolder(nextFolder);
+      else if (!isUnreadView) setSelectedFolder(null);
+      setSelectedUID(nextUID);
+    } else {
+      setSelectedFolder(null);
+      setSelectedUID(null);
+    }
+  };
+
   // 刪除郵件 Mutation（刪完自動揀下一封，唔留空）
   const deleteMutation = useMutation({
     mutationFn: (uids: number[]) =>
       Promise.all(groupUidsByFolder(uids).map((g) => mailApi.deleteMessages(g.folder, g.uids, false, accountId))),
     onSuccess: (_data, uids: number[]) => {
       setSelectedUIDs([]);
-      const deletedSet = new Set(uids);
-      const needReselect = selectedUID != null && deletedSet.has(selectedUID);
-      if (needReselect) {
-        let nextUID: number | null = null;
-        let nextFolder: string | null = null;
-        if (isUnreadView) {
-          const idx = displayMessages.findIndex((m) => m.uid === selectedUID);
-          const realIdx = idx !== -1 ? idx : displayMessages.findIndex((m) => deletedSet.has(m.uid));
-          let cand: MessageSummary | null = null;
-          for (let i = (realIdx !== -1 ? realIdx : 0) + 1; i < displayMessages.length; i++) if (!deletedSet.has(displayMessages[i].uid)) { cand = displayMessages[i]; break; }
-          if (!cand && realIdx !== -1) for (let i = realIdx - 1; i >= 0; i--) if (!deletedSet.has(displayMessages[i].uid)) { cand = displayMessages[i]; break; }
-          if (!cand) {
-            const remain = displayMessages.filter((m) => !deletedSet.has(m.uid));
-            cand = remain[0] ?? null;
-          }
-          if (cand) { nextUID = cand.uid; nextFolder = (cand as any).folder ?? null; }
-        } else if (threadMode) {
-          const tIdx = displayThreads.findIndex((t) => t.messages.some((m) => m.uid === selectedUID));
-          if (tIdx !== -1) {
-            // 剩餘 threads（成個 thread 被刪就消失）
-            const remainThreads = displayThreads.filter((t) => !t.messages.every((m) => deletedSet.has(m.uid)));
-            // 同 thread 內仲有未刪嘅 message 就留喺同 thread（揀下一個 message）
-            const curThread = displayThreads[tIdx];
-            const remainMsgsInThread = curThread ? curThread.messages.filter((m) => !deletedSet.has(m.uid)) : [];
-            if (remainMsgsInThread.length > 0) {
-              const newest = remainMsgsInThread.reduce((a, b) => (new Date(a.date) >= new Date(b.date) ? a : b), remainMsgsInThread[0]);
-              nextUID = newest.uid;
-            } else {
-              // 成個 thread 冇咗，揀下一個 thread
-              let candThread: typeof displayThreads[0] | null = null;
-              // 搵原位置之後第一個未刪嘅 thread
-              for (let i = tIdx + 1; i < displayThreads.length; i++) if (!displayThreads[i].messages.every((m) => deletedSet.has(m.uid))) { candThread = displayThreads[i]; break; }
-              if (!candThread) for (let i = tIdx - 1; i >= 0; i--) if (!displayThreads[i].messages.every((m) => deletedSet.has(m.uid))) { candThread = displayThreads[i]; break; }
-              if (!candThread) candThread = remainThreads[0] ?? null;
-              if (candThread) {
-                const newest = candThread.messages.reduce((a, b) => (new Date(a.date) >= new Date(b.date) ? a : b), candThread.messages[0]);
-                nextUID = newest.uid;
-              }
-            }
-          }
-        } else {
-          const idx = displayMessages.findIndex((m) => m.uid === selectedUID);
-          let cand: MessageSummary | null = null;
-          for (let i = idx + 1; i < displayMessages.length; i++) if (!deletedSet.has(displayMessages[i].uid)) { cand = displayMessages[i]; break; }
-          if (!cand) for (let i = idx - 1; i >= 0; i--) if (!deletedSet.has(displayMessages[i].uid)) { cand = displayMessages[i]; break; }
-          if (!cand) cand = displayMessages.filter((m) => !deletedSet.has(m.uid))[0] ?? null;
-          if (cand) nextUID = cand.uid;
-        }
-        if (nextUID != null) {
-          if (isUnreadView && nextFolder) setSelectedFolder(nextFolder);
-          else if (!isUnreadView) setSelectedFolder(null);
-          setSelectedUID(nextUID);
-        } else {
-          setSelectedFolder(null);
-          setSelectedUID(null);
-        }
-      }
+      reselectAfterRemoval(uids);
       queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
       queryClient.invalidateQueries({ queryKey: ['unread-aggregate', accountId] });
       queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
     },
   });
 
-  // 移動郵件 Mutation
+  // 移動郵件 Mutation（搬走而家開緊嗰封後，自動揀下一封）
   const moveMutation = useMutation({
     mutationFn: ({ uids, dest }: { uids: number[]; dest: string }) =>
       Promise.all(groupUidsByFolder(uids).map((g) => mailApi.moveMessages(g.folder, g.uids, dest, accountId))),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       setSelectedUIDs([]);
-      if (selectedUID) setSelectedUID(null);
+      reselectAfterRemoval(vars.uids);
       queryClient.invalidateQueries({ queryKey: ['messages', accountId, currentFolder] });
       queryClient.invalidateQueries({ queryKey: ['unread-aggregate', accountId] });
       queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
@@ -810,6 +814,34 @@ export const MessageList: React.FC = () => {
     if (!applyLocalPreview || !inputTrim) return threads;
     return threads.filter((t) => matchesLocalThread(t, inputTrim));
   }, [threads, applyLocalPreview, inputTrim]);
+
+  // 桌面分割視圖：每個清單上下文（帳號/資料夾/未讀/分頁/模式/搜尋）首次載入時自動選第一項，
+  // 右側 viewer 唔會空白；mobile（<lg）唔自動選，避免一入資料夾清單就被 viewer 覆蓋。
+  const autoSelectedCtxRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!accountId || isLoading || !data) return;
+    if (typeof window !== 'undefined' && !window.matchMedia('(min-width: 1024px)').matches) return;
+    const ctx = `${accountId}|${isUnreadView ? 'unread' : currentFolder}|${listMode}|${page}|${searchQuery}`;
+    if (autoSelectedCtxRef.current === ctx) return;
+    autoSelectedCtxRef.current = ctx;
+    if (selectedUID != null) return;
+    if (threadMode) {
+      const firstThread = displayThreads[0];
+      if (!firstThread || firstThread.messages.length === 0) return;
+      const newest = firstThread.messages.reduce(
+        (a, b) => (new Date(a.date) >= new Date(b.date) ? a : b),
+        firstThread.messages[0]
+      );
+      setSelectedFolder(null);
+      setSelectedUID(newest.uid);
+    } else {
+      const first = displayMessages[0];
+      if (!first) return;
+      setSelectedFolder(isUnreadView ? folderForUID(first.uid) : null);
+      setSelectedUID(first.uid);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId, data, isLoading, isUnreadView, currentFolder, listMode, page, searchQuery, threadMode, displayMessages, displayThreads, selectedUID]);
 
   // 預覽期間顯示「即時縮窄後」嘅數量；權威結果返到先顯示伺服器總數
   const resultCount = applyLocalPreview

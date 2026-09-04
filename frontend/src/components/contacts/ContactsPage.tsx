@@ -24,7 +24,11 @@ const ContactAvatar: React.FC<{ contact: Contact }> = ({ contact }) => {
   return <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm shrink-0">{initial}</div>;
 };
 
-export const ContactsPage: React.FC = () => {
+interface ContactsPageProps {
+  embedded?: boolean;
+}
+
+export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) => {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const setView = useMailStore((s) => s.setView);
@@ -130,14 +134,16 @@ export const ContactsPage: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-900">
-      <div className="h-14 border-b border-slate-200 dark:border-slate-800 px-3 md:px-4 flex items-center gap-2 shrink-0">
-        <button onClick={() => setView('mail')} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-        <Users className="w-5 h-5 text-blue-600" />
-        <h1 className="font-bold text-sm md:text-base flex-1">{t('contacts.title')}</h1>
-        <span className="text-xs text-slate-400">{t('contacts.count', { count: contacts?.length ?? 0 })}</span>
-      </div>
+      {!embedded && (
+        <div className="h-14 border-b border-slate-200 dark:border-slate-800 px-3 md:px-4 flex items-center gap-2 shrink-0">
+          <button onClick={() => setView('mail')} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <Users className="w-5 h-5 text-blue-600" />
+          <h1 className="font-bold text-sm md:text-base flex-1">{t('contacts.title')}</h1>
+          <span className="text-xs text-slate-400">{t('contacts.count', { count: contacts?.length ?? 0 })}</span>
+        </div>
+      )}
 
       <div className="p-3 md:p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row gap-2 shrink-0">
         <form onSubmit={handleSearch} className="flex-1 flex gap-2">

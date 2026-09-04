@@ -20,7 +20,6 @@ import {
   Plus,
   Minus,
   Loader2,
-  Users,
   MailOpen,
 } from 'lucide-react';
 import { mailApi } from '../../api/mail';
@@ -381,7 +380,7 @@ const AccountFolders: React.FC<{
 
 export const Sidebar: React.FC = () => {
   const { t } = useI18n();
-  const { openComposer, isSidebarOpen, setSidebarOpen, setView, openSettings } = useMailStore();
+  const { openComposer, isSidebarOpen, setSidebarOpen, openSettings } = useMailStore();
   const { session, logout } = useAuthStore();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
@@ -451,18 +450,6 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* 通訊錄入口 */}
-      <button
-        onClick={() => {
-          setView('contacts');
-          setSidebarOpen(false);
-        }}
-        className="w-full flex items-center gap-2 p-2.5 bg-emerald-50/80 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-900/40 text-emerald-900 dark:text-emerald-200 rounded-xl text-xs font-semibold transition border border-emerald-200/60 dark:border-emerald-800/50"
-      >
-        <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-        <span>{t('sidebar.contacts')}</span>
-      </button>
 
       {/* 側邊欄底部：設定與登出按鈕 */}
       <div className="space-y-2 pt-3 border-t border-slate-200 dark:border-slate-800 mt-4">
