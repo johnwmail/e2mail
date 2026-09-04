@@ -44,7 +44,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
   const [importMode, setImportMode] = useState<'skip' | 'overwrite'>('skip');
   const [importResult, setImportResult] = useState<{ saved: number; skipped: string[]; invalid: number } | null>(null);
 
-  const { data: contacts, isLoading } = useQuery({
+  const { data: contacts, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['contacts', q],
     queryFn: () => contactsApi.list(q || undefined),
     staleTime: 10000,
@@ -251,6 +251,13 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ embedded = false }) 
       <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
         {isLoading ? (
           <div className="p-8 text-center text-xs text-slate-400">{t('common.loading')}</div>
+        ) : isError ? (
+          <div className="p-12 text-center text-slate-500 flex flex-col items-center gap-3">
+            <p className="text-xs">{t('contacts.loadFailed', { error: (error as Error)?.message || String(error) })}</p>
+            <button type="button" onClick={() => void refetch()} className="px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+              {t('common.retry')}
+            </button>
+          </div>
         ) : merged.length === 0 ? (
           <div className="p-12 text-center text-slate-400 flex flex-col items-center gap-2">
             <UserPlus className="w-10 h-10 text-slate-300" />

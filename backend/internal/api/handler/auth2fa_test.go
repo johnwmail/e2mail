@@ -399,3 +399,16 @@ func TestVerify2FAWhenNotEnabled(t *testing.T) {
 		t.Fatalf("status = %d, want 401", w.Code)
 	}
 }
+
+func TestLoginRateLimited(t *testing.T) {
+	h := newTestAuthHandler(t)
+	for i := 0; i < loginMaxIP; i++ {
+		h.pwLimiter.RecordFailure("login:ip:192.0.2.1")
+	}
+	w := call(t, h.Login, nil, LoginRequest{
+		Email: "a@b.com", Password: "x", IMAPHost: "imap.example.com", SMTPHost: "smtp.example.com",
+	})
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429 body=%s", w.Code, w.Body.String())
+	}
+}

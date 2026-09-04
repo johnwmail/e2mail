@@ -31,6 +31,7 @@ export async function request<T>(
   try {
     response = await fetch(url, {
       ...options,
+      credentials: 'same-origin',
       headers,
     });
   } catch (netErr: any) {

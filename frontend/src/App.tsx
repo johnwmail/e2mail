@@ -109,7 +109,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!token || !isAuthenticated) return;
 
-    const disconnect = connectEvents(token, (event) => {
+    const disconnect = connectEvents((event) => {
       console.log('[SSE Event]', event);
       if (event.type === 'NEW_MESSAGE' || event.type === 'FLAG_UPDATE' || event.type === 'EXPUNGE') {
         if (event.accountId) {

@@ -34,7 +34,7 @@ export const ViewerPane: React.FC = () => {
   const { currentFolder, selectedUID, selectedFolder, unreadView, setSelectedUID, setSelectedFolder, openComposer, page, limit, searchQuery, listMode } = useMailStore();
   const detailFolder = unreadView && selectedFolder ? selectedFolder : currentFolder;
 
-  const { data: message, isLoading } = useQuery({
+  const { data: message, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['message', accountId, detailFolder, selectedUID],
     queryFn: () => (selectedUID ? mailApi.getMessageDetail(selectedUID, detailFolder, accountId) : null),
     enabled: !!selectedUID,
@@ -291,6 +291,21 @@ export const ViewerPane: React.FC = () => {
       <main className="hidden lg:flex flex-1 bg-slate-50/50 dark:bg-slate-950 flex-col items-center justify-center text-slate-400 p-8 select-none">
         <MailOpen className="w-16 h-16 stroke-1 text-slate-300 dark:text-slate-700 mb-3" />
         <p className="text-sm font-medium">{t('viewer.noSelection')}</p>
+      </main>
+    );
+  }
+
+  if (isError) {
+    return (
+      <main className="flex-1 bg-white dark:bg-slate-900 p-8 flex flex-col items-center justify-center text-slate-500 gap-3">
+        <p className="text-xs text-center">{t('viewer.loadFailed', { error: (error as Error)?.message || String(error) })}</p>
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          className="px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+        >
+          {t('common.retry')}
+        </button>
       </main>
     );
   }

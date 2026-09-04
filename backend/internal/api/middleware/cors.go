@@ -2,14 +2,25 @@ package middleware
 
 import (
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/go-chi/cors"
 )
 
-// CORS 配置跨域請求與安全標頭
+// CORS 只允許同 Host 嘅 Origin（SPA 同 API 同 origin）。唔再反射 https://* + credentials。
 func CORS() func(http.Handler) http.Handler {
 	return cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"https://*", "http://*"},
+		AllowOriginFunc: func(r *http.Request, origin string) bool {
+			if origin == "" {
+				return true
+			}
+			u, err := url.Parse(origin)
+			if err != nil || u.Host == "" {
+				return false
+			}
+			return strings.EqualFold(u.Host, r.Host)
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Session-ID", "Last-Event-ID"},
 		ExposedHeaders:   []string{"Link", "Content-Disposition"},

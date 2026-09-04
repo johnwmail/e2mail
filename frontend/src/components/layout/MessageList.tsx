@@ -462,6 +462,8 @@ export const MessageList: React.FC = () => {
     data: folderData,
     isLoading: folderLoading,
     isFetching: folderFetching,
+    isError: folderError,
+    error: folderErr,
     refetch: folderRefetch,
   } = useQuery({
     queryKey: ['messages', accountId, currentFolder, page, limit, searchQuery, listMode],
@@ -477,6 +479,8 @@ export const MessageList: React.FC = () => {
     data: unreadData,
     isLoading: unreadLoading,
     isFetching: unreadFetching,
+    isError: unreadError,
+    error: unreadErr,
     refetch: unreadRefetch,
   } = useQuery({
     queryKey: ['unread-aggregate', accountId, page, limit],
@@ -487,6 +491,9 @@ export const MessageList: React.FC = () => {
   });
 
   const data = isUnreadView ? unreadData : folderData;
+  const listError = isUnreadView ? unreadError : folderError;
+  const listErr = isUnreadView ? unreadErr : folderErr;
+  const listRefetch = isUnreadView ? unreadRefetch : folderRefetch;
   const isLoading = isUnreadView ? unreadLoading : folderLoading;
   const isFetching = isUnreadView ? unreadFetching : folderFetching;
   const refetch = isUnreadView ? unreadRefetch : folderRefetch;
@@ -1035,6 +1042,17 @@ export const MessageList: React.FC = () => {
       >
         {isLoading ? (
           <div className="p-8 text-center text-xs text-slate-400">{t('mailList.loading')}</div>
+        ) : listError ? (
+          <div className="p-12 text-center text-slate-500 flex flex-col items-center gap-3">
+            <p className="text-xs">{t('mailList.loadFailed', { error: (listErr as Error)?.message || String(listErr) })}</p>
+            <button
+              type="button"
+              onClick={() => void listRefetch()}
+              className="px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+            >
+              {t('common.retry')}
+            </button>
+          </div>
         ) : threadMode ? (
           displayThreads.length === 0 ? (
             <div className="p-12 text-center text-slate-400 flex flex-col items-center">

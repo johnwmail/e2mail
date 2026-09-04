@@ -23,6 +23,7 @@ export const en = {
     compose: 'Compose',
     unnamed: 'Unnamed',
     unidentified: 'Unidentified',
+    retry: 'Retry',
   },
   confirm: {
     title: 'Please confirm',
@@ -136,6 +137,7 @@ export const en = {
     unread: 'Unread',
     searchResults: 'Search “{query}” — {count} results',
     loading: 'Loading messages…',
+    loadFailed: 'Could not load this folder: {error}',
   },
   viewer: {
     loadFailed: 'Failed to load: {error}',
@@ -520,6 +522,7 @@ export const en = {
     overwriteDuplicates: 'Overwrite duplicates',
     importDetails: 'Import: {saved} saved, {skipped} skipped ({list}{more}), {invalid} invalid',
     empty: 'No contacts yet — add one manually above, or import CSV/vCard.',
+    loadFailed: 'Could not load contacts: {error}',
     addContact: 'Add contact',
     editContact: 'Edit contact',
     hasPgp: 'Has PGP public key',

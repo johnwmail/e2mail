@@ -23,6 +23,7 @@ export const zhHant = {
     compose: '寫信',
     unnamed: '未命名',
     unidentified: '未識別',
+    retry: '重試',
   },
   confirm: {
     title: '確認操作',
@@ -135,6 +136,7 @@ export const zhHant = {
     unread: '未讀',
     searchResults: '搜尋「{query}」— {count} 個結果',
     loading: '正在讀取信件...',
+    loadFailed: '無法載入此資料夾：{error}',
   },
   viewer: {
     loadFailed: '載入失敗: {error}',
@@ -517,6 +519,7 @@ export const zhHant = {
     overwriteDuplicates: '覆蓋重複',
     importDetails: '匯入：成功 {saved}，略過 {skipped} ({list}{more})，無效 {invalid}',
     empty: '未有聯絡人 — 可用上面「新增」手動輸入 email，或匯入 CSV/vCard',
+    loadFailed: '無法載入聯絡人：{error}',
     addContact: '新增聯絡人',
     editContact: '編輯聯絡人',
     hasPgp: '已有 PGP 公鑰',

@@ -69,9 +69,8 @@ export const mailApi = {
   },
 
   getAttachmentUrl: (uid: number, attId: string, folder = 'INBOX', account?: string): string => {
-    const token = localStorage.getItem('e2Mail_token') || '';
     const accountQS = account ? `&account=${encodeURIComponent(account)}` : '';
-    return `/api/mail/messages/${uid}/attachments/${encodeURIComponent(attId)}?folder=${encodeURIComponent(folder)}&token=${encodeURIComponent(token)}${accountQS}`;
+    return `/api/mail/messages/${uid}/attachments/${encodeURIComponent(attId)}?folder=${encodeURIComponent(folder)}${accountQS}`;
   },
 
   getRawMessage: async (uid: number, folder = 'INBOX', account?: string): Promise<string> => {

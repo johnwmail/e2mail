@@ -1,12 +1,7 @@
 import { MailboxEvent } from '../types/api';
 
-export function connectEvents(
-  token: string,
-  onEvent: (evt: MailboxEvent) => void
-): () => void {
-  if (!token) return () => {};
-
-  const url = `/api/events?token=${encodeURIComponent(token)}`;
+export function connectEvents(onEvent: (evt: MailboxEvent) => void): () => void {
+  const url = '/api/events';
   const eventSource = new EventSource(url);
 
   eventSource.addEventListener('mailbox_event', (e) => {
