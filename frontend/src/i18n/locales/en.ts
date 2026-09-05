@@ -53,8 +53,8 @@ export const en = {
     subtitle: 'Enter your email and password to connect',
     firstLoginHint:
       'Signing in for the first time creates your mailbox. Credentials are stored encrypted on the server. Remember your password — losing it permanently locks the account.',
-    email: 'Email address',
-    mailPassword: 'Mail password',
+    email: 'Email Address',
+    mailPassword: 'Email Password',
     showPassword: 'Show password',
     hidePassword: 'Hide password',
     autoMatched: 'Auto-matched @{domain}',

@@ -53,7 +53,7 @@ export const zhHant = {
     subtitle: '輸入帳號與密碼即可自動連線',
     firstLoginHint:
       '首次登入即建立你的郵件帳號。帳號密碼會加密儲存於伺服器；請緊記你的登入密碼——遺失將永久無法解鎖所有帳號。',
-    email: '電子郵件地址',
+    email: '郵件地址',
     mailPassword: '郵件密碼',
     showPassword: '顯示密碼',
     hidePassword: '隱藏密碼',
