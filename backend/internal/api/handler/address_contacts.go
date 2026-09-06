@@ -21,6 +21,14 @@ import (
 	"github.com/johnwmail/e2mail/backend/pkg/response"
 )
 
+// ctxDEK 由 auth middleware 攞 session DEK（ownerFromCtx 已校驗 session，正常唔會 nil）
+func ctxDEK(r *http.Request) []byte {
+	if a := middleware.GetAccountContext(r.Context()); a != nil {
+		return a.DEK
+	}
+	return nil
+}
+
 // AddressContactsHandler 通用通訊錄處理（per-user，sqlite contacts 表）
 type AddressContactsHandler struct {
 	store   storage.Store
@@ -58,7 +66,7 @@ func (h *AddressContactsHandler) ListAddressContacts(w http.ResponseWriter, r *h
 	if offset < 0 {
 		offset = 0
 	}
-	list, err := h.store.ListAddressContacts(owner, q, limit, offset)
+	list, err := h.store.ListAddressContacts(owner, q, limit, offset, ctxDEK(r))
 	if err != nil {
 		response.InternalServerError(w, "failed to list contacts: "+err.Error())
 		return
@@ -78,7 +86,7 @@ func (h *AddressContactsHandler) GetAddressContact(w http.ResponseWriter, r *htt
 		response.BadRequest(w, "id is required")
 		return
 	}
-	c, err := h.store.GetAddressContact(owner, id)
+	c, err := h.store.GetAddressContact(owner, id, ctxDEK(r))
 	if err != nil {
 		response.InternalServerError(w, "failed to get contact: "+err.Error())
 		return
@@ -127,7 +135,7 @@ func (h *AddressContactsHandler) CreateAddressContact(w http.ResponseWriter, r *
 		return
 	}
 	// 去重：同一 owner+email 已存在則 400
-	if exist, _ := h.store.GetAddressContactByEmail(owner, email); exist != nil {
+	if exist, _ := h.store.GetAddressContactByEmail(owner, email, ctxDEK(r)); exist != nil {
 		response.BadRequest(w, "contact already exists for this email")
 		return
 	}
@@ -144,7 +152,7 @@ func (h *AddressContactsHandler) CreateAddressContact(w http.ResponseWriter, r *
 	if c.DisplayName == "" {
 		c.DisplayName = c.Email
 	}
-	if err := h.store.CreateAddressContact(c); err != nil {
+	if err := h.store.CreateAddressContact(c, ctxDEK(r)); err != nil {
 		response.InternalServerError(w, "failed to create contact: "+err.Error())
 		return
 	}
@@ -163,7 +171,7 @@ func (h *AddressContactsHandler) UpdateAddressContact(w http.ResponseWriter, r *
 		response.BadRequest(w, "id is required")
 		return
 	}
-	existing, err := h.store.GetAddressContact(owner, id)
+	existing, err := h.store.GetAddressContact(owner, id, ctxDEK(r))
 	if err != nil {
 		response.InternalServerError(w, "failed to get contact: "+err.Error())
 		return
@@ -191,7 +199,7 @@ func (h *AddressContactsHandler) UpdateAddressContact(w http.ResponseWriter, r *
 		}
 		// 若改 email 需檢查衝突
 		if email != existing.Email {
-			if dup, _ := h.store.GetAddressContactByEmail(owner, email); dup != nil {
+			if dup, _ := h.store.GetAddressContactByEmail(owner, email, ctxDEK(r)); dup != nil {
 				response.BadRequest(w, "another contact already uses this email")
 				return
 			}
@@ -210,7 +218,7 @@ func (h *AddressContactsHandler) UpdateAddressContact(w http.ResponseWriter, r *
 	if req.Note != "" || r.URL.Query().Get("clearNote") == "1" {
 		existing.Note = strings.TrimSpace(req.Note)
 	}
-	if err := h.store.UpdateAddressContact(existing); err != nil {
+	if err := h.store.UpdateAddressContact(existing, ctxDEK(r)); err != nil {
 		response.InternalServerError(w, "failed to update contact: "+err.Error())
 		return
 	}
@@ -230,7 +238,7 @@ func (h *AddressContactsHandler) DeleteAddressContact(w http.ResponseWriter, r *
 		return
 	}
 	// 先取以便刪 avatar 檔
-	existing, _ := h.store.GetAddressContact(owner, id)
+	existing, _ := h.store.GetAddressContact(owner, id, ctxDEK(r))
 	affected, err := h.store.DeleteAddressContact(owner, id)
 	if err != nil {
 		response.InternalServerError(w, "failed to delete contact: "+err.Error())
@@ -277,7 +285,7 @@ func (h *AddressContactsHandler) CreateFromEmail(w http.ResponseWriter, r *http.
 			req.DisplayName = addr.Name
 		}
 	}
-	if exist, _ := h.store.GetAddressContactByEmail(owner, email); exist != nil {
+	if exist, _ := h.store.GetAddressContactByEmail(owner, email, ctxDEK(r)); exist != nil {
 		response.Success(w, exist)
 		return
 	}
@@ -300,7 +308,7 @@ func (h *AddressContactsHandler) CreateFromEmail(w http.ResponseWriter, r *http.
 			c.DisplayName = email
 		}
 	}
-	if err := h.store.CreateAddressContact(c); err != nil {
+	if err := h.store.CreateAddressContact(c, ctxDEK(r)); err != nil {
 		response.InternalServerError(w, "failed to create contact: "+err.Error())
 		return
 	}
@@ -331,7 +339,7 @@ func (h *AddressContactsHandler) Resolve(w http.ResponseWriter, r *http.Request)
 	if len(emails) > 100 {
 		emails = emails[:100]
 	}
-	m, err := h.store.ResolveAddressContacts(owner, emails)
+	m, err := h.store.ResolveAddressContacts(owner, emails, ctxDEK(r))
 	if err != nil {
 		response.InternalServerError(w, "failed to resolve: "+err.Error())
 		return
@@ -355,7 +363,7 @@ func (h *AddressContactsHandler) GetAvatar(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	id := chi.URLParam(r, "id")
-	c, err := h.store.GetAddressContact(owner, id)
+	c, err := h.store.GetAddressContact(owner, id, ctxDEK(r))
 	if err != nil {
 		response.InternalServerError(w, "failed to get contact: "+err.Error())
 		return
@@ -397,7 +405,7 @@ func (h *AddressContactsHandler) PutAvatar(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	id := chi.URLParam(r, "id")
-	c, err := h.store.GetAddressContact(owner, id)
+	c, err := h.store.GetAddressContact(owner, id, ctxDEK(r))
 	if err != nil {
 		response.InternalServerError(w, "failed to get contact: "+err.Error())
 		return
@@ -467,7 +475,7 @@ func (h *AddressContactsHandler) PutAvatar(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	c.AvatarPath = rel
-	if err := h.store.UpdateAddressContact(c); err != nil {
+	if err := h.store.UpdateAddressContact(c, ctxDEK(r)); err != nil {
 		response.InternalServerError(w, "failed to update contact avatar: "+err.Error())
 		return
 	}
@@ -481,7 +489,7 @@ func (h *AddressContactsHandler) DeleteAvatar(w http.ResponseWriter, r *http.Req
 		return
 	}
 	id := chi.URLParam(r, "id")
-	c, err := h.store.GetAddressContact(owner, id)
+	c, err := h.store.GetAddressContact(owner, id, ctxDEK(r))
 	if err != nil {
 		response.InternalServerError(w, "failed to get contact: "+err.Error())
 		return
@@ -493,7 +501,7 @@ func (h *AddressContactsHandler) DeleteAvatar(w http.ResponseWriter, r *http.Req
 	if c.AvatarPath != "" {
 		_ = os.Remove(filepath.Join(h.dataDir, c.AvatarPath))
 		c.AvatarPath = ""
-		_ = h.store.UpdateAddressContact(c)
+		_ = h.store.UpdateAddressContact(c, ctxDEK(r))
 	}
 	response.Success(w, map[string]string{"message": "avatar deleted"})
 }
@@ -509,7 +517,7 @@ func (h *AddressContactsHandler) Export(w http.ResponseWriter, r *http.Request) 
 	if format == "" {
 		format = "csv"
 	}
-	list, err := h.store.ListAddressContacts(owner, "", 0, 0)
+	list, err := h.store.ListAddressContacts(owner, "", 0, 0, ctxDEK(r))
 	if err != nil {
 		response.InternalServerError(w, "failed to list contacts: "+err.Error())
 		return
@@ -661,7 +669,7 @@ func (h *AddressContactsHandler) Import(w http.ResponseWriter, r *http.Request) 
 			invalid++
 			continue
 		}
-		exist, _ := h.store.GetAddressContactByEmail(owner, email)
+		exist, _ := h.store.GetAddressContactByEmail(owner, email, ctxDEK(r))
 		if exist != nil {
 			if mode == "skip" {
 				skipped = append(skipped, email)
@@ -678,7 +686,7 @@ func (h *AddressContactsHandler) Import(w http.ResponseWriter, r *http.Request) 
 			if it.Note != "" {
 				exist.Note = it.Note
 			}
-			if err := h.store.UpdateAddressContact(exist); err == nil {
+			if err := h.store.UpdateAddressContact(exist, ctxDEK(r)); err == nil {
 				saved++
 			} else {
 				skipped = append(skipped, email)
@@ -703,7 +711,7 @@ func (h *AddressContactsHandler) Import(w http.ResponseWriter, r *http.Request) 
 		if c.DisplayName == "" {
 			c.DisplayName = email
 		}
-		if err := h.store.CreateAddressContact(c); err != nil {
+		if err := h.store.CreateAddressContact(c, ctxDEK(r)); err != nil {
 			if strings.Contains(err.Error(), "UNIQUE") {
 				skipped = append(skipped, email)
 			} else {

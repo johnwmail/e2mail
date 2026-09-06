@@ -43,7 +43,7 @@ func (h *PrefsHandler) GetPref(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid pref key")
 		return
 	}
-	val, err := h.store.GetUserPref(owner, key)
+	val, err := h.store.GetUserPref(owner, key, ctxDEK(r))
 	if err != nil {
 		response.InternalServerError(w, "failed to get pref: "+err.Error())
 		return
@@ -70,7 +70,7 @@ func (h *PrefsHandler) SetPref(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid json body: "+err.Error())
 		return
 	}
-	if err := h.store.SetUserPref(owner, key, req.Value); err != nil {
+	if err := h.store.SetUserPref(owner, key, req.Value, ctxDEK(r)); err != nil {
 		response.InternalServerError(w, "failed to set pref: "+err.Error())
 		return
 	}

@@ -89,7 +89,9 @@ target account ID for multi-account sessions; omit = login-identity account).
    b. Update the target account row's `EncIMAPPassword`/`EncSMTPPassword` =
       DEK(newPassword) → `UpdateAccount`. When a secondary (non-login) account
       is selected, only its own row changes and step (a) is skipped — the
-      Master Password / DEK wrap is untouched.
+      Master Password / DEK wrap is untouched. (Account rows are keyed by
+      `owner_id` and content columns are DEK-encrypted per
+      `docs/ENCRYPTION.md`; the storage layer wraps/unwraps transparently.)
    c. `refreshSessionAccounts` so the in-memory session reflects new ciphertext.
    d. `poolMgr.DestroyPool` + `idleMgr.StopListener` → `GetOrStartListener` so
       background IMAP connections reconnect with the new password.

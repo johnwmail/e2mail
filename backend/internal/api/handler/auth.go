@@ -283,6 +283,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 2.5 遷移 lazy：解鎖 DEK 後將 p: 欄轉為 e1:
+	h.convertPendingFields(ownerEmail, dek)
+
 	// 3. 建立首帳號（若呢個 user 仲未有 account）
 	accounts, err := h.accountsWithPassword(ownerEmail, cred, dek)
 	if err != nil {
@@ -315,7 +318,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			response.InternalServerError(w, "failed to encrypt account credentials")
 			return
 		}
-		if err := h.storage.CreateAccount(acc); err != nil {
+		if err := h.storage.CreateAccount(acc, dek); err != nil {
 			log.Printf("[AUTH ERROR] create account failed for %s: %v", req.Email, err)
 			response.InternalServerError(w, "failed to create account")
 			return
@@ -352,6 +355,26 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Token:   savedSess.ID,
 		Session: savedSess,
 	})
+}
+
+// convertPendingFields 全字段加密 lazy 轉換（ENCRYPTION.md §5.2）：
+// owner 首次（成功）登入解鎖 DEK 後，將遷移遺留嘅 p: 欄位即時轉為 e1: DEK 密文。
+// 失敗只 log（唔阻登入），下次登入自然重試；完全冪等。
+func (h *AuthHandler) convertPendingFields(ownerEmail string, dek []byte) {
+	pending, err := h.storage.HasPendingEncrypt(ownerEmail)
+	if err != nil || !pending {
+		if err != nil {
+			log.Printf("[MIGRATE] HasPendingEncrypt(%s) failed: %v", ownerEmail, err)
+		}
+		return
+	}
+	n, err := h.storage.EncryptPendingFields(ownerEmail, dek)
+	if err != nil {
+		log.Printf("[MIGRATE] lazy field encryption FAILED for %s (will retry next login): %v", ownerEmail, err)
+		return
+	}
+	// 轉換後 session 內 ciphertext 欄位可能已過期：用如需即時反映由 caller 重載
+	log.Printf("[MIGRATE] lazy field encryption done for %s: %d fields → DEK", ownerEmail, n)
 }
 
 // resolveCredential 取得使用者憑證包同 DEK。首次（無 credential）則生成。
@@ -397,7 +420,7 @@ func (h *AuthHandler) resolveCredential(ownerEmail, masterPassword string) (*sto
 
 // accountsWithPassword 載入 user 嘅所有帳號（保留加密密碼欄位，由 middleware 解密）
 func (h *AuthHandler) accountsWithPassword(ownerEmail string, cred *storage.UserCredential, dek []byte) ([]storage.Account, error) {
-	accounts, err := h.storage.ListAccounts(ownerEmail)
+	accounts, err := h.storage.ListAccounts(ownerEmail, dek)
 	if err != nil {
 		return nil, err
 	}
@@ -525,6 +548,7 @@ func (h *AuthHandler) completeLogin(w http.ResponseWriter, r *http.Request, pl *
 		response.Unauthorized(w, err.Error())
 		return
 	}
+	h.convertPendingFields(ownerEmail, dek)
 	h.maybeMigrateTwoFA(ownerEmail, dek)
 
 	accounts, err := h.accountsWithPassword(ownerEmail, cred, dek)
@@ -556,7 +580,7 @@ func (h *AuthHandler) completeLogin(w http.ResponseWriter, r *http.Request, pl *
 			response.InternalServerError(w, "failed to encrypt account credentials")
 			return
 		}
-		if err := h.storage.CreateAccount(acc); err != nil {
+		if err := h.storage.CreateAccount(acc, dek); err != nil {
 			log.Printf("[AUTH ERROR] create account failed after 2FA: %v", err)
 			response.InternalServerError(w, "failed to create account")
 			return
@@ -732,7 +756,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	ownerEmail := authCtx.Session.Email
 
 	// 解析目標帳號：指定 account 時必須屬於本使用者；未指定則沿用登入身分帳號
-	accounts, err := h.storage.ListAccounts(ownerEmail)
+	accounts, err := h.storage.ListAccounts(ownerEmail, authCtx.DEK)
 	if err != nil {
 		log.Printf("[PWCHANGE] list accounts failed for %s: %v", ownerEmail, err)
 		response.InternalServerError(w, "failed to load accounts")
@@ -833,7 +857,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		origAcc = *acc // 回滾用副本
 		acc.EncIMAPPassword = newEncIMAP
 		acc.EncSMTPPassword = newEncSMTP
-		if err := h.storage.UpdateAccount(acc); err != nil {
+		if err := h.storage.UpdateAccount(acc, authCtx.DEK); err != nil {
 			log.Printf("[PWCHANGE] update account failed for %s: %v", pwEmail, err)
 			*acc = origAcc
 			h.rollbackLDAP(userDN, req.OldPassword, pwEmail, "account update failed")
@@ -859,7 +883,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Printf("[PWCHANGE] re-wrap DEK failed for %s: %v", ownerEmail, err)
 			if accUpdated {
-				if rErr := h.storage.UpdateAccount(&origAcc); rErr != nil {
+				if rErr := h.storage.UpdateAccount(&origAcc, authCtx.DEK); rErr != nil {
 					log.Printf("[CRITICAL][PWCHANGE] account rollback failed for %s: %v", ownerEmail, rErr)
 				}
 			}

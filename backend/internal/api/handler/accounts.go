@@ -67,7 +67,7 @@ func (h *AccountsHandler) OnboardingStatus(w http.ResponseWriter, r *http.Reques
 	email := authCtx.Session.Email
 
 	twoFA, _ := h.storage.GetTwoFA(email)
-	keyring, _ := h.storage.GetKeyring(email)
+	keyring, _ := h.storage.GetKeyring(email, authCtx.DEK)
 
 	has2FA := twoFA != nil
 	hasPGP := keyring != nil
@@ -154,7 +154,7 @@ func (h *AccountsHandler) GetFolderPrefs(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	id := chi.URLParam(r, "id")
-	prefs, err := h.storage.ListFolderPrefs(authCtx.Session.Email, id)
+	prefs, err := h.storage.ListFolderPrefs(authCtx.Session.Email, id, authCtx.DEK)
 	if err != nil {
 		response.InternalServerError(w, "failed to read folder prefs")
 		return
@@ -182,7 +182,7 @@ func (h *AccountsHandler) SetFolderPref(w http.ResponseWriter, r *http.Request) 
 		response.BadRequest(w, "folder is required")
 		return
 	}
-	if err := h.storage.SetFolderPref(authCtx.Session.Email, id, req.Folder, req.Visible); err != nil {
+	if err := h.storage.SetFolderPref(authCtx.Session.Email, id, req.Folder, req.Visible, authCtx.DEK); err != nil {
 		response.InternalServerError(w, "failed to save folder pref")
 		return
 	}
@@ -197,7 +197,7 @@ func (h *AccountsHandler) GetFolderOrder(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	id := chi.URLParam(r, "id")
-	order, err := h.storage.GetFolderOrder(authCtx.Session.Email, id)
+	order, err := h.storage.GetFolderOrder(authCtx.Session.Email, id, authCtx.DEK)
 	if err != nil {
 		response.InternalServerError(w, "failed to read folder order")
 		return
@@ -223,7 +223,7 @@ func (h *AccountsHandler) SetFolderOrder(w http.ResponseWriter, r *http.Request)
 		response.BadRequest(w, "invalid json payload")
 		return
 	}
-	if err := h.storage.SetFolderOrder(authCtx.Session.Email, id, req.Order); err != nil {
+	if err := h.storage.SetFolderOrder(authCtx.Session.Email, id, req.Order, authCtx.DEK); err != nil {
 		response.InternalServerError(w, "failed to save folder order")
 		return
 	}
@@ -324,7 +324,7 @@ func (h *AccountsHandler) CreateAccount(w http.ResponseWriter, r *http.Request) 
 		acc.SieveUseTLS = true
 	}
 
-	if err := h.storage.CreateAccount(acc); err != nil {
+	if err := h.storage.CreateAccount(acc, authCtx.DEK); err != nil {
 		response.InternalServerError(w, "failed to create account: "+err.Error())
 		return
 	}
@@ -343,7 +343,7 @@ func (h *AccountsHandler) UpdateAccount(w http.ResponseWriter, r *http.Request) 
 	}
 
 	id := chi.URLParam(r, "id")
-	existing, err := h.storage.GetAccount(authCtx.Session.Email, id)
+	existing, err := h.storage.GetAccount(authCtx.Session.Email, id, authCtx.DEK)
 	if err != nil {
 		response.InternalServerError(w, "failed to get account")
 		return
@@ -409,7 +409,7 @@ func (h *AccountsHandler) UpdateAccount(w http.ResponseWriter, r *http.Request) 
 		existing.EncSMTPPassword = smtpEnc
 	}
 
-	if err := h.storage.UpdateAccount(existing); err != nil {
+	if err := h.storage.UpdateAccount(existing, authCtx.DEK); err != nil {
 		response.InternalServerError(w, "failed to update account: "+err.Error())
 		return
 	}
@@ -525,7 +525,7 @@ func (h *AccountsHandler) refreshSessionAccounts(authCtx *middleware.AuthContext
 	if authCtx == nil || authCtx.Session == nil {
 		return
 	}
-	accounts, err := h.storage.ListAccounts(authCtx.Session.Email)
+	accounts, err := h.storage.ListAccounts(authCtx.Session.Email, authCtx.DEK)
 	if err != nil {
 		log.Printf("[ACCOUNTS] failed to reload accounts: %v", err)
 		return

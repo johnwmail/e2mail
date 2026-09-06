@@ -5,17 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/johnwmail/e2mail/backend/internal/crypto"
 	_ "modernc.org/sqlite"
 )
 
-// ContactKey 儲存於 SQLite 之聯絡人公鑰
+// ContactKey 儲存於 SQLite 之聯絡人公鑰（DB 內全欄位 DEK 加密，struct 為明文視圖）
 type ContactKey struct {
 	OwnerEmail   string
 	ContactEmail string
@@ -26,8 +29,9 @@ type ContactKey struct {
 	CreatedAt    time.Time
 }
 
-// Keyring 儲存於 SQLite 之個人 PGP 金鑰包（私鑰為 Passphrase 加密之密文）
-// 統一以 ASCII-armored 字串儲存；前端若上傳 binary GPG 會先轉為 armored 再存入
+// Keyring 儲存於 SQLite 之個人 PGP 金鑰包。
+// public/fingerprint/key_id 以 WrapField(DEK) 加密；
+// encrypted_private_key 保留既有格式（handler 層 crypto.Encrypt(DEK, armored) 之 raw base64）。
 type Keyring struct {
 	Email                      string    `json:"email"`
 	PublicKeyArmored           string    `json:"publicKeyArmored"`
@@ -37,7 +41,7 @@ type Keyring struct {
 	UpdatedAt                  time.Time `json:"updatedAt"`
 }
 
-// TwoFA 儲存於 SQLite 之兩步驟驗證設定（備份碼以 SHA-256 hash 儲存）
+// TwoFA 儲存於 SQLite 之兩步驟驗證設定（備份碼以 SHA-256 hash 儲存；secret 為 DEK 密文）
 type TwoFA struct {
 	OwnerEmail   string
 	Secret       string
@@ -45,10 +49,12 @@ type TwoFA struct {
 	EnabledAt    time.Time
 }
 
-// Account 儲存於 SQLite 之郵件帳號設定（密碼以 DEK 加密，非明文）
+// Account 儲存於 SQLite 之郵件帳號設定。
+// DB 欄位：owner_id(hash)、label/email/hosts/username(WrapField DEK 密文)、enc_*_password(既有 DEK raw base64)。
+// struct 欄位保持明文視圖，加解密於 storage 邊界完成。
 type Account struct {
 	ID                    string    `json:"id"`
-	UserEmail             string    `json:"-"` // 登入者（owner）
+	UserEmail             string    `json:"-"` // 登入者（owner），由查詢參數回填
 	Label                 string    `json:"label"`
 	Email                 string    `json:"email"`
 	IMAPHost              string    `json:"imapHost"`
@@ -72,7 +78,8 @@ type Account struct {
 	UpdatedAt             time.Time `json:"updatedAt"`
 }
 
-// UserCredential 儲存於 SQLite 之 per-user 憑證包（包裹 DEK）
+// UserCredential 儲存於 SQLite 之 per-user 憑證包（包裹 DEK）。
+// UserEmail 欄為呼叫者回填之明文；DB 主鍵為 owner_id 盲索引。
 type UserCredential struct {
 	UserEmail  string    `json:"userEmail"`
 	Salt       []byte    `json:"salt"`
@@ -81,7 +88,7 @@ type UserCredential struct {
 	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
-// Contact 通訊錄聯絡人（通用地址簿，非 PGP 專用）
+// Contact 通訊錄聯絡人（通用地址簿，非 PGP 專用）。DB 內容欄加密；email 索引欄為盲哈希。
 type Contact struct {
 	ID          string    `json:"id"`
 	OwnerEmail  string    `json:"-"`
@@ -89,7 +96,7 @@ type Contact struct {
 	DisplayName string    `json:"displayName"`
 	GivenName   string    `json:"givenName"`
 	FamilyName  string    `json:"familyName"`
-	AvatarPath  string    `json:"-"`
+	AvatarPath  string    `json:"-"` // 內容為 uuid 檔名，非敏感，保留明文
 	HasAvatar   bool      `json:"hasAvatar"`
 	Note        string    `json:"note"`
 	Source      string    `json:"source"`
@@ -97,28 +104,29 @@ type Contact struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
-// Store SQLite 儲存介面
+// Store SQLite 儲存介面。
+// 內容函數（讀寫加密欄）需傳 dek；純鍵函數（hash 索引、opaque uuid）不需。
 type Store interface {
 	// Contacts (PGP 公鑰)
-	ListContacts(ownerEmail string) ([]ContactKey, error)
-	GetContact(ownerEmail, contactEmail string) (*ContactKey, error)
-	UpsertContact(contact ContactKey) error
-	BulkUpsertContacts(ownerEmail string, contacts []ContactKey) (saved int, skipped []string, err error)
+	ListContacts(ownerEmail string, dek []byte) ([]ContactKey, error)
+	GetContact(ownerEmail, contactEmail string, dek []byte) (*ContactKey, error)
+	UpsertContact(contact ContactKey, dek []byte) error
+	BulkUpsertContacts(ownerEmail string, contacts []ContactKey, dek []byte) (saved int, skipped []string, err error)
 	DeleteContact(ownerEmail, contactEmail string) (int64, error)
 
 	// Address book (通用通訊錄)
-	ListAddressContacts(ownerEmail string, query string, limit, offset int) ([]Contact, error)
-	GetAddressContact(ownerEmail, id string) (*Contact, error)
-	GetAddressContactByEmail(ownerEmail, email string) (*Contact, error)
-	CreateAddressContact(c *Contact) error
-	UpdateAddressContact(c *Contact) error
+	ListAddressContacts(ownerEmail string, query string, limit, offset int, dek []byte) ([]Contact, error)
+	GetAddressContact(ownerEmail, id string, dek []byte) (*Contact, error)
+	GetAddressContactByEmail(ownerEmail, email string, dek []byte) (*Contact, error)
+	CreateAddressContact(c *Contact, dek []byte) error
+	UpdateAddressContact(c *Contact, dek []byte) error
 	DeleteAddressContact(ownerEmail, id string) (int64, error)
 	CountAddressContacts(ownerEmail string) (int, error)
-	ResolveAddressContacts(ownerEmail string, emails []string) (map[string]*Contact, error)
+	ResolveAddressContacts(ownerEmail string, emails []string, dek []byte) (map[string]*Contact, error)
 
 	// Personal keyring
-	GetKeyring(ownerEmail string) (*Keyring, error)
-	SaveKeyring(keyring *Keyring) error
+	GetKeyring(ownerEmail string, dek []byte) (*Keyring, error)
+	SaveKeyring(keyring *Keyring, dek []byte) error
 	DeleteKeyring(ownerEmail string) error
 
 	// Two-factor authentication
@@ -127,10 +135,10 @@ type Store interface {
 	DeleteTwoFA(ownerEmail string) error
 
 	// Accounts (multi-account registry, per-user)
-	ListAccounts(userEmail string) ([]Account, error)
-	GetAccount(userEmail, accountID string) (*Account, error)
-	CreateAccount(acc *Account) error
-	UpdateAccount(acc *Account) error
+	ListAccounts(userEmail string, dek []byte) ([]Account, error)
+	GetAccount(userEmail, accountID string, dek []byte) (*Account, error)
+	CreateAccount(acc *Account, dek []byte) error
+	UpdateAccount(acc *Account, dek []byte) error
 	DeleteAccount(userEmail, accountID string) error
 	SetDefaultAccount(userEmail, accountID string) error
 	CountAccounts(userEmail string) (int, error)
@@ -141,16 +149,21 @@ type Store interface {
 	UpdateUserCredential(cred *UserCredential) error
 
 	// Folder display prefs (e2Mail-only, per account; not IMAP subscription)
-	ListFolderPrefs(userEmail, accountID string) (map[string]bool, error)
-	SetFolderPref(userEmail, accountID, folderName string, visible bool) error
+	ListFolderPrefs(userEmail, accountID string, dek []byte) (map[string]bool, error)
+	SetFolderPref(userEmail, accountID, folderName string, visible bool, dek []byte) error
 
 	// Folder order (top-level folder display order, per account)
-	GetFolderOrder(userEmail, accountID string) ([]string, error)
-	SetFolderOrder(userEmail, accountID string, orderedNames []string) error
+	GetFolderOrder(userEmail, accountID string, dek []byte) ([]string, error)
+	SetFolderOrder(userEmail, accountID string, orderedNames []string, dek []byte) error
 
 	// User prefs (generic per-user key-value settings, e.g. thread mode)
-	GetUserPref(userEmail, key string) (string, error)
-	SetUserPref(userEmail, key, value string) error
+	GetUserPref(userEmail, key string, dek []byte) (string, error)
+	SetUserPref(userEmail, key, value string, dek []byte) error
+
+	// 全字段加密（ENCRYPTION.md）：lazy 轉換與審計
+	HasPendingEncrypt(userEmail string) (bool, error)
+	EncryptPendingFields(userEmail string, dek []byte) (int, error)
+	CountPendingFields() (int, error)
 
 	// Lifecycle
 	MigrateLegacyKeyrings(dataDir string) (migrated int, err error)
@@ -158,111 +171,117 @@ type Store interface {
 }
 
 const schema = `
+CREATE TABLE IF NOT EXISTS users (
+	owner_id        TEXT NOT NULL PRIMARY KEY,
+	salt            BLOB NOT NULL,
+	wrapped_dek     TEXT NOT NULL,
+	pending_encrypt INTEGER NOT NULL DEFAULT 0,
+	created_at      INTEGER NOT NULL,
+	updated_at      INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS two_fa (
+	owner_id           TEXT NOT NULL PRIMARY KEY,
+	secret             TEXT NOT NULL,
+	backup_code_hashes TEXT NOT NULL DEFAULT '[]',
+	enabled_at         INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS personal_keyrings (
+	owner_id               TEXT NOT NULL PRIMARY KEY,
+	public_key_armored     TEXT NOT NULL,
+	encrypted_private_key  TEXT NOT NULL,
+	fingerprint            TEXT NOT NULL,
+	key_id                 TEXT NOT NULL DEFAULT '',
+	updated_at             INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS accounts (
+	id                      TEXT NOT NULL PRIMARY KEY,
+	owner_id                TEXT NOT NULL,
+	label                   TEXT NOT NULL DEFAULT '',
+	email                   TEXT NOT NULL DEFAULT '',
+	imap_host               TEXT NOT NULL DEFAULT '',
+	imap_port               INTEGER NOT NULL,
+	imap_use_tls            INTEGER NOT NULL DEFAULT 1,
+	imap_allow_insecure_tls INTEGER NOT NULL DEFAULT 0,
+	smtp_host               TEXT NOT NULL DEFAULT '',
+	smtp_port               INTEGER NOT NULL,
+	smtp_use_tls            INTEGER NOT NULL DEFAULT 1,
+	smtp_allow_insecure_tls INTEGER NOT NULL DEFAULT 0,
+	sieve_host              TEXT NOT NULL DEFAULT '',
+	sieve_port              INTEGER NOT NULL DEFAULT 0,
+	sieve_use_tls           INTEGER NOT NULL DEFAULT 1,
+	sieve_allow_insecure_tls INTEGER NOT NULL DEFAULT 0,
+	username                TEXT NOT NULL DEFAULT '',
+	enc_imap_password       TEXT NOT NULL,
+	enc_smtp_password       TEXT NOT NULL,
+	is_default              INTEGER NOT NULL DEFAULT 0,
+	sort_order              INTEGER NOT NULL DEFAULT 0,
+	created_at              INTEGER NOT NULL,
+	updated_at              INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_accounts_owner ON accounts(owner_id);
+
 CREATE TABLE IF NOT EXISTS contact_keys (
-	owner_email    TEXT NOT NULL,
+	owner_id       TEXT NOT NULL,
+	email_hash     TEXT NOT NULL,
 	contact_email  TEXT NOT NULL,
 	name           TEXT NOT NULL DEFAULT '',
 	fingerprint    TEXT NOT NULL,
 	key_id         TEXT NOT NULL DEFAULT '',
 	armored_key    TEXT NOT NULL,
 	created_at     INTEGER NOT NULL,
-	PRIMARY KEY (owner_email, contact_email)
+	PRIMARY KEY (owner_id, email_hash)
 );
-CREATE INDEX IF NOT EXISTS idx_contact_keys_owner ON contact_keys(owner_email);
+CREATE INDEX IF NOT EXISTS idx_contact_keys_owner ON contact_keys(owner_id);
 
-CREATE TABLE IF NOT EXISTS personal_keyrings (
-	owner_email              TEXT NOT NULL PRIMARY KEY,
-	public_key_armored       TEXT NOT NULL,
-	encrypted_private_key    TEXT NOT NULL,
-	fingerprint              TEXT NOT NULL,
-	key_id                   TEXT NOT NULL DEFAULT '',
-	updated_at               INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS two_fa (
-	owner_email        TEXT NOT NULL PRIMARY KEY,
-	secret             TEXT NOT NULL,
-	backup_code_hashes TEXT NOT NULL DEFAULT '[]',
-	enabled_at         INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS users (
-	owner_email  TEXT NOT NULL PRIMARY KEY,
-	salt         BLOB NOT NULL,
-	wrapped_dek  TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS contacts (
+	id           TEXT NOT NULL PRIMARY KEY,
+	owner_id     TEXT NOT NULL,
+	email_hash   TEXT NOT NULL,
+	email        TEXT NOT NULL DEFAULT '',
+	display_name TEXT NOT NULL DEFAULT '',
+	given_name   TEXT NOT NULL DEFAULT '',
+	family_name  TEXT NOT NULL DEFAULT '',
+	avatar_path  TEXT NOT NULL DEFAULT '',
+	note         TEXT NOT NULL DEFAULT '',
+	source       TEXT NOT NULL DEFAULT 'manual',
 	created_at   INTEGER NOT NULL,
-	updated_at   INTEGER NOT NULL
+	updated_at   INTEGER NOT NULL,
+	UNIQUE(owner_id, email_hash)
 );
-
-CREATE TABLE IF NOT EXISTS accounts (
-	id                     TEXT NOT NULL PRIMARY KEY,
-	user_email             TEXT NOT NULL,
-	label                  TEXT NOT NULL,
-	email                  TEXT NOT NULL,
-	imap_host              TEXT NOT NULL,
-	imap_port              INTEGER NOT NULL,
-	imap_use_tls           INTEGER NOT NULL DEFAULT 1,
-	imap_allow_insecure_tls INTEGER NOT NULL DEFAULT 0,
-	smtp_host              TEXT NOT NULL,
-	smtp_port              INTEGER NOT NULL,
-	smtp_use_tls           INTEGER NOT NULL DEFAULT 1,
-	smtp_allow_insecure_tls INTEGER NOT NULL DEFAULT 0,
-	sieve_host             TEXT NOT NULL DEFAULT '',
-	sieve_port             INTEGER NOT NULL DEFAULT 0,
-	sieve_use_tls          INTEGER NOT NULL DEFAULT 1,
-	sieve_allow_insecure_tls INTEGER NOT NULL DEFAULT 0,
-	username               TEXT NOT NULL,
-	enc_imap_password      TEXT NOT NULL,
-	enc_smtp_password      TEXT NOT NULL,
-	is_default             INTEGER NOT NULL DEFAULT 0,
-	sort_order             INTEGER NOT NULL DEFAULT 0,
-	created_at             INTEGER NOT NULL,
-	updated_at             INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_email);
+CREATE INDEX IF NOT EXISTS idx_contacts_owner ON contacts(owner_id);
+CREATE INDEX IF NOT EXISTS idx_contacts_owner_email ON contacts(owner_id, email_hash);
 
 CREATE TABLE IF NOT EXISTS folder_prefs (
-	user_email   TEXT NOT NULL,
-	account_id   TEXT NOT NULL,
-	folder_name  TEXT NOT NULL,
-	visible      INTEGER NOT NULL DEFAULT 1,
-	PRIMARY KEY (user_email, account_id, folder_name)
+	owner_id    TEXT NOT NULL,
+	account_id  TEXT NOT NULL,
+	name_hash   TEXT NOT NULL,
+	folder_name TEXT NOT NULL,
+	visible     INTEGER NOT NULL DEFAULT 1,
+	PRIMARY KEY (owner_id, account_id, name_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_folder_prefs_account ON folder_prefs(account_id);
 
 CREATE TABLE IF NOT EXISTS folder_order (
-	account_id   TEXT NOT NULL,
-	folder_name  TEXT NOT NULL,
-	sort_index   INTEGER NOT NULL DEFAULT 0,
-	PRIMARY KEY (account_id, folder_name)
+	owner_id    TEXT NOT NULL,
+	account_id  TEXT NOT NULL,
+	name_hash   TEXT NOT NULL,
+	folder_name TEXT NOT NULL,
+	sort_index  INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (account_id, name_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_folder_order_account ON folder_order(account_id);
 
-CREATE TABLE IF NOT EXISTS contacts (
-	id            TEXT NOT NULL PRIMARY KEY,
-	owner_email   TEXT NOT NULL,
-	email         TEXT NOT NULL,
-	display_name  TEXT NOT NULL DEFAULT '',
-	given_name    TEXT NOT NULL DEFAULT '',
-	family_name   TEXT NOT NULL DEFAULT '',
-	avatar_path   TEXT NOT NULL DEFAULT '',
-	note          TEXT NOT NULL DEFAULT '',
-	source        TEXT NOT NULL DEFAULT 'manual',
-	created_at    INTEGER NOT NULL,
-	updated_at    INTEGER NOT NULL,
-	UNIQUE(owner_email, email)
-);
-CREATE INDEX IF NOT EXISTS idx_contacts_owner ON contacts(owner_email);
-CREATE INDEX IF NOT EXISTS idx_contacts_owner_email ON contacts(owner_email, email);
-
 CREATE TABLE IF NOT EXISTS user_prefs (
-	owner_email  TEXT NOT NULL,
-	pref_key     TEXT NOT NULL,
-	pref_value   TEXT NOT NULL DEFAULT '',
-	updated_at   INTEGER NOT NULL,
-	PRIMARY KEY (owner_email, pref_key)
+	owner_id   TEXT NOT NULL,
+	pref_key   TEXT NOT NULL,
+	pref_value TEXT NOT NULL DEFAULT '',
+	updated_at INTEGER NOT NULL,
+	PRIMARY KEY (owner_id, pref_key)
 );
-CREATE INDEX IF NOT EXISTS idx_user_prefs_owner ON user_prefs(owner_email);
+CREATE INDEX IF NOT EXISTS idx_user_prefs_owner ON user_prefs(owner_id);
 `
 
 // SQLiteStore SQLite 儲存實作
@@ -271,7 +290,8 @@ type SQLiteStore struct {
 	mu sync.Mutex
 }
 
-// NewSQLiteStore 於 dataDir/e2Mail.db 建立並初始化 SQLite 儲存
+// NewSQLiteStore 於 dataDir/e2Mail.db 建立並初始化 SQLite 儲存。
+// 偵測 v1（明文鍵）schema → 單一事務遷移至 v2；遷移失敗 fail closed。
 func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create storage dir: %w", err)
@@ -287,18 +307,25 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping sqlite: %w", err)
 	}
+
+	legacy, err := isLegacySchema(db)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("schema detect failed: %w", err)
+	}
+	if legacy {
+		if err := migrateV1toV2(db); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("field-encryption migration failed (fail closed, DB untouched): %w", err)
+		}
+	}
+
 	if _, err := db.Exec(schema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to apply schema: %w", err)
 	}
-	// 向後兼容：舊庫無 sieve 欄位時自動加欄（冪等）
-	for _, ddl := range []string{
-		`ALTER TABLE accounts ADD COLUMN sieve_host TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE accounts ADD COLUMN sieve_port INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE accounts ADD COLUMN sieve_use_tls INTEGER NOT NULL DEFAULT 1`,
-		`ALTER TABLE accounts ADD COLUMN sieve_allow_insecure_tls INTEGER NOT NULL DEFAULT 0`,
-	} {
-		_, _ = db.Exec(ddl)
+	if _, err := db.Exec(`PRAGMA user_version = 2`); err != nil {
+		log.Printf("[STORAGE] WARN: set user_version failed: %v", err)
 	}
 	return &SQLiteStore{db: db}, nil
 }
@@ -307,12 +334,60 @@ func (s *SQLiteStore) Close() error {
 	return s.db.Close()
 }
 
+// ===== 加密欄 helper（storage 邊界統一 wrap/unwrap） =====
+
+func wrapFields(dek []byte, vals ...string) ([]string, error) {
+	out := make([]string, len(vals))
+	for i, v := range vals {
+		w, err := crypto.WrapField(dek, v)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = w
+	}
+	return out, nil
+}
+
+func unwrapFields(dek []byte, vals ...string) ([]string, error) {
+	out := make([]string, len(vals))
+	for i, v := range vals {
+		u, err := crypto.UnwrapField(dek, v)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = u
+	}
+	return out, nil
+}
+
+func emailIndex(email string) string { return crypto.OwnerID(email) }
+func nameIndex(folder string) string { return crypto.HashID(folder) }
+
+// ===== Contacts (PGP 公鑰表) =====
+
+func scanContactKey(rows interface{ Scan(...any) error }, ownerEmail string, dek []byte) (*ContactKey, error) {
+	var c ContactKey
+	var emailHash, encEmail, encName, encFP, encKeyID, encArmored string
+	var createdAt int64
+	if err := rows.Scan(&emailHash, &encEmail, &encName, &encFP, &encKeyID, &encArmored, &createdAt); err != nil {
+		return nil, err
+	}
+	plain, err := unwrapFields(dek, encEmail, encName, encFP, encKeyID, encArmored)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unwrap contact: %w", err)
+	}
+	c.ContactEmail, c.Name, c.Fingerprint, c.KeyID, c.ArmoredKey = plain[0], plain[1], plain[2], plain[3], plain[4]
+	c.OwnerEmail = ownerEmail
+	c.CreatedAt = time.Unix(createdAt, 0).UTC()
+	return &c, nil
+}
+
 // ListContacts 取得某使用者所有聯絡人公鑰（依 contact_email 排序）
-func (s *SQLiteStore) ListContacts(ownerEmail string) ([]ContactKey, error) {
+func (s *SQLiteStore) ListContacts(ownerEmail string, dek []byte) ([]ContactKey, error) {
 	rows, err := s.db.Query(
-		`SELECT contact_email, name, fingerprint, key_id, armored_key, created_at
-		 FROM contact_keys WHERE owner_email = ? ORDER BY contact_email ASC`,
-		ownerEmail,
+		`SELECT email_hash, contact_email, name, fingerprint, key_id, armored_key, created_at
+		 FROM contact_keys WHERE owner_id = ? ORDER BY created_at ASC`,
+		crypto.OwnerID(ownerEmail),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query contacts: %w", err)
@@ -321,15 +396,15 @@ func (s *SQLiteStore) ListContacts(ownerEmail string) ([]ContactKey, error) {
 
 	out := make([]ContactKey, 0)
 	for rows.Next() {
-		var c ContactKey
-		var createdAt int64
-		if err := rows.Scan(&c.ContactEmail, &c.Name, &c.Fingerprint, &c.KeyID, &c.ArmoredKey, &createdAt); err != nil {
+		c, err := scanContactKey(rows, ownerEmail, dek)
+		if err != nil {
 			return nil, fmt.Errorf("failed to scan contact: %w", err)
 		}
-		c.OwnerEmail = ownerEmail
-		c.CreatedAt = time.Unix(createdAt, 0).UTC()
-		out = append(out, c)
+		out = append(out, *c)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return strings.ToLower(out[i].ContactEmail) < strings.ToLower(out[j].ContactEmail)
+	})
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -337,27 +412,24 @@ func (s *SQLiteStore) ListContacts(ownerEmail string) ([]ContactKey, error) {
 }
 
 // GetContact 取得單一聯絡人公鑰
-func (s *SQLiteStore) GetContact(ownerEmail, contactEmail string) (*ContactKey, error) {
-	var c ContactKey
-	var createdAt int64
-	err := s.db.QueryRow(
-		`SELECT contact_email, name, fingerprint, key_id, armored_key, created_at
-		 FROM contact_keys WHERE owner_email = ? AND contact_email = ?`,
-		ownerEmail, contactEmail,
-	).Scan(&c.ContactEmail, &c.Name, &c.Fingerprint, &c.KeyID, &c.ArmoredKey, &createdAt)
+func (s *SQLiteStore) GetContact(ownerEmail, contactEmail string, dek []byte) (*ContactKey, error) {
+	row := s.db.QueryRow(
+		`SELECT email_hash, contact_email, name, fingerprint, key_id, armored_key, created_at
+		 FROM contact_keys WHERE owner_id = ? AND email_hash = ?`,
+		crypto.OwnerID(ownerEmail), emailIndex(contactEmail),
+	)
+	c, err := scanContactKey(row, ownerEmail, dek)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get contact: %w", err)
 	}
-	c.OwnerEmail = ownerEmail
-	c.CreatedAt = time.Unix(createdAt, 0).UTC()
-	return &c, nil
+	return c, nil
 }
 
-// UpsertContact 插入或更新單一聯絡人公鑰（覆蓋既有同名 contact）
-func (s *SQLiteStore) UpsertContact(c ContactKey) error {
+// UpsertContact 插入或更新單一聯絡人公鑰（覆蓋既有同 email 聯絡人）
+func (s *SQLiteStore) UpsertContact(c ContactKey, dek []byte) error {
 	if c.OwnerEmail == "" || c.ContactEmail == "" {
 		return errors.New("owner_email and contact_email are required")
 	}
@@ -367,17 +439,23 @@ func (s *SQLiteStore) UpsertContact(c ContactKey) error {
 	if c.CreatedAt.IsZero() {
 		c.CreatedAt = time.Now().UTC()
 	}
+	wrapped, err := wrapFields(dek, c.ContactEmail, c.Name, c.Fingerprint, c.KeyID, c.ArmoredKey)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.Exec(
-		`INSERT INTO contact_keys (owner_email, contact_email, name, fingerprint, key_id, armored_key, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(owner_email, contact_email) DO UPDATE SET
+	_, err = s.db.Exec(
+		`INSERT INTO contact_keys (owner_id, email_hash, contact_email, name, fingerprint, key_id, armored_key, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(owner_id, email_hash) DO UPDATE SET
+			contact_email = excluded.contact_email,
 			name = excluded.name,
 			fingerprint = excluded.fingerprint,
 			key_id = excluded.key_id,
 			armored_key = excluded.armored_key`,
-		c.OwnerEmail, c.ContactEmail, c.Name, c.Fingerprint, c.KeyID, c.ArmoredKey, c.CreatedAt.Unix(),
+		crypto.OwnerID(c.OwnerEmail), emailIndex(c.ContactEmail),
+		wrapped[0], wrapped[1], wrapped[2], wrapped[3], wrapped[4], c.CreatedAt.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to upsert contact: %w", err)
@@ -385,8 +463,8 @@ func (s *SQLiteStore) UpsertContact(c ContactKey) error {
 	return nil
 }
 
-// BulkUpsertContacts 批次插入（已存在的 contact_email 略過，不覆蓋）
-func (s *SQLiteStore) BulkUpsertContacts(ownerEmail string, contacts []ContactKey) (int, []string, error) {
+// BulkUpsertContacts 批次插入（已存在的 contact email 略過，不覆蓋）
+func (s *SQLiteStore) BulkUpsertContacts(ownerEmail string, contacts []ContactKey, dek []byte) (int, []string, error) {
 	if len(contacts) == 0 {
 		return 0, nil, nil
 	}
@@ -401,6 +479,7 @@ func (s *SQLiteStore) BulkUpsertContacts(ownerEmail string, contacts []ContactKe
 	saved := 0
 	skipped := make([]string, 0)
 	now := time.Now().UTC().Unix()
+	ownerID := crypto.OwnerID(ownerEmail)
 
 	for i := range contacts {
 		c := contacts[i]
@@ -410,11 +489,16 @@ func (s *SQLiteStore) BulkUpsertContacts(ownerEmail string, contacts []ContactKe
 		if c.CreatedAt.IsZero() {
 			c.CreatedAt = time.Unix(now, 0).UTC()
 		}
+		wrapped, err := wrapFields(dek, c.ContactEmail, c.Name, c.Fingerprint, c.KeyID, c.ArmoredKey)
+		if err != nil {
+			return saved, skipped, err
+		}
 		res, err := tx.Exec(
 			`INSERT OR IGNORE INTO contact_keys
-			 (owner_email, contact_email, name, fingerprint, key_id, armored_key, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			ownerEmail, c.ContactEmail, c.Name, c.Fingerprint, c.KeyID, c.ArmoredKey, c.CreatedAt.Unix(),
+			 (owner_id, email_hash, contact_email, name, fingerprint, key_id, armored_key, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			ownerID, emailIndex(c.ContactEmail),
+			wrapped[0], wrapped[1], wrapped[2], wrapped[3], wrapped[4], c.CreatedAt.Unix(),
 		)
 		if err != nil {
 			return saved, skipped, fmt.Errorf("failed to insert contact %s: %w", c.ContactEmail, err)
@@ -440,8 +524,8 @@ func (s *SQLiteStore) DeleteContact(ownerEmail, contactEmail string) (int64, err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	res, err := s.db.Exec(
-		`DELETE FROM contact_keys WHERE owner_email = ? AND contact_email = ?`,
-		ownerEmail, contactEmail,
+		`DELETE FROM contact_keys WHERE owner_id = ? AND email_hash = ?`,
+		crypto.OwnerID(ownerEmail), emailIndex(contactEmail),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete contact: %w", err)
@@ -451,57 +535,91 @@ func (s *SQLiteStore) DeleteContact(ownerEmail, contactEmail string) (int64, err
 
 // ===== Address book (通用通訊錄) =====
 
-func scanContact(row interface{ Scan(...any) error }) (*Contact, error) {
+const contactSelectCols = `id, email_hash, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at`
+
+func scanAddressContact(rows interface{ Scan(...any) error }, ownerEmail string, dek []byte) (*Contact, error) {
 	var c Contact
+	var encEmail, encDisplay, encGiven, encFamily, encNote, encSource string
+	var emailHash string
 	var createdAt, updatedAt int64
-	err := row.Scan(&c.ID, &c.OwnerEmail, &c.Email, &c.DisplayName, &c.GivenName, &c.FamilyName, &c.AvatarPath, &c.Note, &c.Source, &createdAt, &updatedAt)
+	err := rows.Scan(&c.ID, &emailHash, &encEmail, &encDisplay, &encGiven, &encFamily, &c.AvatarPath, &encNote, &encSource, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
+	plain, err := unwrapFields(dek, encEmail, encDisplay, encGiven, encFamily, encNote, encSource)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unwrap contact %s: %w", c.ID, err)
+	}
+	c.Email, c.DisplayName, c.GivenName, c.FamilyName, c.Note, c.Source =
+		plain[0], plain[1], plain[2], plain[3], plain[4], plain[5]
+	c.OwnerEmail = ownerEmail
 	c.HasAvatar = c.AvatarPath != ""
 	c.CreatedAt = time.Unix(createdAt, 0).UTC()
 	c.UpdatedAt = time.Unix(updatedAt, 0).UTC()
 	return &c, nil
 }
 
-// ListAddressContacts 列出通訊錄（支援 q 關鍵字搜尋 email/displayName，limit/offset 分頁，0 表示不限）
-func (s *SQLiteStore) ListAddressContacts(ownerEmail string, query string, limit, offset int) ([]Contact, error) {
-	q := strings.TrimSpace(query)
-	var rows *sql.Rows
-	var err error
-	if q == "" {
-		if limit > 0 {
-			rows, err = s.db.Query(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? ORDER BY display_name ASC, email ASC LIMIT ? OFFSET ?`, ownerEmail, limit, offset)
-		} else {
-			rows, err = s.db.Query(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? ORDER BY display_name ASC, email ASC`, ownerEmail)
-		}
-	} else {
-		like := "%" + q + "%"
-		if limit > 0 {
-			rows, err = s.db.Query(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? AND (email LIKE ? OR display_name LIKE ? OR note LIKE ?) ORDER BY display_name ASC, email ASC LIMIT ? OFFSET ?`, ownerEmail, like, like, like, limit, offset)
-		} else {
-			rows, err = s.db.Query(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? AND (email LIKE ? OR display_name LIKE ? OR note LIKE ?) ORDER BY display_name ASC, email ASC`, ownerEmail, like, like, like)
-		}
-	}
+// ListAddressContacts 列出通訊錄。
+// q 搜尋於 v2 改為記憶體過濾（密文無法 SQL LIKE）：讀 owner 全量 → 解密 →
+// 對 email/display_name/note 做 case-insensitive substring → 排序 → limit/offset。
+func (s *SQLiteStore) ListAddressContacts(ownerEmail string, query string, limit, offset int, dek []byte) ([]Contact, error) {
+	rows, err := s.db.Query(
+		`SELECT `+contactSelectCols+` FROM contacts WHERE owner_id = ?`,
+		crypto.OwnerID(ownerEmail),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list contacts: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]Contact, 0)
+
+	all := make([]Contact, 0)
 	for rows.Next() {
-		c, err := scanContact(rows)
+		c, err := scanAddressContact(rows, ownerEmail, dek)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, *c)
+		all = append(all, *c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	q := strings.ToLower(strings.TrimSpace(query))
+	filtered := all
+	if q != "" {
+		filtered = make([]Contact, 0, len(all))
+		for _, c := range all {
+			if strings.Contains(strings.ToLower(c.Email), q) ||
+				strings.Contains(strings.ToLower(c.DisplayName), q) ||
+				strings.Contains(strings.ToLower(c.Note), q) {
+				filtered = append(filtered, c)
+			}
+		}
+	}
+	sort.Slice(filtered, func(i, j int) bool {
+		di, dj := strings.ToLower(filtered[i].DisplayName), strings.ToLower(filtered[j].DisplayName)
+		if di != dj {
+			return di < dj
+		}
+		return strings.ToLower(filtered[i].Email) < strings.ToLower(filtered[j].Email)
+	})
+
+	if offset > 0 {
+		if offset >= len(filtered) {
+			return []Contact{}, nil
+		}
+		filtered = filtered[offset:]
+	}
+	if limit > 0 && limit < len(filtered) {
+		filtered = filtered[:limit]
+	}
+	return filtered, nil
 }
 
 // GetAddressContact 以 id 取得單一聯絡人
-func (s *SQLiteStore) GetAddressContact(ownerEmail, id string) (*Contact, error) {
-	row := s.db.QueryRow(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? AND id = ?`, ownerEmail, id)
-	c, err := scanContact(row)
+func (s *SQLiteStore) GetAddressContact(ownerEmail, id string, dek []byte) (*Contact, error) {
+	row := s.db.QueryRow(`SELECT `+contactSelectCols+` FROM contacts WHERE owner_id = ? AND id = ?`, crypto.OwnerID(ownerEmail), id)
+	c, err := scanAddressContact(row, ownerEmail, dek)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -511,11 +629,12 @@ func (s *SQLiteStore) GetAddressContact(ownerEmail, id string) (*Contact, error)
 	return c, nil
 }
 
-// GetAddressContactByEmail 以 email 取得單一聯絡人
-func (s *SQLiteStore) GetAddressContactByEmail(ownerEmail, email string) (*Contact, error) {
+// GetAddressContactByEmail 以 email 取得單一聯絡人（盲索引查詢）
+func (s *SQLiteStore) GetAddressContactByEmail(ownerEmail, email string, dek []byte) (*Contact, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
-	row := s.db.QueryRow(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? AND email = ?`, ownerEmail, email)
-	c, err := scanContact(row)
+	row := s.db.QueryRow(`SELECT `+contactSelectCols+` FROM contacts WHERE owner_id = ? AND email_hash = ?`,
+		crypto.OwnerID(ownerEmail), emailIndex(email))
+	c, err := scanAddressContact(row, ownerEmail, dek)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -526,7 +645,7 @@ func (s *SQLiteStore) GetAddressContactByEmail(ownerEmail, email string) (*Conta
 }
 
 // CreateAddressContact 新增聯絡人
-func (s *SQLiteStore) CreateAddressContact(c *Contact) error {
+func (s *SQLiteStore) CreateAddressContact(c *Contact, dek []byte) error {
 	if c.OwnerEmail == "" || c.Email == "" {
 		return errors.New("owner_email and email are required")
 	}
@@ -542,9 +661,18 @@ func (s *SQLiteStore) CreateAddressContact(c *Contact) error {
 	if c.Source == "" {
 		c.Source = "manual"
 	}
+	wrapped, err := wrapFields(dek, c.Email, c.DisplayName, c.GivenName, c.FamilyName, c.Note, c.Source)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.Exec(`INSERT INTO contacts (id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, c.ID, c.OwnerEmail, c.Email, c.DisplayName, c.GivenName, c.FamilyName, c.AvatarPath, c.Note, c.Source, c.CreatedAt.Unix(), c.UpdatedAt.Unix())
+	_, err = s.db.Exec(
+		`INSERT INTO contacts (id, owner_id, email_hash, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, crypto.OwnerID(c.OwnerEmail), emailIndex(c.Email),
+		wrapped[0], wrapped[1], wrapped[2], wrapped[3], c.AvatarPath, wrapped[4], wrapped[5],
+		c.CreatedAt.Unix(), c.UpdatedAt.Unix())
 	if err != nil {
 		return fmt.Errorf("failed to create contact: %w", err)
 	}
@@ -553,15 +681,23 @@ func (s *SQLiteStore) CreateAddressContact(c *Contact) error {
 }
 
 // UpdateAddressContact 更新聯絡人（以 id + owner 為鍵）
-func (s *SQLiteStore) UpdateAddressContact(c *Contact) error {
+func (s *SQLiteStore) UpdateAddressContact(c *Contact, dek []byte) error {
 	if c.ID == "" || c.OwnerEmail == "" {
 		return errors.New("id and owner_email are required")
 	}
 	c.Email = strings.ToLower(strings.TrimSpace(c.Email))
 	c.UpdatedAt = time.Now().UTC()
+	wrapped, err := wrapFields(dek, c.Email, c.DisplayName, c.GivenName, c.FamilyName, c.Note, c.Source)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	res, err := s.db.Exec(`UPDATE contacts SET email = ?, display_name = ?, given_name = ?, family_name = ?, avatar_path = ?, note = ?, source = ?, updated_at = ? WHERE owner_email = ? AND id = ?`, c.Email, c.DisplayName, c.GivenName, c.FamilyName, c.AvatarPath, c.Note, c.Source, c.UpdatedAt.Unix(), c.OwnerEmail, c.ID)
+	res, err := s.db.Exec(
+		`UPDATE contacts SET email_hash = ?, email = ?, display_name = ?, given_name = ?, family_name = ?, avatar_path = ?, note = ?, source = ?, updated_at = ?
+		 WHERE owner_id = ? AND id = ?`,
+		emailIndex(c.Email), wrapped[0], wrapped[1], wrapped[2], wrapped[3], c.AvatarPath, wrapped[4], wrapped[5], c.UpdatedAt.Unix(),
+		crypto.OwnerID(c.OwnerEmail), c.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update contact: %w", err)
 	}
@@ -577,7 +713,7 @@ func (s *SQLiteStore) UpdateAddressContact(c *Contact) error {
 func (s *SQLiteStore) DeleteAddressContact(ownerEmail, id string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	res, err := s.db.Exec(`DELETE FROM contacts WHERE owner_email = ? AND id = ?`, ownerEmail, id)
+	res, err := s.db.Exec(`DELETE FROM contacts WHERE owner_id = ? AND id = ?`, crypto.OwnerID(ownerEmail), id)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete contact: %w", err)
 	}
@@ -587,19 +723,18 @@ func (s *SQLiteStore) DeleteAddressContact(ownerEmail, id string) (int64, error)
 // CountAddressContacts 計算聯絡人數
 func (s *SQLiteStore) CountAddressContacts(ownerEmail string) (int, error) {
 	var n int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM contacts WHERE owner_email = ?`, ownerEmail).Scan(&n)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM contacts WHERE owner_id = ?`, crypto.OwnerID(ownerEmail)).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count contacts: %w", err)
 	}
 	return n, nil
 }
 
-// ResolveAddressContacts 批量以 email 解析聯絡人（最多 100）
-func (s *SQLiteStore) ResolveAddressContacts(ownerEmail string, emails []string) (map[string]*Contact, error) {
+// ResolveAddressContacts 批量以 email 解析聯絡人（最多 100；盲索引 IN 查詢）
+func (s *SQLiteStore) ResolveAddressContacts(ownerEmail string, emails []string, dek []byte) (map[string]*Contact, error) {
 	if len(emails) == 0 {
 		return map[string]*Contact{}, nil
 	}
-	// 正規化並去重
 	uniq := make(map[string]struct{})
 	normed := make([]string, 0, len(emails))
 	for _, e := range emails {
@@ -618,14 +753,18 @@ func (s *SQLiteStore) ResolveAddressContacts(ownerEmail string, emails []string)
 	if len(normed) == 0 {
 		return map[string]*Contact{}, nil
 	}
-	placeholders := strings.Repeat("?,", len(normed))
-	placeholders = placeholders[:len(placeholders)-1]
-	args := make([]any, 0, len(normed)+1)
-	args = append(args, ownerEmail)
+	hashes := make([]string, 0, len(normed))
 	for _, e := range normed {
-		args = append(args, e)
+		hashes = append(hashes, emailIndex(e))
 	}
-	q := fmt.Sprintf(`SELECT id, owner_email, email, display_name, given_name, family_name, avatar_path, note, source, created_at, updated_at FROM contacts WHERE owner_email = ? AND email IN (%s)`, placeholders)
+	placeholders := strings.Repeat("?,", len(hashes))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, 0, len(hashes)+1)
+	args = append(args, crypto.OwnerID(ownerEmail))
+	for _, h := range hashes {
+		args = append(args, h)
+	}
+	q := fmt.Sprintf(`SELECT %s FROM contacts WHERE owner_id = ? AND email_hash IN (%s)`, contactSelectCols, placeholders)
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve contacts: %w", err)
@@ -633,37 +772,46 @@ func (s *SQLiteStore) ResolveAddressContacts(ownerEmail string, emails []string)
 	defer func() { _ = rows.Close() }()
 	out := make(map[string]*Contact)
 	for rows.Next() {
-		c, err := scanContact(rows)
+		c, err := scanAddressContact(rows, ownerEmail, dek)
 		if err != nil {
 			return nil, err
 		}
-		out[c.Email] = c
+		out[strings.ToLower(strings.TrimSpace(c.Email))] = c
 	}
 	return out, rows.Err()
 }
 
+// ===== Personal keyring =====
+
 // GetKeyring 取得使用者之個人金鑰包（無則回傳 nil）
-func (s *SQLiteStore) GetKeyring(ownerEmail string) (*Keyring, error) {
+func (s *SQLiteStore) GetKeyring(ownerEmail string, dek []byte) (*Keyring, error) {
 	var k Keyring
+	var encPublic, encFP, encKeyID string
 	var updatedAt int64
 	err := s.db.QueryRow(
 		`SELECT public_key_armored, encrypted_private_key, fingerprint, key_id, updated_at
-		 FROM personal_keyrings WHERE owner_email = ?`,
-		ownerEmail,
-	).Scan(&k.PublicKeyArmored, &k.EncryptedPrivateKeyArmored, &k.Fingerprint, &k.KeyID, &updatedAt)
+		 FROM personal_keyrings WHERE owner_id = ?`,
+		crypto.OwnerID(ownerEmail),
+	).Scan(&encPublic, &k.EncryptedPrivateKeyArmored, &encFP, &encKeyID, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get keyring: %w", err)
 	}
+	plain, err := unwrapFields(dek, encPublic, encFP, encKeyID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unwrap keyring: %w", err)
+	}
+	k.PublicKeyArmored, k.Fingerprint, k.KeyID = plain[0], plain[1], plain[2]
 	k.Email = ownerEmail
 	k.UpdatedAt = time.Unix(updatedAt, 0).UTC()
 	return &k, nil
 }
 
-// SaveKeyring 儲存或更新使用者之個人金鑰包（覆蓋既有）
-func (s *SQLiteStore) SaveKeyring(k *Keyring) error {
+// SaveKeyring 儲存或更新使用者之個人金鑰包（覆蓋既有）。
+// dek 為空時公開欄以 pending 形式寫入並標記 owner 待轉換（僅供啟動期 legacy 匯入）。
+func (s *SQLiteStore) SaveKeyring(k *Keyring, dek []byte) error {
 	if k.Email == "" {
 		return errors.New("email is required")
 	}
@@ -673,21 +821,28 @@ func (s *SQLiteStore) SaveKeyring(k *Keyring) error {
 	if k.UpdatedAt.IsZero() {
 		k.UpdatedAt = time.Now().UTC()
 	}
+	wrapped, err := wrapFields(dek, k.PublicKeyArmored, k.Fingerprint, k.KeyID)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.Exec(
-		`INSERT INTO personal_keyrings (owner_email, public_key_armored, encrypted_private_key, fingerprint, key_id, updated_at)
+	_, err = s.db.Exec(
+		`INSERT INTO personal_keyrings (owner_id, public_key_armored, encrypted_private_key, fingerprint, key_id, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(owner_email) DO UPDATE SET
+		 ON CONFLICT(owner_id) DO UPDATE SET
 			public_key_armored = excluded.public_key_armored,
 			encrypted_private_key = excluded.encrypted_private_key,
 			fingerprint = excluded.fingerprint,
 			key_id = excluded.key_id,
 			updated_at = excluded.updated_at`,
-		k.Email, k.PublicKeyArmored, k.EncryptedPrivateKeyArmored, k.Fingerprint, k.KeyID, k.UpdatedAt.Unix(),
+		crypto.OwnerID(k.Email), wrapped[0], k.EncryptedPrivateKeyArmored, wrapped[1], wrapped[2], k.UpdatedAt.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save keyring: %w", err)
+	}
+	if len(dek) == 0 {
+		_, _ = s.db.Exec(`UPDATE users SET pending_encrypt = 1 WHERE owner_id = ?`, crypto.OwnerID(k.Email))
 	}
 	return nil
 }
@@ -696,17 +851,15 @@ func (s *SQLiteStore) SaveKeyring(k *Keyring) error {
 func (s *SQLiteStore) DeleteKeyring(ownerEmail string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.Exec(
-		`DELETE FROM personal_keyrings WHERE owner_email = ?`,
-		ownerEmail,
-	)
+	_, err := s.db.Exec(`DELETE FROM personal_keyrings WHERE owner_id = ?`, crypto.OwnerID(ownerEmail))
 	if err != nil {
 		return fmt.Errorf("failed to delete keyring: %w", err)
 	}
 	return nil
 }
 
-// MigrateLegacyKeyrings 掃描 dataDir/keyrings/*.json，匯入尚未存在於 SQLite 之金鑰包，匯入後刪除檔案
+// MigrateLegacyKeyrings 掃描 dataDir/keyrings/*.json，匯入尚未存在於 SQLite 之金鑰包，匯入後刪除檔案。
+// 啟動期無 DEK：公開欄以 pending 寫入，待 owner 首次登入 lazy 轉換。
 func (s *SQLiteStore) MigrateLegacyKeyrings(dataDir string) (int, error) {
 	keyringDir := filepath.Join(dataDir, "keyrings")
 	entries, err := os.ReadDir(keyringDir)
@@ -734,7 +887,16 @@ func (s *SQLiteStore) MigrateLegacyKeyrings(dataDir string) (int, error) {
 		if payload.Email == "" || payload.EncryptedPrivateKeyArmored == "" || payload.PublicKeyArmored == "" {
 			continue
 		}
-		if err := s.SaveKeyring(&payload); err != nil {
+		// 已在 DB（上次匯入後刪檔失敗殘留）→ 直接清走檔案
+		var exists int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM personal_keyrings WHERE owner_id = ?`, crypto.OwnerID(payload.Email)).Scan(&exists); err != nil {
+			return migrated, err
+		}
+		if exists > 0 {
+			_ = os.Remove(path)
+			continue
+		}
+		if err := s.SaveKeyring(&payload, nil); err != nil {
 			return migrated, fmt.Errorf("failed to migrate %s: %w", entry.Name(), err)
 		}
 		_ = os.Remove(path)
@@ -747,14 +909,16 @@ func (s *SQLiteStore) MigrateLegacyKeyrings(dataDir string) (int, error) {
 	return migrated, nil
 }
 
+// ===== Two-factor auth =====
+
 // GetTwoFA 取得使用者之兩步驟驗證設定（無則回傳 nil）
 func (s *SQLiteStore) GetTwoFA(ownerEmail string) (*TwoFA, error) {
 	var t TwoFA
 	var backupJSON string
 	var enabledAt int64
 	err := s.db.QueryRow(
-		`SELECT secret, backup_code_hashes, enabled_at FROM two_fa WHERE owner_email = ?`,
-		ownerEmail,
+		`SELECT secret, backup_code_hashes, enabled_at FROM two_fa WHERE owner_id = ?`,
+		crypto.OwnerID(ownerEmail),
 	).Scan(&t.Secret, &backupJSON, &enabledAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -788,13 +952,13 @@ func (s *SQLiteStore) SaveTwoFA(t *TwoFA) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err = s.db.Exec(
-		`INSERT INTO two_fa (owner_email, secret, backup_code_hashes, enabled_at)
+		`INSERT INTO two_fa (owner_id, secret, backup_code_hashes, enabled_at)
 		 VALUES (?, ?, ?, ?)
-		 ON CONFLICT(owner_email) DO UPDATE SET
+		 ON CONFLICT(owner_id) DO UPDATE SET
 			secret = excluded.secret,
 			backup_code_hashes = excluded.backup_code_hashes,
 			enabled_at = excluded.enabled_at`,
-		t.OwnerEmail, t.Secret, string(backupJSON), t.EnabledAt.Unix(),
+		crypto.OwnerID(t.OwnerEmail), t.Secret, string(backupJSON), t.EnabledAt.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save two_fa: %w", err)
@@ -806,7 +970,7 @@ func (s *SQLiteStore) SaveTwoFA(t *TwoFA) error {
 func (s *SQLiteStore) DeleteTwoFA(ownerEmail string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.Exec(`DELETE FROM two_fa WHERE owner_email = ?`, ownerEmail)
+	_, err := s.db.Exec(`DELETE FROM two_fa WHERE owner_id = ?`, crypto.OwnerID(ownerEmail))
 	if err != nil {
 		return fmt.Errorf("failed to delete two_fa: %w", err)
 	}
@@ -816,10 +980,10 @@ func (s *SQLiteStore) DeleteTwoFA(ownerEmail string) error {
 // ===== Folder display prefs (e2Mail-only) =====
 
 // ListFolderPrefs 返回帳號各 folder 嘅顯示偏好（visible map）；無記錄嘅 folder 唔喺 map 入面（視作 default）
-func (s *SQLiteStore) ListFolderPrefs(userEmail, accountID string) (map[string]bool, error) {
+func (s *SQLiteStore) ListFolderPrefs(userEmail, accountID string, dek []byte) (map[string]bool, error) {
 	rows, err := s.db.Query(
-		`SELECT folder_name, visible FROM folder_prefs WHERE user_email = ? AND account_id = ?`,
-		userEmail, accountID,
+		`SELECT folder_name, visible FROM folder_prefs WHERE owner_id = ? AND account_id = ?`,
+		crypto.OwnerID(userEmail), accountID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list folder prefs: %w", err)
@@ -827,10 +991,14 @@ func (s *SQLiteStore) ListFolderPrefs(userEmail, accountID string) (map[string]b
 	defer func() { _ = rows.Close() }()
 	out := make(map[string]bool)
 	for rows.Next() {
-		var name string
+		var encName string
 		var visible int
-		if err := rows.Scan(&name, &visible); err != nil {
+		if err := rows.Scan(&encName, &visible); err != nil {
 			return nil, err
+		}
+		name, err := crypto.UnwrapField(dek, encName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unwrap folder pref: %w", err)
 		}
 		out[name] = visible == 1
 	}
@@ -838,14 +1006,18 @@ func (s *SQLiteStore) ListFolderPrefs(userEmail, accountID string) (map[string]b
 }
 
 // SetFolderPref 設定單一 folder 嘅顯示偏好（upsert）
-func (s *SQLiteStore) SetFolderPref(userEmail, accountID, folderName string, visible bool) error {
+func (s *SQLiteStore) SetFolderPref(userEmail, accountID, folderName string, visible bool, dek []byte) error {
+	encName, err := crypto.WrapField(dek, folderName)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.Exec(
-		`INSERT INTO folder_prefs (user_email, account_id, folder_name, visible)
-		 VALUES (?, ?, ?, ?)
-		 ON CONFLICT(user_email, account_id, folder_name) DO UPDATE SET visible = excluded.visible`,
-		userEmail, accountID, folderName, boolInt(visible),
+	_, err = s.db.Exec(
+		`INSERT INTO folder_prefs (owner_id, account_id, name_hash, folder_name, visible)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(owner_id, account_id, name_hash) DO UPDATE SET visible = excluded.visible, folder_name = excluded.folder_name`,
+		crypto.OwnerID(userEmail), accountID, nameIndex(folderName), encName, boolInt(visible),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to set folder pref: %w", err)
@@ -854,11 +1026,10 @@ func (s *SQLiteStore) SetFolderPref(userEmail, accountID, folderName string, vis
 }
 
 // GetFolderOrder 返回帳號頂層 folder 顯示次序（按 sort_index 排序）；無記錄則空
-func (s *SQLiteStore) GetFolderOrder(userEmail, accountID string) ([]string, error) {
+func (s *SQLiteStore) GetFolderOrder(userEmail, accountID string, dek []byte) ([]string, error) {
 	rows, err := s.db.Query(
-		`SELECT folder_name FROM folder_order
-		 WHERE account_id = ? ORDER BY sort_index ASC`,
-		accountID,
+		`SELECT folder_name FROM folder_order WHERE owner_id = ? AND account_id = ? ORDER BY sort_index ASC`,
+		crypto.OwnerID(userEmail), accountID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get folder order: %w", err)
@@ -866,9 +1037,13 @@ func (s *SQLiteStore) GetFolderOrder(userEmail, accountID string) ([]string, err
 	defer func() { _ = rows.Close() }()
 	var out []string
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var encName string
+		if err := rows.Scan(&encName); err != nil {
 			return nil, err
+		}
+		name, err := crypto.UnwrapField(dek, encName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unwrap folder order: %w", err)
 		}
 		out = append(out, name)
 	}
@@ -876,7 +1051,7 @@ func (s *SQLiteStore) GetFolderOrder(userEmail, accountID string) ([]string, err
 }
 
 // SetFolderOrder 重寫帳號頂層 folder 顯示次序（先刪後插）
-func (s *SQLiteStore) SetFolderOrder(userEmail, accountID string, orderedNames []string) error {
+func (s *SQLiteStore) SetFolderOrder(userEmail, accountID string, orderedNames []string, dek []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	tx, err := s.db.Begin()
@@ -884,13 +1059,17 @@ func (s *SQLiteStore) SetFolderOrder(userEmail, accountID string, orderedNames [
 		return fmt.Errorf("failed to begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`DELETE FROM folder_order WHERE account_id = ?`, accountID); err != nil {
+	if _, err := tx.Exec(`DELETE FROM folder_order WHERE owner_id = ? AND account_id = ?`, crypto.OwnerID(userEmail), accountID); err != nil {
 		return err
 	}
 	for i, name := range orderedNames {
+		encName, err := crypto.WrapField(dek, name)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.Exec(
-			`INSERT INTO folder_order (account_id, folder_name, sort_index) VALUES (?, ?, ?)`,
-			accountID, name, i,
+			`INSERT INTO folder_order (owner_id, account_id, name_hash, folder_name, sort_index) VALUES (?, ?, ?, ?, ?)`,
+			crypto.OwnerID(userEmail), accountID, nameIndex(name), encName, i,
 		); err != nil {
 			return err
 		}
@@ -900,22 +1079,36 @@ func (s *SQLiteStore) SetFolderOrder(userEmail, accountID string, orderedNames [
 
 // ===== Accounts =====
 
-func scanAccount(rows interface{ Scan(...any) error }) (*Account, error) {
+const accountSelectCols = `id, label, email,
+	imap_host, imap_port, imap_use_tls, imap_allow_insecure_tls,
+	smtp_host, smtp_port, smtp_use_tls, smtp_allow_insecure_tls,
+	sieve_host, sieve_port, sieve_use_tls, sieve_allow_insecure_tls,
+	username, enc_imap_password, enc_smtp_password,
+	is_default, sort_order, created_at, updated_at`
+
+func scanAccount(rows interface{ Scan(...any) error }, ownerEmail string, dek []byte) (*Account, error) {
 	var a Account
+	var encLabel, encEmail, encIMAPHost, encSMTPHost, encSieveHost, encUsername string
 	var imapUseTLS, imapInsecure, smtpUseTLS, smtpInsecure, sieveUseTLS, sieveInsecure, isDefault int
 	var createdAt, updatedAt int64
-	// 先嘗試含 sieve 欄位嘅完整掃描
 	err := rows.Scan(
-		&a.ID, &a.UserEmail, &a.Label, &a.Email,
-		&a.IMAPHost, &a.IMAPPort, &imapUseTLS, &imapInsecure,
-		&a.SMTPHost, &a.SMTPPort, &smtpUseTLS, &smtpInsecure,
-		&a.SieveHost, &a.SievePort, &sieveUseTLS, &sieveInsecure,
-		&a.Username, &a.EncIMAPPassword, &a.EncSMTPPassword,
+		&a.ID, &encLabel, &encEmail,
+		&encIMAPHost, &a.IMAPPort, &imapUseTLS, &imapInsecure,
+		&encSMTPHost, &a.SMTPPort, &smtpUseTLS, &smtpInsecure,
+		&encSieveHost, &a.SievePort, &sieveUseTLS, &sieveInsecure,
+		&encUsername, &a.EncIMAPPassword, &a.EncSMTPPassword,
 		&isDefault, &a.SortOrder, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	plain, err := unwrapFields(dek, encLabel, encEmail, encIMAPHost, encSMTPHost, encSieveHost, encUsername)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unwrap account %s: %w", a.ID, err)
+	}
+	a.Label, a.Email, a.IMAPHost, a.SMTPHost, a.SieveHost, a.Username =
+		plain[0], plain[1], plain[2], plain[3], plain[4], plain[5]
+	a.UserEmail = ownerEmail
 	a.IMAPUseTLS = imapUseTLS == 1
 	a.IMAPAllowInsecureTLS = imapInsecure == 1
 	a.SMTPUseTLS = smtpUseTLS == 1
@@ -929,16 +1122,10 @@ func scanAccount(rows interface{ Scan(...any) error }) (*Account, error) {
 }
 
 // ListAccounts 列出某使用者所有帳號（依 sort_order）
-func (s *SQLiteStore) ListAccounts(userEmail string) ([]Account, error) {
+func (s *SQLiteStore) ListAccounts(userEmail string, dek []byte) ([]Account, error) {
 	rows, err := s.db.Query(
-		`SELECT id, user_email, label, email,
-		        imap_host, imap_port, imap_use_tls, imap_allow_insecure_tls,
-		        smtp_host, smtp_port, smtp_use_tls, smtp_allow_insecure_tls,
-		        sieve_host, sieve_port, sieve_use_tls, sieve_allow_insecure_tls,
-		        username, enc_imap_password, enc_smtp_password,
-		        is_default, sort_order, created_at, updated_at
-		 FROM accounts WHERE user_email = ? ORDER BY sort_order ASC, created_at ASC`,
-		userEmail,
+		`SELECT `+accountSelectCols+` FROM accounts WHERE owner_id = ? ORDER BY sort_order ASC, created_at ASC`,
+		crypto.OwnerID(userEmail),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list accounts: %w", err)
@@ -947,7 +1134,7 @@ func (s *SQLiteStore) ListAccounts(userEmail string) ([]Account, error) {
 
 	out := make([]Account, 0)
 	for rows.Next() {
-		a, err := scanAccount(rows)
+		a, err := scanAccount(rows, userEmail, dek)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan account: %w", err)
 		}
@@ -960,18 +1147,12 @@ func (s *SQLiteStore) ListAccounts(userEmail string) ([]Account, error) {
 }
 
 // GetAccount 取得單一帳號
-func (s *SQLiteStore) GetAccount(userEmail, accountID string) (*Account, error) {
+func (s *SQLiteStore) GetAccount(userEmail, accountID string, dek []byte) (*Account, error) {
 	row := s.db.QueryRow(
-		`SELECT id, user_email, label, email,
-		        imap_host, imap_port, imap_use_tls, imap_allow_insecure_tls,
-		        smtp_host, smtp_port, smtp_use_tls, smtp_allow_insecure_tls,
-		        sieve_host, sieve_port, sieve_use_tls, sieve_allow_insecure_tls,
-		        username, enc_imap_password, enc_smtp_password,
-		        is_default, sort_order, created_at, updated_at
-		 FROM accounts WHERE user_email = ? AND id = ?`,
-		userEmail, accountID,
+		`SELECT `+accountSelectCols+` FROM accounts WHERE owner_id = ? AND id = ?`,
+		crypto.OwnerID(userEmail), accountID,
 	)
-	a, err := scanAccount(row)
+	a, err := scanAccount(row, userEmail, dek)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -981,8 +1162,8 @@ func (s *SQLiteStore) GetAccount(userEmail, accountID string) (*Account, error) 
 	return a, nil
 }
 
-// CreateAccount 建立新帳號
-func (s *SQLiteStore) CreateAccount(a *Account) error {
+// CreateAccount 建立新帳號（內容欄於此 wrap）
+func (s *SQLiteStore) CreateAccount(a *Account, dek []byte) error {
 	if a.ID == "" {
 		a.ID = uuid.New().String()
 	}
@@ -994,22 +1175,26 @@ func (s *SQLiteStore) CreateAccount(a *Account) error {
 		a.CreatedAt = now
 	}
 	a.UpdatedAt = now
+	wrapped, err := wrapFields(dek, a.Label, a.Email, a.IMAPHost, a.SMTPHost, a.SieveHost, a.Username)
+	if err != nil {
+		return err
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.Exec(
-		`INSERT INTO accounts (id, user_email, label, email,
+	_, err = s.db.Exec(
+		`INSERT INTO accounts (id, owner_id, label, email,
 		        imap_host, imap_port, imap_use_tls, imap_allow_insecure_tls,
 		        smtp_host, smtp_port, smtp_use_tls, smtp_allow_insecure_tls,
 		        sieve_host, sieve_port, sieve_use_tls, sieve_allow_insecure_tls,
 		        username, enc_imap_password, enc_smtp_password,
 		        is_default, sort_order, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.ID, a.UserEmail, a.Label, a.Email,
-		a.IMAPHost, a.IMAPPort, boolInt(a.IMAPUseTLS), boolInt(a.IMAPAllowInsecureTLS),
-		a.SMTPHost, a.SMTPPort, boolInt(a.SMTPUseTLS), boolInt(a.SMTPAllowInsecureTLS),
-		a.SieveHost, a.SievePort, boolInt(a.SieveUseTLS), boolInt(a.SieveAllowInsecureTLS),
-		a.Username, a.EncIMAPPassword, a.EncSMTPPassword,
+		a.ID, crypto.OwnerID(a.UserEmail), wrapped[0], wrapped[1],
+		wrapped[2], a.IMAPPort, boolInt(a.IMAPUseTLS), boolInt(a.IMAPAllowInsecureTLS),
+		wrapped[3], a.SMTPPort, boolInt(a.SMTPUseTLS), boolInt(a.SMTPAllowInsecureTLS),
+		wrapped[4], a.SievePort, boolInt(a.SieveUseTLS), boolInt(a.SieveAllowInsecureTLS),
+		wrapped[5], a.EncIMAPPassword, a.EncSMTPPassword,
 		boolInt(a.IsDefault), a.SortOrder, a.CreatedAt.Unix(), a.UpdatedAt.Unix(),
 	)
 	if err != nil {
@@ -1018,15 +1203,19 @@ func (s *SQLiteStore) CreateAccount(a *Account) error {
 	return nil
 }
 
-// UpdateAccount 更新帳號（不含密碼欄位時保留原值，由 caller 決定）
-func (s *SQLiteStore) UpdateAccount(a *Account) error {
+// UpdateAccount 更新帳號（內容欄於此 wrap；不含密碼欄位時保留原值，由 caller 決定）
+func (s *SQLiteStore) UpdateAccount(a *Account, dek []byte) error {
 	if a.ID == "" {
 		return errors.New("account id is required")
 	}
 	a.UpdatedAt = time.Now().UTC()
+	wrapped, err := wrapFields(dek, a.Label, a.Email, a.IMAPHost, a.SMTPHost, a.SieveHost, a.Username)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.Exec(
+	_, err = s.db.Exec(
 		`UPDATE accounts SET
 		        label = ?, email = ?,
 		        imap_host = ?, imap_port = ?, imap_use_tls = ?, imap_allow_insecure_tls = ?,
@@ -1034,14 +1223,14 @@ func (s *SQLiteStore) UpdateAccount(a *Account) error {
 		        sieve_host = ?, sieve_port = ?, sieve_use_tls = ?, sieve_allow_insecure_tls = ?,
 		        username = ?, enc_imap_password = ?, enc_smtp_password = ?,
 		        is_default = ?, sort_order = ?, updated_at = ?
-		 WHERE user_email = ? AND id = ?`,
-		a.Label, a.Email,
-		a.IMAPHost, a.IMAPPort, boolInt(a.IMAPUseTLS), boolInt(a.IMAPAllowInsecureTLS),
-		a.SMTPHost, a.SMTPPort, boolInt(a.SMTPUseTLS), boolInt(a.SMTPAllowInsecureTLS),
-		a.SieveHost, a.SievePort, boolInt(a.SieveUseTLS), boolInt(a.SieveAllowInsecureTLS),
-		a.Username, a.EncIMAPPassword, a.EncSMTPPassword,
+		 WHERE owner_id = ? AND id = ?`,
+		wrapped[0], wrapped[1],
+		wrapped[2], a.IMAPPort, boolInt(a.IMAPUseTLS), boolInt(a.IMAPAllowInsecureTLS),
+		wrapped[3], a.SMTPPort, boolInt(a.SMTPUseTLS), boolInt(a.SMTPAllowInsecureTLS),
+		wrapped[4], a.SievePort, boolInt(a.SieveUseTLS), boolInt(a.SieveAllowInsecureTLS),
+		wrapped[5], a.EncIMAPPassword, a.EncSMTPPassword,
 		boolInt(a.IsDefault), a.SortOrder, a.UpdatedAt.Unix(),
-		a.UserEmail, a.ID,
+		crypto.OwnerID(a.UserEmail), a.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update account: %w", err)
@@ -1053,7 +1242,7 @@ func (s *SQLiteStore) UpdateAccount(a *Account) error {
 func (s *SQLiteStore) DeleteAccount(userEmail, accountID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.Exec(`DELETE FROM accounts WHERE user_email = ? AND id = ?`, userEmail, accountID)
+	_, err := s.db.Exec(`DELETE FROM accounts WHERE owner_id = ? AND id = ?`, crypto.OwnerID(userEmail), accountID)
 	if err != nil {
 		return fmt.Errorf("failed to delete account: %w", err)
 	}
@@ -1064,13 +1253,13 @@ func (s *SQLiteStore) DeleteAccount(userEmail, accountID string) error {
 func (s *SQLiteStore) SetDefaultAccount(userEmail, accountID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.Exec(`UPDATE accounts SET is_default = 0 WHERE user_email = ?`, userEmail)
+	_, err := s.db.Exec(`UPDATE accounts SET is_default = 0 WHERE owner_id = ?`, crypto.OwnerID(userEmail))
 	if err != nil {
 		return fmt.Errorf("failed to clear defaults: %w", err)
 	}
 	res, err := s.db.Exec(
-		`UPDATE accounts SET is_default = 1, updated_at = ? WHERE user_email = ? AND id = ?`,
-		time.Now().UTC().Unix(), userEmail, accountID,
+		`UPDATE accounts SET is_default = 1, updated_at = ? WHERE owner_id = ? AND id = ?`,
+		time.Now().UTC().Unix(), crypto.OwnerID(userEmail), accountID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to set default: %w", err)
@@ -1085,7 +1274,7 @@ func (s *SQLiteStore) SetDefaultAccount(userEmail, accountID string) error {
 // CountAccounts 計算某使用者帳號數量
 func (s *SQLiteStore) CountAccounts(userEmail string) (int, error) {
 	var n int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM accounts WHERE user_email = ?`, userEmail).Scan(&n)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM accounts WHERE owner_id = ?`, crypto.OwnerID(userEmail)).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count accounts: %w", err)
 	}
@@ -1099,15 +1288,16 @@ func (s *SQLiteStore) GetUserCredential(userEmail string) (*UserCredential, erro
 	var c UserCredential
 	var createdAt, updatedAt int64
 	err := s.db.QueryRow(
-		`SELECT owner_email, salt, wrapped_dek, created_at, updated_at FROM users WHERE owner_email = ?`,
-		userEmail,
-	).Scan(&c.UserEmail, &c.Salt, &c.WrappedDEK, &createdAt, &updatedAt)
+		`SELECT salt, wrapped_dek, created_at, updated_at FROM users WHERE owner_id = ?`,
+		crypto.OwnerID(userEmail),
+	).Scan(&c.Salt, &c.WrappedDEK, &createdAt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user credential: %w", err)
 	}
+	c.UserEmail = userEmail
 	c.CreatedAt = time.Unix(createdAt, 0).UTC()
 	c.UpdatedAt = time.Unix(updatedAt, 0).UTC()
 	return &c, nil
@@ -1124,9 +1314,9 @@ func (s *SQLiteStore) CreateUserCredential(c *UserCredential) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err := s.db.Exec(
-		`INSERT INTO users (owner_email, salt, wrapped_dek, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		c.UserEmail, c.Salt, c.WrappedDEK, c.CreatedAt.Unix(), c.UpdatedAt.Unix(),
+		`INSERT INTO users (owner_id, salt, wrapped_dek, pending_encrypt, created_at, updated_at)
+		 VALUES (?, ?, ?, 0, ?, ?)`,
+		crypto.OwnerID(c.UserEmail), c.Salt, c.WrappedDEK, c.CreatedAt.Unix(), c.UpdatedAt.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create user credential: %w", err)
@@ -1143,8 +1333,8 @@ func (s *SQLiteStore) UpdateUserCredential(c *UserCredential) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err := s.db.Exec(
-		`UPDATE users SET salt = ?, wrapped_dek = ?, updated_at = ? WHERE owner_email = ?`,
-		c.Salt, c.WrappedDEK, c.UpdatedAt.Unix(), c.UserEmail,
+		`UPDATE users SET salt = ?, wrapped_dek = ?, updated_at = ? WHERE owner_id = ?`,
+		c.Salt, c.WrappedDEK, c.UpdatedAt.Unix(), crypto.OwnerID(c.UserEmail),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update user credential: %w", err)
@@ -1162,32 +1352,36 @@ func boolInt(b bool) int {
 // ===== User Prefs =====
 
 // GetUserPref 取得 per-user key-value（無則回傳 ""）
-func (s *SQLiteStore) GetUserPref(userEmail, key string) (string, error) {
+func (s *SQLiteStore) GetUserPref(userEmail, key string, dek []byte) (string, error) {
 	var val string
-	err := s.db.QueryRow(`SELECT pref_value FROM user_prefs WHERE owner_email = ? AND pref_key = ?`, userEmail, key).Scan(&val)
+	err := s.db.QueryRow(`SELECT pref_value FROM user_prefs WHERE owner_id = ? AND pref_key = ?`, crypto.OwnerID(userEmail), key).Scan(&val)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	if err != nil {
 		return "", fmt.Errorf("failed to get user pref %s: %w", key, err)
 	}
-	return val, nil
+	return crypto.UnwrapField(dek, val)
 }
 
 // SetUserPref upsert per-user key-value
-func (s *SQLiteStore) SetUserPref(userEmail, key, value string) error {
+func (s *SQLiteStore) SetUserPref(userEmail, key, value string, dek []byte) error {
 	if userEmail == "" || key == "" {
 		return errors.New("user_email and key are required")
 	}
+	enc, err := crypto.WrapField(dek, value)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.Exec(
-		`INSERT INTO user_prefs (owner_email, pref_key, pref_value, updated_at)
+	_, err = s.db.Exec(
+		`INSERT INTO user_prefs (owner_id, pref_key, pref_value, updated_at)
 		 VALUES (?, ?, ?, ?)
-		 ON CONFLICT(owner_email, pref_key) DO UPDATE SET
+		 ON CONFLICT(owner_id, pref_key) DO UPDATE SET
 			pref_value = excluded.pref_value,
 			updated_at = excluded.updated_at`,
-		userEmail, key, value, time.Now().UTC().Unix(),
+		crypto.OwnerID(userEmail), key, enc, time.Now().UTC().Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to set user pref %s: %w", key, err)

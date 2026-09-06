@@ -135,7 +135,7 @@ func (h *ContactsHandler) ImportContacts(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	saved, skippedList, err := h.store.BulkUpsertContacts(owner, contacts)
+	saved, skippedList, err := h.store.BulkUpsertContacts(owner, contacts, ctxDEK(r))
 	if err != nil {
 		log.Printf("[IMPORT] %s: bulk save failed: %v", owner, err)
 		response.InternalServerError(w, "failed to bulk save contacts: "+err.Error())

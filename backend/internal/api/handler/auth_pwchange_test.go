@@ -84,7 +84,7 @@ func setupChangePassword(t *testing.T, oldPass string, changer *fakeChanger) (*A
 	if err := h.encryptAccountPasswords(acc, dek); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.storage.CreateAccount(acc); err != nil {
+	if err := h.storage.CreateAccount(acc, dek); err != nil {
 		t.Fatal(err)
 	}
 
@@ -228,7 +228,7 @@ func TestChangePassword_Success(t *testing.T) {
 	}
 
 	// 3. 帳號儲存密碼已更新（DB + 記憶體 session）
-	dbAcc, err := h.storage.GetAccount(owner, authCtx.Session.Accounts[0].ID)
+	dbAcc, err := h.storage.GetAccount(owner, authCtx.Session.Accounts[0].ID, authCtx.DEK)
 	if err != nil || dbAcc == nil {
 		t.Fatalf("GetAccount: %v", err)
 	}
@@ -274,7 +274,7 @@ func addSecondaryAccount(t *testing.T, h *AuthHandler, authCtx *middleware.AuthC
 	if err := h.encryptAccountPasswords(bob, authCtx.DEK); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.storage.CreateAccount(bob); err != nil {
+	if err := h.storage.CreateAccount(bob, authCtx.DEK); err != nil {
 		t.Fatal(err)
 	}
 	authCtx.Session.Accounts = append(authCtx.Session.Accounts, *bob)
@@ -331,14 +331,14 @@ func TestChangePassword_SecondaryAccount(t *testing.T) {
 	}
 
 	// 3. 只有 bob 的儲存密碼被更新，alice 不動
-	dbBob, err := h.storage.GetAccount(owner, bob.ID)
+	dbBob, err := h.storage.GetAccount(owner, bob.ID, authCtx.DEK)
 	if err != nil || dbBob == nil {
 		t.Fatalf("GetAccount bob: %v", err)
 	}
 	if pass, err := crypto.Decrypt(authCtx.DEK, dbBob.EncIMAPPassword); err != nil || string(pass) != newPass {
 		t.Fatalf("bob imap password not updated: %q %v", pass, err)
 	}
-	dbAlice, err := h.storage.GetAccount(owner, aliceID)
+	dbAlice, err := h.storage.GetAccount(owner, aliceID, authCtx.DEK)
 	if err != nil || dbAlice == nil {
 		t.Fatalf("GetAccount alice: %v", err)
 	}
@@ -374,6 +374,16 @@ func TestChangePassword_LoginAccountByID(t *testing.T) {
 	}
 	if len(f.dns) == 0 || !strings.Contains(f.dns[0], "alice@test.com") {
 		t.Fatalf("LDAP DN = %v, want target alice", f.dns)
+	}
+}
+
+// TestConvertPendingFieldsHookNoop 驗證登入 lazy hook 對無 pending 標記嘅 owner 係安全 no-op
+func TestConvertPendingFieldsHookNoop(t *testing.T) {
+	h, authCtx := setupChangePassword(t, "OldPass123", nil)
+	// 不應 panic、不應 error-log 阻塞；直接調用等價於登入成功後嗰步
+	h.convertPendingFields(authCtx.Session.Email, authCtx.DEK)
+	if pending, _ := h.storage.HasPendingEncrypt(authCtx.Session.Email); pending {
+		t.Fatal("fresh install must not be pending")
 	}
 }
 

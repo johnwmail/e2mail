@@ -50,7 +50,7 @@ func (h *PGPHandler) SaveKeyring(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.store.SaveKeyring(&req); err != nil {
+	if err := h.store.SaveKeyring(&req, authCtx.DEK); err != nil {
 		response.InternalServerError(w, "failed to persist keyring: "+err.Error())
 		return
 	}
@@ -70,7 +70,7 @@ func (h *PGPHandler) GetKeyring(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, err := h.store.GetKeyring(sess.Email)
+	payload, err := h.store.GetKeyring(sess.Email, authCtx.DEK)
 	if err != nil {
 		response.InternalServerError(w, "failed to read keyring: "+err.Error())
 		return

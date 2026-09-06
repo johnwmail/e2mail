@@ -94,7 +94,7 @@ func (h *ContactsHandler) ListContacts(w http.ResponseWriter, r *http.Request) {
 		response.Unauthorized(w, "unauthorized session")
 		return
 	}
-	contacts, err := h.store.ListContacts(owner)
+	contacts, err := h.store.ListContacts(owner, ctxDEK(r))
 	if err != nil {
 		response.InternalServerError(w, "failed to list contacts: "+err.Error())
 		return
@@ -123,7 +123,7 @@ func (h *ContactsHandler) UpsertContact(w http.ResponseWriter, r *http.Request) 
 		response.BadRequest(w, err.Error())
 		return
 	}
-	if err := h.store.UpsertContact(contact); err != nil {
+	if err := h.store.UpsertContact(contact, ctxDEK(r)); err != nil {
 		response.InternalServerError(w, "failed to save contact: "+err.Error())
 		return
 	}
@@ -162,7 +162,7 @@ func (h *ContactsHandler) BulkUpsertContacts(w http.ResponseWriter, r *http.Requ
 		}
 		contacts = append(contacts, c)
 	}
-	saved, skipped, err := h.store.BulkUpsertContacts(owner, contacts)
+	saved, skipped, err := h.store.BulkUpsertContacts(owner, contacts, ctxDEK(r))
 	if err != nil {
 		response.InternalServerError(w, "failed to bulk save contacts: "+err.Error())
 		return
