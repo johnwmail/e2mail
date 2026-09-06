@@ -52,6 +52,7 @@ func migrateV1toV2(db *sql.DB) error {
 }
 
 // migrateV1toV2WithHook：beforeCommit 僅供測試注入「事務內寫入失敗」情境（rollback 驗證）。
+//nolint:gocyclo // 遷移需逐表處理多分支與碰撞合併，拆分會降低可讀性
 func migrateV1toV2WithHook(db *sql.DB, beforeCommit func() error) error {
 	start := time.Now()
 
