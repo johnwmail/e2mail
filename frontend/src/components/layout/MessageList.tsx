@@ -826,7 +826,7 @@ export const MessageList: React.FC = () => {
   // 右側 viewer 唔會空白；mobile（<lg）唔自動選，避免一入資料夾清單就被 viewer 覆蓋。
   const autoSelectedCtxRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!accountId || isLoading || !data) return;
+    if (!accountId || isLoading || isFetching || !data) return;
     if (typeof window !== 'undefined' && !window.matchMedia('(min-width: 1024px)').matches) return;
     const ctx = `${accountId}|${isUnreadView ? 'unread' : currentFolder}|${listMode}|${page}|${searchQuery}`;
     if (autoSelectedCtxRef.current === ctx) return;
@@ -848,7 +848,7 @@ export const MessageList: React.FC = () => {
       setSelectedUID(first.uid);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountId, data, isLoading, isUnreadView, currentFolder, listMode, page, searchQuery, threadMode, displayMessages, displayThreads, selectedUID]);
+  }, [accountId, data, isLoading, isFetching, isUnreadView, currentFolder, listMode, page, searchQuery, threadMode, displayMessages, displayThreads, selectedUID]);
 
   // 預覽期間顯示「即時縮窄後」嘅數量；權威結果返到先顯示伺服器總數
   const resultCount = applyLocalPreview

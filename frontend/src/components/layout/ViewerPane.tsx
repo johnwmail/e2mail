@@ -39,7 +39,25 @@ export const ViewerPane: React.FC = () => {
     queryFn: () => (selectedUID ? mailApi.getMessageDetail(selectedUID, detailFolder, accountId) : null),
     enabled: !!selectedUID,
     staleTime: 60000,
+    retry: (failureCount, err) => {
+      const msg = String((err as Error)?.message || '').toLowerCase();
+      if (msg.includes('not found') || msg.includes('404')) return false;
+      return failureCount < 2;
+    },
   });
+
+  // 404（已刪除/已搬走/切換帳號後舊 UID）→ 自動清選擇並刷新列表，唔使手動重試
+  useEffect(() => {
+    if (!isError || selectedUID == null) return;
+    const msg = String((error as Error)?.message || String(error) || '').toLowerCase();
+    if (!msg.includes('not found') && !msg.includes('404')) return;
+    setSelectedUID(null);
+    if (accountId) {
+      queryClient.invalidateQueries({ queryKey: ['messages', accountId] });
+      queryClient.invalidateQueries({ queryKey: ['unread-aggregate', accountId] });
+      queryClient.invalidateQueries({ queryKey: ['folders', accountId] });
+    }
+  }, [isError, error, selectedUID, accountId, queryClient, setSelectedUID]);
 
   // 後端讀取郵件時會自動標記為已讀：直接更新 list cache 中該 mail 嘅 unread flag
   useEffect(() => {
