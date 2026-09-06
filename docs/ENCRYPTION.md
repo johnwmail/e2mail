@@ -1,6 +1,6 @@
 # ENCRYPTION.md — DB 全面加密設計（owner_id 盲索引 + DEK 內容加密）
 
-> 狀態：**已實施**（M1–M3 code 落地，本輪待 e2e + tag v0.6.0）。
+> 狀態：**已實施並完成遷移**（`p:` 殘量已清零；M5 cleanup 已移除遷移／sentinel code，最終態僅 `owner_id` + `e1:`）。
 > 目標：SQLite DB 檔被拷走後，除「盲索引 + 結構 metadata」外，**全部有意義內容需要用戶登入密碼先解到**。
 > 相關文檔：`docs/LDAP.md`（MasterKey/DEK re-wrap）、`docs/MultiAccounts.md` §2（LUKS 式 envelope）、`docs/AGENTS.md`。
 

@@ -160,11 +160,6 @@ type Store interface {
 	GetUserPref(userEmail, key string, dek []byte) (string, error)
 	SetUserPref(userEmail, key, value string, dek []byte) error
 
-	// 全字段加密（ENCRYPTION.md）：lazy 轉換與審計
-	HasPendingEncrypt(userEmail string) (bool, error)
-	EncryptPendingFields(userEmail string, dek []byte) (int, error)
-	CountPendingFields() (int, error)
-
 	// Lifecycle
 	MigrateLegacyKeyrings(dataDir string) (migrated int, err error)
 	Close() error
@@ -291,7 +286,6 @@ type SQLiteStore struct {
 }
 
 // NewSQLiteStore 於 dataDir/e2Mail.db 建立並初始化 SQLite 儲存。
-// 偵測 v1（明文鍵）schema → 單一事務遷移至 v2；遷移失敗 fail closed。
 func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create storage dir: %w", err)
@@ -306,18 +300,6 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping sqlite: %w", err)
-	}
-
-	legacy, err := isLegacySchema(db)
-	if err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("schema detect failed: %w", err)
-	}
-	if legacy {
-		if err := migrateV1toV2(db); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("field-encryption migration failed (fail closed, DB untouched): %w", err)
-		}
 	}
 
 	if _, err := db.Exec(schema); err != nil {
@@ -840,9 +822,6 @@ func (s *SQLiteStore) SaveKeyring(k *Keyring, dek []byte) error {
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save keyring: %w", err)
-	}
-	if len(dek) == 0 {
-		_, _ = s.db.Exec(`UPDATE users SET pending_encrypt = 1 WHERE owner_id = ?`, crypto.OwnerID(k.Email))
 	}
 	return nil
 }

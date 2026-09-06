@@ -69,3 +69,6 @@ data/
 *.asc
 *.gpg
 *.pgp
+.gocache/
+.gopath/
+.gotmp/

@@ -377,16 +377,6 @@ func TestChangePassword_LoginAccountByID(t *testing.T) {
 	}
 }
 
-// TestConvertPendingFieldsHookNoop 驗證登入 lazy hook 對無 pending 標記嘅 owner 係安全 no-op
-func TestConvertPendingFieldsHookNoop(t *testing.T) {
-	h, authCtx := setupChangePassword(t, "OldPass123", nil)
-	// 不應 panic、不應 error-log 阻塞；直接調用等價於登入成功後嗰步
-	h.convertPendingFields(authCtx.Session.Email, authCtx.DEK)
-	if pending, _ := h.storage.HasPendingEncrypt(authCtx.Session.Email); pending {
-		t.Fatal("fresh install must not be pending")
-	}
-}
-
 func TestAttemptLimiter_WindowExpires(t *testing.T) {
 	l := auth.NewAttemptLimiter()
 	for i := 0; i < 5; i++ {

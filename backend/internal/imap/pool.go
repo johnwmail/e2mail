@@ -12,6 +12,7 @@ var (
 	ErrPoolClosed     = errors.New("connection pool is closed")
 	ErrAcquireTimeout = errors.New("timeout acquiring IMAP connection")
 )
+
 // UserPool 單一使用者專屬的 IMAP 連線池
 type UserPool struct {
 	mu          sync.Mutex

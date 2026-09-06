@@ -80,12 +80,12 @@ func (h *EventsHandler) SSE(w http.ResponseWriter, r *http.Request) {
 
 	// 發送連線成功初始事件
 	initData, _ := json.Marshal(map[string]any{
-		"type":       "CONNECTED",
-		"sessionId":  sess.ID,
-		"email":      sess.Email,
-		"accounts":   accountIDs(sess),
-		"listeners":  len(subscriptions),
-		"timestamp":  time.Now(),
+		"type":      "CONNECTED",
+		"sessionId": sess.ID,
+		"email":     sess.Email,
+		"accounts":  accountIDs(sess),
+		"listeners": len(subscriptions),
+		"timestamp": time.Now(),
 	})
 	_, _ = fmt.Fprintf(w, "event: init\ndata: %s\n\n", string(initData))
 	flusher.Flush()

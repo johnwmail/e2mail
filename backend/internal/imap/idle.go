@@ -11,11 +11,11 @@ import (
 
 // MailboxEvent 定義即時推播事件
 type MailboxEvent struct {
-	Type        string    `json:"type"` // "NEW_MESSAGE", "EXPUNGE", "FLAG_UPDATE", "HEARTBEAT"
-	AccountID   string    `json:"accountId"`
-	Mailbox     string    `json:"mailbox"`
-	TotalCount  uint32    `json:"totalCount,omitempty"`
-	Timestamp   time.Time `json:"timestamp"`
+	Type       string    `json:"type"` // "NEW_MESSAGE", "EXPUNGE", "FLAG_UPDATE", "HEARTBEAT"
+	AccountID  string    `json:"accountId"`
+	Mailbox    string    `json:"mailbox"`
+	TotalCount uint32    `json:"totalCount,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 // IdleListener 單一使用者某帳號嘅 IMAP IDLE 監聽協程

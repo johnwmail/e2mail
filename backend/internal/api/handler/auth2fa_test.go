@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pquerna/otp/totp"
 	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
 	"github.com/johnwmail/e2mail/backend/internal/auth"
 	"github.com/johnwmail/e2mail/backend/internal/imap"
 	"github.com/johnwmail/e2mail/backend/internal/session"
 	"github.com/johnwmail/e2mail/backend/internal/storage"
+	"github.com/pquerna/otp/totp"
 )
 
 func newTestAuthHandler(t *testing.T) *AuthHandler {

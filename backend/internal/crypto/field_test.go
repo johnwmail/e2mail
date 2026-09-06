@@ -58,32 +58,6 @@ func TestWrapUnwrapField(t *testing.T) {
 	}
 }
 
-func TestPendingWrap(t *testing.T) {
-	dek := make([]byte, 32)
-	// 無 DEK → 落 p:（可逆明文標記）
-	enc, err := WrapField(nil, "secret-host")
-	if err != nil || !strings.HasPrefix(enc, FieldPendingPrefix) {
-		t.Fatalf("nil dek should produce p: prefix: %q %v", enc, err)
-	}
-	// p: 照樣讀得出明文
-	got, err := UnwrapField(dek, enc)
-	if err != nil || got != "secret-host" {
-		t.Fatalf("pending unwrap: %q %v", got, err)
-	}
-	// UnwrapPending 只認 p:
-	if _, err := UnwrapPending("e1:xx"); err == nil {
-		t.Fatal("UnwrapPending must reject e1:")
-	}
-	p, err := UnwrapPending(enc)
-	if err != nil || p != "secret-host" {
-		t.Fatal("UnwrapPending mismatch")
-	}
-	// p: 值用錯誤 DEK 都讀得到（遷移期可讀保證）
-	if _, err := UnwrapField(make([]byte, 32), PendingWrap("ok")); err != nil {
-		t.Fatal("pending should decode without dek")
-	}
-}
-
 func TestUnwrapFieldRejectsGarbage(t *testing.T) {
 	dek := make([]byte, 32)
 	if _, err := UnwrapField(dek, "not-prefixed-legacy"); err == nil {

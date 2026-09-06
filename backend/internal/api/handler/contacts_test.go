@@ -26,7 +26,14 @@ func newTestContactsHandler(t *testing.T) *ContactsHandler {
 }
 
 func contactCtx(email string) context.Context {
-	return context.WithValue(context.Background(), middleware.SessionContextKey, &session.Session{Email: email})
+	dek := make([]byte, 32)
+	copy(dek, []byte("0123456789abcdef0123456789abcdef"))
+	ctx := context.WithValue(context.Background(), middleware.SessionContextKey, &session.Session{Email: email})
+	ctx = context.WithValue(ctx, middleware.AuthContextKey, &middleware.AuthContext{
+		Session: &session.Session{Email: email},
+		DEK:     dek,
+	})
+	return ctx
 }
 
 func TestDeleteContactURLEncodedEmail(t *testing.T) {

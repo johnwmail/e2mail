@@ -48,11 +48,11 @@ func (l *LDAPConfig) Ready() bool {
 func Load() *ServerConfig {
 	cfg := &ServerConfig{
 		DefaultIMAPPort:              993,
-		DefaultSMTPPort:               587,
-		DefaultSievePort:              4190,
-		DefaultSieveUseTLS:            true,
-		DefaultAllowInsecureTLS:       false,
-		DefaultSieveAllowInsecureTLS:  false,
+		DefaultSMTPPort:              587,
+		DefaultSievePort:             4190,
+		DefaultSieveUseTLS:           true,
+		DefaultAllowInsecureTLS:      false,
+		DefaultSieveAllowInsecureTLS: false,
 		CookieSecure:                 true,
 		Require2FA:                   true,
 		RequirePGP:                   true,

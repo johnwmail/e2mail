@@ -16,22 +16,22 @@ import (
 
 // ContactKeyDTO 對外 API 格式（與前端 PgpContactKey 對齊）
 type ContactKeyDTO struct {
-	Email           string `json:"email"`
-	Name            string `json:"name,omitempty"`
-	PublicKeyArmored string `json:"publicKeyArmored"`
-	Fingerprint    string `json:"fingerprint"`
-	KeyID          string `json:"keyId,omitempty"`
-	CreatedAt      time.Time `json:"createdAt"`
+	Email            string    `json:"email"`
+	Name             string    `json:"name,omitempty"`
+	PublicKeyArmored string    `json:"publicKeyArmored"`
+	Fingerprint      string    `json:"fingerprint"`
+	KeyID            string    `json:"keyId,omitempty"`
+	CreatedAt        time.Time `json:"createdAt"`
 }
 
 func toDTO(c storage.ContactKey) ContactKeyDTO {
 	return ContactKeyDTO{
-		Email:           c.ContactEmail,
-		Name:            c.Name,
+		Email:            c.ContactEmail,
+		Name:             c.Name,
 		PublicKeyArmored: c.ArmoredKey,
-		Fingerprint:    c.Fingerprint,
-		KeyID:          c.KeyID,
-		CreatedAt:      c.CreatedAt,
+		Fingerprint:      c.Fingerprint,
+		KeyID:            c.KeyID,
+		CreatedAt:        c.CreatedAt,
 	}
 }
 
@@ -61,8 +61,8 @@ func fromDTO(ownerEmail string, d ContactKeyDTO) (storage.ContactKey, error) {
 }
 
 var (
-	errInvalidEmail      = validationError("email is required")
-	errInvalidArmoredKey = validationError("publicKeyArmored is required")
+	errInvalidEmail       = validationError("email is required")
+	errInvalidArmoredKey  = validationError("publicKeyArmored is required")
 	errInvalidFingerprint = validationError("fingerprint is required")
 )
 

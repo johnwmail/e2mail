@@ -283,9 +283,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2.5 遷移 lazy：解鎖 DEK 後將 p: 欄轉為 e1:
-	h.convertPendingFields(ownerEmail, dek)
-
 	// 3. 建立首帳號（若呢個 user 仲未有 account）
 	accounts, err := h.accountsWithPassword(ownerEmail, cred, dek)
 	if err != nil {
@@ -355,26 +352,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Token:   savedSess.ID,
 		Session: savedSess,
 	})
-}
-
-// convertPendingFields 全字段加密 lazy 轉換（ENCRYPTION.md §5.2）：
-// owner 首次（成功）登入解鎖 DEK 後，將遷移遺留嘅 p: 欄位即時轉為 e1: DEK 密文。
-// 失敗只 log（唔阻登入），下次登入自然重試；完全冪等。
-func (h *AuthHandler) convertPendingFields(ownerEmail string, dek []byte) {
-	pending, err := h.storage.HasPendingEncrypt(ownerEmail)
-	if err != nil || !pending {
-		if err != nil {
-			log.Printf("[MIGRATE] HasPendingEncrypt(%s) failed: %v", ownerEmail, err)
-		}
-		return
-	}
-	n, err := h.storage.EncryptPendingFields(ownerEmail, dek)
-	if err != nil {
-		log.Printf("[MIGRATE] lazy field encryption FAILED for %s (will retry next login): %v", ownerEmail, err)
-		return
-	}
-	// 轉換後 session 內 ciphertext 欄位可能已過期：用如需即時反映由 caller 重載
-	log.Printf("[MIGRATE] lazy field encryption done for %s: %d fields → DEK", ownerEmail, n)
 }
 
 // resolveCredential 取得使用者憑證包同 DEK。首次（無 credential）則生成。
@@ -548,7 +525,6 @@ func (h *AuthHandler) completeLogin(w http.ResponseWriter, r *http.Request, pl *
 		response.Unauthorized(w, err.Error())
 		return
 	}
-	h.convertPendingFields(ownerEmail, dek)
 	h.maybeMigrateTwoFA(ownerEmail, dek)
 
 	accounts, err := h.accountsWithPassword(ownerEmail, cred, dek)

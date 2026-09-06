@@ -3,8 +3,6 @@ package storage
 import (
 	"strings"
 	"testing"
-
-	"github.com/johnwmail/e2mail/backend/internal/crypto"
 )
 
 func testDEK() []byte {
@@ -558,62 +556,30 @@ func TestAddressBookSearch(t *testing.T) {
 	}
 }
 
-func TestLazyPendingConversion(t *testing.T) {
+func TestEncryptionAtRest(t *testing.T) {
 	s := newTestStore(t)
 	dek := testDEK()
-
-	// 模擬遷移態：owner 有 pending 行 + 未轉換內容
-	if err := s.CreateUserCredential(&UserCredential{UserEmail: "u@x.com", Salt: []byte("saltsaltsaltsalt"), WrappedDEK: "wd"}); err != nil {
+	a := &Account{
+		UserEmail: "u@x.com", Label: "公司信箱", Email: "u@x.com",
+		IMAPHost: "mail.x.com", IMAPPort: 993, SMTPHost: "smtp.x.com", SMTPPort: 587,
+		Username: "u@x.com", EncIMAPPassword: "EP", EncSMTPPassword: "EP",
+	}
+	if err := s.CreateAccount(a, dek); err != nil {
+		t.Fatalf("CreateAccount: %v", err)
+	}
+	// DB 無明文，全部 e1:
+	var label string
+	if err := s.db.QueryRow(`SELECT label FROM accounts WHERE id=?`, a.ID).Scan(&label); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`UPDATE users SET pending_encrypt = 1 WHERE owner_id = ?`, crypto.OwnerID("u@x.com")); err != nil {
-		t.Fatal(err)
+	if label == "公司信箱" || !strings.HasPrefix(label, "e1:") {
+		t.Fatalf("label not encrypted: %q", label)
 	}
-	if _, err := s.db.Exec(`INSERT INTO accounts (id, owner_id, label, email, imap_host, imap_port, smtp_host, smtp_port, username, enc_imap_password, enc_smtp_password, created_at, updated_at)
-		VALUES ('a1', ?, '公司信箱', 'u@x.com', 'mail.x.com', 993, 'smtp.x.com', 587, 'u@x.com', 'EP', 'EP', 1, 1)`,
-		crypto.OwnerID("u@x.com")); err != nil {
-		t.Fatal(err)
+	if _, err := s.GetAccount("u@x.com", a.ID, make([]byte, 32)); err == nil {
+		t.Fatal("wrong dek must fail")
 	}
-	// 標記為 pending（用 WrapField(nil) 產生合法 p: 值）
-	pend := func(s string) string { v, _ := crypto.WrapField(nil, s); return v }
-	if _, err := s.db.Exec(`UPDATE accounts SET label = ?, email = ?, imap_host = ?, smtp_host = ?, username = ? WHERE id = 'a1'`,
-		pend("公司信箱"), pend("u@x.com"), pend("mail.x.com"), pend("smtp.x.com"), pend("u@x.com")); err != nil {
-		t.Fatal(err)
-	}
-
-	pending, err := s.HasPendingEncrypt("u@x.com")
-	if err != nil || !pending {
-		t.Fatalf("HasPendingEncrypt = %v %v", pending, err)
-	}
-	// pending 都讀到（明文透視）
-	acc, err := s.GetAccount("u@x.com", "a1", dek)
-	if err != nil || acc == nil || acc.Label != "公司信箱" {
-		t.Fatalf("pending account readable: %+v %v", acc, err)
-	}
-
-	// 遷移後尚未轉換欄目計入審計
-	cnt, err := s.CountPendingFields()
-	if err != nil || cnt == 0 {
-		t.Fatalf("CountPendingFields = %d %v", cnt, err)
-	}
-
-	n, err := s.EncryptPendingFields("u@x.com", dek)
-	if err != nil || n != 5 {
-		t.Fatalf("EncryptPendingFields = %d %v, want 5", n, err)
-	}
-	// 轉換後 e1: 讀寫正常
-	acc2, err := s.GetAccount("u@x.com", "a1", dek)
-	if err != nil || acc2 == nil || acc2.Email != "u@x.com" || acc2.IMAPHost != "mail.x.com" {
-		t.Fatalf("post-lazy read: %+v %v", acc2, err)
-	}
-	if pending, _ := s.HasPendingEncrypt("u@x.com"); pending {
-		t.Fatal("pending flag not cleared")
-	}
-	if cnt, _ := s.CountPendingFields(); cnt != 0 {
-		t.Fatalf("residual pending after conversion: %d", cnt)
-	}
-	// 冪等：再跑一次 0 轉換
-	if n2, err := s.EncryptPendingFields("u@x.com", dek); err != nil || n2 != 0 {
-		t.Fatalf("idempotent = %d %v", n2, err)
+	loaded, err := s.GetAccount("u@x.com", a.ID, dek)
+	if err != nil || loaded.Label != "公司信箱" || loaded.Email != "u@x.com" {
+		t.Fatalf("decrypt mismatch: %+v %v", loaded, err)
 	}
 }

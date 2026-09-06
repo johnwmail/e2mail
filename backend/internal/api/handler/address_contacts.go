@@ -577,6 +577,7 @@ func escapeVCard(s string) string {
 }
 
 // Import POST /api/contacts/import multipart file + ?mode=skip|overwrite
+//
 //nolint:gocyclo // 匯入邏輯分支多，拆分會降低可讀性
 func (h *AddressContactsHandler) Import(w http.ResponseWriter, r *http.Request) {
 	owner, ok := h.ownerFromCtx(r)

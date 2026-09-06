@@ -23,13 +23,13 @@ var (
 // Session 儲存使用者於記憶體中的會話。密碼一律加密存 DB（見 storage.Account），
 // Session 只保留解鎖後嘅 DEK，用嚟解密每個帳號嘅 IMAP/SMTP 密碼。
 type Session struct {
-	ID            string             `json:"id"`
-	Email         string             `json:"email"`    // 登入者（owner user_email）
-	Username      string             `json:"username"` // 首帳號認證使用者名稱
-	Accounts      []storage.Account  `json:"accounts"` // 帳號設定（密碼欄位 json:"-"）
-	EncryptedDEK  string             `json:"-"`        // AES-GCM(serverKey, DEK)，不對外序列化
-	CreatedAt     time.Time          `json:"createdAt"`
-	LastActiveAt  time.Time          `json:"lastActiveAt"`
+	ID           string            `json:"id"`
+	Email        string            `json:"email"`    // 登入者（owner user_email）
+	Username     string            `json:"username"` // 首帳號認證使用者名稱
+	Accounts     []storage.Account `json:"accounts"` // 帳號設定（密碼欄位 json:"-"）
+	EncryptedDEK string            `json:"-"`        // AES-GCM(serverKey, DEK)，不對外序列化
+	CreatedAt    time.Time         `json:"createdAt"`
+	LastActiveAt time.Time         `json:"lastActiveAt"`
 }
 
 // Store 會話管理介面
