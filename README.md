@@ -142,6 +142,7 @@ Uncomment in `docker-compose.yml` (or set via your orchestrator) to activate.
 | `DEFAULT_ALLOW_INSECURE_TLS` | `false` | Pre-fill "allow self-signed" checkbox (off by default) |
 | `REQUIRE_2FA`             | `true`  | Enforce 2FA onboarding for new logins                   |
 | `REQUIRE_PGP`             | `true`  | Enforce PGP key setup onboarding for new logins         |
+| `DB_BACKUP`               | `DISABLE` | Auto-backup SQLite to `$DATA_DIR/backups/` (`DISABLE` / `DAILY` / `WEEKLY` / `MONTHLY`; see [`docs/BACKUP.md`](docs/BACKUP.md)) |
 
 The public endpoint `GET /api/server-config` exposes the defaults so the login
 page can pre-populate the advanced settings panel.
@@ -178,6 +179,12 @@ WAL mode is enabled (`journal_mode=WAL`, `busy_timeout=5000`); the
 `-shm` / `-wal` siblings accompany the main file inside the same
 `data` named volume.
 
+Set `DB_BACKUP` to `DAILY`, `WEEKLY`, or `MONTHLY` to take a consistent
+snapshot (`VACUUM INTO`) into `/data/backups/` on each period (checked
+hourly; skipped if that period’s file already exists). Default `DISABLE`.
+See [`docs/BACKUP.md`](docs/BACKUP.md) for retention, restore, and why this is
+not an off-volume upgrade backup.
+
 ## Documentation
 
 Per-feature design notes and implementation plans live in [`docs/`](docs/):
@@ -190,6 +197,7 @@ Per-feature design notes and implementation plans live in [`docs/`](docs/):
 | [`MultiAccounts.md`](docs/MultiAccounts.md) | Multiple mail accounts in one session | implemented |
 | [`MAIL-RENDER.md`](docs/MAIL-RENDER.md) | HTML mail sanitising, fit-to-width, remote-image blocking | implemented |
 | [`CONTACTS.md`](docs/CONTACTS.md) | Per-user address book with vCard/CSV import | draft |
+| [`BACKUP.md`](docs/BACKUP.md) | `DB_BACKUP` SQLite period snapshots under `$DATA_DIR/backups/` | implemented |
 
 ## Development
 

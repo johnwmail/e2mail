@@ -118,6 +118,17 @@ func main() {
 		log.Printf("📦 Migrated %d legacy keyring file(s) into SQLite", migrated)
 	}
 
+	backupCtx, stopBackup := context.WithCancel(context.Background())
+	backupDone := storage.StartDBBackup(backupCtx, store, dataDir, string(serverConfig.DBBackup))
+	defer func() {
+		stopBackup()
+		select {
+		case <-backupDone:
+		case <-time.After(5 * time.Second):
+			log.Println("⚠️  DB backup scheduler did not stop in time")
+		}
+	}()
+
 	authHandler := handler.NewAuthHandler(sessionStore, store, poolManager, idleManager, serverConfig, sessionTTL)
 	if serverConfig.LDAP.Ready() {
 		authHandler.SetPasswordChanger(ldapint.New(*serverConfig.LDAP))

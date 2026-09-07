@@ -145,7 +145,8 @@ v0.6.0 帶住遷移程式碼上線 → 限期登入（§6 步驟 6）→ 審計�
 ## 6. 部署順序（升級日）
 
 1. `docker compose down`
-2. **備份**（硬性前置）：`docker run --rm -v e2mail_data:/d -v $PWD:/b alpine tar czf /b/data-backup-$(date +%F).tgz /d`
+2. **備份**（硬性前置）：`docker run --rm -v e2mail_data:/d -v $PWD:/b alpine tar czf /b/data-backup-$(date +%F).tgz /d`  
+   注意：`DB_BACKUP` 自動快照寫喺 **同一個** data volume（`/data/backups/`），**唔算** 離機升級備份。詳見 [`BACKUP.md`](BACKUP.md)。
 3. `docker compose up -d`（新 image：啟動自動 v2 migration）
 4. Smoke：舊帳號登入 → mail/contacts/PGP/settings/sieve 全功能 → log 無 `[MIGRATE] ERROR`
 5. 再登入一次確認 `pending_encrypt` 清 0

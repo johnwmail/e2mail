@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -21,8 +22,19 @@ type ServerConfig struct {
 	CookieSecure                 bool
 	Require2FA                   bool
 	RequirePGP                   bool
+	DBBackup                     DBBackupSchedule
 	LDAP                         *LDAPConfig
 }
+
+// DBBackupSchedule SQLite 自動備份週期（DB_BACKUP）。
+type DBBackupSchedule string
+
+const (
+	DBBackupDisable DBBackupSchedule = "DISABLE"
+	DBBackupDaily   DBBackupSchedule = "DAILY"
+	DBBackupWeekly  DBBackupSchedule = "WEEKLY"
+	DBBackupMonthly DBBackupSchedule = "MONTHLY"
+)
 
 // LDAPConfig OpenBSD ldapd 連接設定（僅用於變更密碼；登入仍為 IMAP bind）。
 // 文檔見 docs/LDAP.md。
@@ -56,6 +68,7 @@ func Load() *ServerConfig {
 		CookieSecure:                 true,
 		Require2FA:                   true,
 		RequirePGP:                   true,
+		DBBackup:                     DBBackupDisable,
 	}
 	if v := os.Getenv("DEFAULT_IMAP_HOST"); v != "" {
 		cfg.DefaultIMAPHost = v
@@ -102,9 +115,34 @@ func Load() *ServerConfig {
 	if v := os.Getenv("REQUIRE_PGP"); v != "" {
 		cfg.RequirePGP = parseBool(v)
 	}
+	if v := os.Getenv("DB_BACKUP"); v != "" {
+		if s, ok := ParseDBBackup(v); ok {
+			cfg.DBBackup = s
+		} else {
+			log.Printf("⚠️  Invalid DB_BACKUP=%q (want DISABLE, DAILY, WEEKLY, MONTHLY), using DISABLE", v)
+			cfg.DBBackup = DBBackupDisable
+		}
+	}
 
 	cfg.LDAP = loadLDAP()
 	return cfg
+}
+
+// ParseDBBackup 解析 DB_BACKUP：DISABLE / DAILY / WEEKLY / MONTHLY（大小寫不敏感）。
+// 空字串視為 DISABLE；無法辨識時 ok=false。
+func ParseDBBackup(s string) (DBBackupSchedule, bool) {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "", "DISABLE":
+		return DBBackupDisable, true
+	case "DAILY":
+		return DBBackupDaily, true
+	case "WEEKLY":
+		return DBBackupWeekly, true
+	case "MONTHLY":
+		return DBBackupMonthly, true
+	default:
+		return DBBackupDisable, false
+	}
 }
 
 // loadLDAP 由 LDAP_* 環境變數載入變更密碼設定（未設定即 Enabled=false）
