@@ -41,7 +41,6 @@ dist/
 # React Native / Expo (mobile/)
 .expo/
 web-build/
-expo-env.d.ts
 .metro-health-check*
 *.tsbuildinfo
 *.jks

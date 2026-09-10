@@ -1,0 +1,52 @@
+name: mobile
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main, mobile]
+    paths:
+      - 'mobile/**'
+      - 'shared/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/mobile.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'shared/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/mobile.yml'
+  workflow_dispatch:
+
+jobs:
+  mobile:
+    name: Shared + mobile (lint, test, typecheck)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install workspaces
+        run: npm ci
+      - name: Typecheck shared
+        run: npm run typecheck --workspace @e2mail/shared
+      - name: Test shared
+        run: npm test --workspace @e2mail/shared
+      - name: Typecheck mobile
+        run: npm run typecheck --workspace @e2mail/mobile
+      - name: Lint mobile
+        run: npm run lint --workspace @e2mail/mobile
+      - name: Test mobile
+        run: npm test --workspace @e2mail/mobile
+      - name: Bundle shared TS (JS-only export)
+        working-directory: mobile
+        run: npx expo export --platform web --output-dir /tmp/e2mail-mobile-export --no-bytecode

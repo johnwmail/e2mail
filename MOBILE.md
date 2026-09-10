@@ -4,15 +4,10 @@ Plan, design notes, and the full task board for a native iOS + Android client
 that talks to the existing Go backend. Companion to [`README.md`](README.md) and
 [`docs/`](docs/).
 
-> **Status: Phase 0 (scaffold) complete.** Workspace, `@e2mail/shared` HTTP
-> client + auth API + tests, and an Expo SDK 57 app shell are on the `mobile`
-> branch, pending a PR into `main`. Probe screen subtitle still says
-> “Phase 1”; that is copy, not progress. Business screens start in Phase 4 —
-> see the [task board](#task-board).
->
-> Root `npm test` / `npm run typecheck` cover **shared only**. Mobile has no
-> `typecheck` / `lint` / `test` scripts yet (`P1.5`, `P1.6`). `expo export`
-> as a Hermes-bytecode acceptance check is still unverified on this host.
+> **Status: Phase 1 (foundation) complete.** Expo Router shell, themed providers,
+> session bootstrap, split storage, lint/test/CI, and `eas.json` profiles are on
+> the `mobile` branch. Login/mail screens remain Phase 4. See the
+> [task board](#task-board).
 
 Task-board legend: `[x]` done · `[~]` in progress · `[ ]` todo. IDs (`P4.7`) are
 stable references for commits and PRs — use them in commit messages, e.g.
@@ -79,11 +74,11 @@ e2mail/
 │       ├── types/api.ts      REST DTOs (copied; still duplicated in frontend)
 │       └── index.ts          public entry
 ├── mobile/           Expo app (@e2mail/mobile)
-│   ├── index.ts              Expo entry
-│   ├── App.tsx               Phase 0 probe screen
-│   ├── app.json
+│   ├── app/                  expo-router routes (`_layout`, login, (app))
+│   ├── app.json              scheme e2mail, splash, plugins
+│   ├── eas.json
 │   ├── metro.config.js       watchFolders + nodeModulesPaths
-│   └── src/platform.ts       SecureStore-backed Platform (token store)
+│   └── src/                  platform, stores, theme, i18n
 ├── package.json      npm workspaces root (shared + mobile)
 ├── package-lock.json
 └── MOBILE.md         this file
@@ -165,7 +160,10 @@ registered** on the router (404).
 
 ## Mobile app design
 
-- **Expo (managed)** + TypeScript. Navigation: `expo-router` (`P1.1`).
+- **Expo (managed)** + TypeScript. Navigation: **`expo-router`** (file-based
+  routes in `mobile/app/`). Chosen over a hand-wired React Navigation tree:
+  deep links (`P5.6`), typed routes, and Expo's documented monorepo setup come
+  for free. React Navigation remains the engine underneath.
 - **State**: reuse the same shape as the web (`zustand` + `@tanstack/react-query`
   both support React Native).
 - **Token storage**: `expo-secure-store` (Keychain / Keystore). Never
@@ -186,15 +184,15 @@ registered** on the router (404).
   invalidates on them, but the server barely emits them. After flags/move/
   delete, invalidate queries locally; do not wait for SSE.
 
-### Session lifetime (product decision — do not defer to Phase 5)
+### Session lifetime (P1.15)
 
-Backend sessions are **in-memory UUIDs**, default TTL 24h
-(`SESSION_TTL_HOURS`), sliding via `Touch` on authenticated requests.
-**Process restart logs everyone out.** That is acceptable for a same-origin
-SPA; it is a poor phone UX (and blocks “open from a push after the server
-restarted”). Decide in `P1.15` whether MVP keeps this model or adds a durable
-device session (`/api/auth/token` or equivalent) **before** shipping push.
-Phase 5 push tokens are a different table; they do not replace login sessions.
+**MVP uses the same cookie-less Bearer session as the web:** an in-memory
+UUID, default TTL 24h (`SESSION_TTL_HOURS`), sliding via `Touch`. No
+`/api/auth/token` in this phase. A killed backend still logs the phone out.
+
+Durable device sessions are **required before Phase 5 push** (a backgrounded
+device cannot usefully open a notification after the server restarted). Track
+that as backend work when push starts; do not block Phase 3–4 on it.
 
 ### PGP on React Native
 
@@ -242,16 +240,42 @@ No breaking changes to existing web routes.
 # install all workspaces (shared + mobile)
 npm install
 
-# shared unit tests
-npm test --workspace @e2mail/shared
+# shared + mobile tests
+npm test
 
-# typecheck shared (mobile has no typecheck script until P1.5)
-npm run typecheck --workspace @e2mail/shared
+# typecheck both workspaces
+npm run typecheck
+
+# lint the Expo app
+npm run lint --workspace @e2mail/mobile
 
 # start the Expo dev server
 npm run start --workspace @e2mail/mobile
-# → press i for iOS simulator, a for Android
 ```
+
+### Simulator and physical device (P1.13)
+
+Need Node 24, the repo-root `npm install`, and **Expo Go** matching SDK 57
+(or a later `eas build --profile development` binary).
+
+1. Start the API (`docker compose up` or `go run ./cmd/server` in `backend/`).
+2. From the repo root: `npm run start --workspace @e2mail/mobile`.
+3. **iOS Simulator (macOS):** press `i`, or scan the QR code with the Camera
+   app on a physical iPhone (same LAN, or tunnel). The app scheme is `e2mail`.
+4. **Android emulator / device:** press `a`, or scan the QR code with Expo Go.
+   USB devices need `adb devices` to list them first.
+5. On the login screen, set **Server URL** to a host the **phone** can reach
+   (`http://192.168.x.x:8080`, not `localhost`). `https://` is required if the
+   API is only served with TLS; cleartext HTTP needs an ATS / network-security
+   exception (not enabled).
+6. **Test connection** hits `GET /api/server-config`. A stored Bearer token is
+   read from SecureStore on launch; a successful `GET /auth/me` opens the app
+   shell. Full email/password login is Phase 4.
+
+EAS: `mobile/eas.json` defines `development` / `preview` / `production`.
+Run `eas init` in `mobile/` once (needs `EXPO_TOKEN` / an Expo account) to
+bind `extra.eas.projectId`. Then `eas build --profile development` for a
+dev-client, `preview` for internal Testers, `production` for store binaries.
 
 Web (`frontend/`) and backend keep their existing commands — see `README.md`.
 
@@ -266,9 +290,11 @@ Notes / gotchas:
 
 ## CI / CD
 
-- `P1.11` — add a path-filtered workflow (`mobile/**`, `shared/**`) so native
-  work does not slow the Go/Vitest workflows.
-- `P1.12` — build with **EAS Build** (no self-hosted macOS runner needed).
+- `P1.11` — path-filtered workflow [`.github/workflows/mobile.yml`](.github/workflows/mobile.yml)
+  (`mobile/**`, `shared/**`). Uses `expo export --platform web --no-bytecode`
+  so Linux CI does not need a matching `hermesc`.
+- `P1.12` — `mobile/eas.json` (development / preview / production). Bind the
+  Expo project with `eas init` when credentials exist (`P5.8`).
 - `P5.8` — store `EXPO_TOKEN`, APNs key, Android keystore in GitHub secrets.
 - Existing `container.yml` release tags keep covering backend/web; mobile gets
   its own version channel (`P7.4`).
@@ -282,7 +308,7 @@ Notes / gotchas:
 - [x] P0.3 `createHttpClient` (Bearer token, `StandardResponse` envelope, 401 handling)
 - [x] P0.4 `createAuthApi` (login, verify-2fa, logout, me, change-password)
 - [x] P0.5 REST DTOs (`shared/src/types/api.ts`)
-- [x] P0.6 Vitest coverage for the HTTP client (5 tests; no `createAuthApi` tests yet)
+- [x] P0.6 Vitest coverage for the HTTP client (5 tests; auth/joinUrl added in P1.6)
 - [x] P0.7 Expo SDK 57 app scaffold with a SecureStore `Platform` (`mobile/`)
 - [x] P0.8 Monorepo `metro.config.js` (`watchFolders` + `nodeModulesPaths`)
 - [x] P0.9 Probe screen calling `/api/server-config` through the shared client
@@ -292,29 +318,26 @@ Notes / gotchas:
 **Acceptance:** `npm test` + `npm run typecheck` pass for **shared**. Bundling
 `shared` TS via `expo export` is still an outstanding check (see Hermes note).
 
-### Phase 1 — Foundation & toolchain
+### Phase 1 — Foundation & toolchain (done)
 
-- [ ] P1.1 Decide navigation: `expo-router` (recommended) vs React Navigation; document the choice
-- [ ] P1.2 Add `expo-router` + `expo-linking` + `expo-constants`; set `scheme`/`plugins` in `app.json`
-- [ ] P1.3 Add state libs `zustand` + `@tanstack/react-query`; configure providers
-- [ ] P1.4 Add `expo-localization`; set `Platform.language`. Do **not** wait on
-      shared i18n catalogs (those move in `P2.3`); hard-code or a tiny local map is fine
-- [ ] P1.5 ESLint + Prettier (`eslint-config-expo`); add `lint` + `typecheck` scripts for mobile
-- [ ] P1.6 React Native Testing Library + mobile `test` script; add shared tests for
-      `createAuthApi` / `joinUrl` (P0.6 only covers the HTTP client)
-- [ ] P1.7 App shell: providers, theme tokens, light/dark mode matching the web
-- [ ] P1.8 Error boundary + toast/snackbar primitives
-- [ ] P1.9 Finalise `app.json` (icons, splash, bundle ids, version/channel)
-- [ ] P1.10 Session bootstrap: read token → `/auth/me` → route to login vs app
-- [ ] P1.11 CI workflow `mobile.yml`, path-filtered on `mobile/**`, `shared/**`
-- [ ] P1.12 EAS init + `eas.json` (development / preview / production)
-- [ ] P1.13 Document simulator + physical-device workflow in this file
-- [ ] P1.14 Split storage: SecureStore for `e2Mail_token` only; AsyncStorage (or
-      equivalent) for theme / locale / list mode
-- [ ] P1.15 **Decide session model** for mobile: same 24h in-memory Bearer UUID
-      as the web, or additive durable device sessions. Document the choice here;
-      implement backend work in the same PR if durable sessions are required
-      for MVP. Do not postpone this until push (`P5.1`)
+- [x] P1.1 Navigation: `expo-router` (see [Mobile app design](#mobile-app-design))
+- [x] P1.2 `expo-router` + `expo-linking` + `expo-constants`; `scheme`/`plugins` in `app.json`
+- [x] P1.3 `zustand` + `@tanstack/react-query` providers
+- [x] P1.4 `expo-localization` → `Platform.language`; tiny local `en` / `zh-Hant` map
+- [x] P1.5 ESLint + Prettier + `lint`/`typecheck`. Typecheck is TypeScript **7**
+      (same as `frontend/`). `eslint-config-expo` / typescript-eslint cannot load
+      TS 7 yet (blocked until the 7.1 API); lint uses `@babel/eslint-parser` +
+      React hooks rules instead.
+- [x] P1.6 RNTL + Jest (`jest-expo`); shared tests for `createAuthApi` / `joinUrl`
+- [x] P1.7 App shell: providers, slate/blue tokens, light/dark/system
+- [x] P1.8 Error boundary + toast host
+- [x] P1.9 `app.json` icons, splash, bundle ids (`com.johnwmail.e2mail`)
+- [x] P1.10 Session bootstrap: SecureStore token → `/auth/me` → `/login` or `/(app)`
+- [x] P1.11 CI workflow `mobile.yml`, path-filtered on `mobile/**`, `shared/**`
+- [x] P1.12 `eas.json` (development / preview / production); `eas init` when Expo account exists
+- [x] P1.13 Simulator + physical-device workflow documented above
+- [x] P1.14 Split storage: SecureStore for `e2Mail_token`; AsyncStorage for theme / locale / list mode / API URL
+- [x] P1.15 Session model: same 24h in-memory Bearer UUID as the web for MVP; durable device sessions before Phase 5
 
 **Acceptance:** app boots to a themed shell, routes on stored-token presence,
 lint/test/CI run on the mobile package; session/storage decisions are written
@@ -473,3 +496,4 @@ correct message.
 |------------|-------|---------|
 | 2026-09-10 | P0    | Workspace + `@e2mail/shared` client/auth/types/tests + Expo app shell; pushed on `mobile` |
 | 2026-09-10 | docs  | Correct auth/SSE/CORS/session facts; split Phase 2 PRs; P1.14–P1.15; P4.7/P4.12; IDLE and subscribe risks |
+| 2026-09-10 | P1    | Expo Router shell, theme/session/storage, lint+test+CI, eas.json; same Bearer session as web |
