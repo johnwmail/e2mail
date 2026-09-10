@@ -2,7 +2,7 @@
   "name": "@e2mail/mobile",
   "version": "0.1.0",
   "private": true,
-  "main": "expo-router/entry",
+  "main": "index.ts",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -13,6 +13,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@craftzdog/react-native-buffer": "^6.1.2",
     "@e2mail/shared": "*",
     "@expo/metro-runtime": "^57.0.15",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -20,6 +21,7 @@
     "expo": "~57.0.21",
     "expo-constants": "~57.0.17",
     "expo-linking": "~57.0.9",
+    "expo-local-authentication": "~57.0.2",
     "expo-localization": "~57.0.1",
     "expo-router": "~57.0.20",
     "expo-secure-store": "~57.0.3",
@@ -30,6 +32,9 @@
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-gesture-handler": "~2.32.0",
+    "react-native-nitro-modules": "^0.37.1",
+    "react-native-quick-base64": "^3.0.1",
+    "react-native-quick-crypto": "^1.1.7",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
@@ -38,8 +43,8 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@testing-library/react-native": "12.9.0",
     "@babel/eslint-parser": "^7.28.4",
+    "@testing-library/react-native": "12.9.0",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.2.2",
     "eslint": "^9.39.1",

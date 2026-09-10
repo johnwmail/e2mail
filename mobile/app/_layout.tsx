@@ -4,9 +4,12 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import { configureI18n, setLocale } from '@e2mail/shared';
 import { AppQueryProvider } from '../src/providers/AppQueryProvider';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
+import { PassphrasePrompt } from '../src/components/PassphrasePrompt';
 import { ToastHost } from '../src/components/ToastHost';
+import { deviceLanguage } from '../src/platform';
 import { useAuthStore } from '../src/stores/useAuthStore';
 import { usePrefsStore } from '../src/stores/usePrefsStore';
 import { useResolvedScheme } from '../src/theme/useTheme';
@@ -27,6 +30,14 @@ export default function RootLayout() {
   }, [hydrate]);
 
   useEffect(() => {
+    configureI18n({ language: deviceLanguage() });
+  }, []);
+
+  useEffect(() => {
+    setLocale(locale);
+  }, [locale]);
+
+  useEffect(() => {
     if (hydrated) void initAuth(apiBaseUrl);
   }, [hydrated, apiBaseUrl, initAuth]);
 
@@ -43,6 +54,7 @@ export default function RootLayout() {
           <ErrorBoundary locale={locale} scheme={scheme}>
             <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
             <Stack screenOptions={{ headerShown: false }} />
+            <PassphrasePrompt />
             <ToastHost scheme={scheme} />
           </ErrorBoundary>
         </AppQueryProvider>

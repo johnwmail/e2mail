@@ -4,10 +4,12 @@ Plan, design notes, and the full task board for a native iOS + Android client
 that talks to the existing Go backend. Companion to [`README.md`](README.md) and
 [`docs/`](docs/).
 
-> **Status: Phase 2 mostly complete.** `@e2mail/shared` now holds types, i18n,
-> sieve, business APIs, PGP, and local-search helpers. The web client imports
-> them via Vite aliases; `frontend/` is still **not** an npm workspace (`P2.1`).
-> Login/mail screens remain Phase 4. See the [task board](#task-board).
+> **Status: Phase 3 code complete — device smoke pending.** Crypto backend chosen
+> and polyfilled (`react-native-quick-crypto`), keyring/contact-key flows wired,
+> biometric passphrase prompt shipped, benchmark harness added. `P3.3`/`P3.7`
+> still need a run on a physical device / dev build. `frontend/` is still **not**
+> an npm workspace (`P2.1`); login/mail screens remain Phase 4.
+> See the [task board](#task-board).
 
 Task-board legend: `[x]` done · `[~]` in progress · `[ ]` todo. IDs (`P4.7`) are
 stable references for commits and PRs — use them in commit messages, e.g.
@@ -72,15 +74,16 @@ e2mail/
 │       ├── types/            REST + sieve DTOs
 │       ├── i18n/             catalogs + t() (no React)
 │       ├── sieve/            rulesToSieve / sieveToRules
-│       ├── pgp/              OpenPGP.js service (subpath export)
+│       ├── pgp/              OpenPGP.js service + benchmark (subpath export)
 │       ├── mail/             local-search helpers
 │       └── index.ts          public entry (pgp is `@e2mail/shared/pgp`)
 ├── mobile/           Expo app (@e2mail/mobile)
+│   ├── index.ts              entry: crypto polyfill → expo-router/entry
 │   ├── app/                  expo-router routes (`_layout`, login, (app))
 │   ├── app.json              scheme e2mail, splash, plugins
 │   ├── eas.json
 │   ├── metro.config.js       watchFolders + nodeModulesPaths
-│   └── src/                  platform, stores, theme, i18n
+│   └── src/                  platform, crypto, stores, theme, i18n
 ├── package.json      npm workspaces root (shared + mobile)
 ├── package-lock.json
 └── MOBILE.md         this file
@@ -196,16 +199,46 @@ that as backend work when push starts; do not block Phase 3–4 on it.
 
 ### PGP on React Native
 
-`openpgp` (OpenPGP.js v6) targets WebCrypto. On RN it needs a crypto backend
-and random source, e.g.:
+`openpgp` (OpenPGP.js v6) reads `globalThis.crypto` at import time and throws
+when the WebCrypto API is missing. Decision (**P3.1**): use
+**`react-native-quick-crypto`** (OpenSSL via Nitro/JSI) for `crypto.subtle` +
+`crypto.getRandomValues`; it is the maintained, fastest option and does not
+require writing a pure-JS WebCrypto shim. `@noble/*` was the alternative, but
+OpenPGP.js already bundles noble primitives for its fallback paths, so the only
+gap quick-crypto fills is `subtle`/random.
 
-- `react-native-quick-crypto` (fast, JSI) **or** `@noble/*` primitives, and
-- `react-native-get-random-values` for `crypto.getRandomValues`.
+Implementation:
+
+- `mobile/index.ts` is a custom entry that imports
+  `mobile/src/crypto/polyfills` **before** `expo-router/entry`, so
+  `install()` runs before any module pulls in OpenPGP.js.
+- `mobile/src/crypto/polyfills.ts` calls `install()` (sets `global.crypto` and
+  `global.Buffer`) and adds a `TextEncoder` built on the native `Buffer`. Expo's
+  winter runtime provides `TextDecoder` but **not** `TextEncoder`; OpenPGP needs
+  both.
+- `mobile/src/crypto/polyfills.web.ts` overrides it on web, where WebCrypto and
+  `TextEncoder` already exist, keeping quick-crypto out of the web bundle that
+  `mobile.yml` exports.
+- `react-native-get-random-values` is **not** needed: quick-crypto's native
+  `getRandomValues` is what gets installed.
+- `mobile/src/crypto/pgp.ts` wires `createPgpService()` (keyring + contact-key
+  endpoints) to a client bound to the device `Platform`.
+
+**Build implication:** quick-crypto is a native module, so PGP features require
+a **development build / prebuild** (`eas build --profile development`), not
+Expo Go. Login/session still work in Expo Go; only the crypto paths need the dev
+client. `expo export --platform web` keeps working.
 
 Keep the private-key passphrase in memory only, optionally cached in
-`expo-secure-store` behind a biometric gate. The backend must keep seeing only
-passphrase-encrypted blobs — it wraps those blobs with the session DEK; it
-does not run OpenPGP on mail.
+`expo-secure-store` behind a biometric gate (`P3.6`,
+`mobile/src/crypto/passphrase.ts` + `PassphrasePrompt`). The backend must keep
+seeing only passphrase-encrypted blobs — it wraps those blobs with the session
+DEK; it does not run OpenPGP on mail.
+
+**Baseline timing (P3.7, Node 24, warm):** keygen ≈ 17 ms, encrypt ≈ 6 ms,
+decrypt ≈ 3.5 ms, sign ≈ 1 ms, verify ≈ 0.3 ms for a 1 KB body. Device runs
+(`shared/src/pgp/benchmark.ts`) should stay well under ~250 ms/op; above that,
+show a blocking spinner and consider the noble fallback.
 
 **P4.11 (send encrypt/sign) depends on Phase 3 acceptance.** Do not stub
 client-side crypto.
@@ -271,6 +304,10 @@ Need Node 24, the repo-root `npm install`, and **Expo Go** matching SDK 57
 6. **Test connection** hits `GET /api/server-config`. A stored Bearer token is
    read from SecureStore on launch; a successful `GET /auth/me` opens the app
    shell. Full email/password login is Phase 4.
+7. **PGP needs a development build, not Expo Go.** `react-native-quick-crypto`
+   is a native module; run `eas build --profile development` (or `expo prebuild`
+   + a local build) before testing Phase 3+ crypto. Login/session still work in
+   Expo Go.
 
 EAS: `mobile/eas.json` defines `development` / `preview` / `production`.
 Run `eas init` in `mobile/` once (needs `EXPO_TOKEN` / an Expo account) to
@@ -376,16 +413,25 @@ independent of `P2.1`.
 
 Blocks `P4.11`. Prefer finishing this before compose/send of encrypted mail.
 
-- [ ] P3.1 Choose crypto backend (`react-native-quick-crypto` vs `@noble/*`); document
-- [ ] P3.2 Polyfills: `react-native-get-random-values`, `global.crypto`, `TextEncoder`/`TextDecoder`
-- [ ] P3.3 Smoke-test OpenPGP.js: keygen, encrypt, decrypt, sign, verify on device
-- [ ] P3.4 Keyring sync (`/pgp/keyring` GET/POST/DELETE)
-- [ ] P3.5 Contact keys (`/pgp/contacts`, bulk, import)
-- [ ] P3.6 Passphrase prompt + optional biometric unlock (`expo-local-authentication` + SecureStore)
-- [ ] P3.7 Benchmark decrypt/sign on a mid-range device; record thresholds
+- [x] P3.1 Choose crypto backend (`react-native-quick-crypto`); documented above
+- [x] P3.2 Polyfills: quick-crypto `install()`, `global.crypto`, native
+      `TextEncoder` (`polyfills.ts` / `polyfills.web.ts`, custom `mobile/index.ts`)
+- [~] P3.3 Smoke-test OpenPGP.js: keygen, encrypt, decrypt, sign, verify.
+      Node/vitest round-trip is green (`shared/src/pgp/service.test.ts`);
+      on-device run via a dev build still pending
+- [x] P3.4 Keyring sync (`/pgp/keyring` GET/POST/DELETE) — `mobile/src/crypto/pgp.ts`
+- [x] P3.5 Contact keys (`/pgp/contacts`, bulk, import) — shared service + tests
+- [x] P3.6 Passphrase prompt + optional biometric unlock
+      (`expo-local-authentication` + SecureStore; `passphrase.ts`,
+      `PassphrasePrompt`, mounted in the root layout)
+- [~] P3.7 Benchmark harness + Node baseline recorded; mid-range device run pending
 
 **Acceptance:** round-trip PGP encrypt/decrypt against the web client's keys;
-passphrase never persisted in plaintext.
+passphrase never persisted in plaintext. Node round-trip is proven; the
+on-device acceptance run is the remaining gap.
+
+Extra fix landed with this phase: `parseMultipleKeys` now splits concatenated
+ASCII-armored blocks (OpenPGP.js v6 `readKeys` only decodes the first block).
 
 ### Phase 4 — Core screens (MVP)
 
@@ -469,9 +515,9 @@ correct message.
 
 - **Metro + workspace TS**: symlinked `shared/` must be transpiled; the provided
   `metro.config.js` adds repo-root `watchFolders`. Verified in Phase 0.
-- **OpenPGP.js on Hermes**: confirm the chosen crypto polyfill and measure
-  decrypt speed on a mid-range device (`P3.1`, `P3.7`). Highest technical risk
-  for MVP send/decrypt.
+- **OpenPGP.js on Hermes**: backend chosen (`react-native-quick-crypto`) and
+  polyfilled (`P3.1`, `P3.2`); still measure decrypt/sign on a mid-range device
+  (`P3.3`, `P3.7`). Highest technical risk for MVP send/decrypt.
 - **HTML mail**: no DOMPurify-in-RN. Sanitise before the WebView; never enable
   arbitrary JS; load remote/CID images only through authenticated fetch
   (`P4.7`, [`docs/MAIL-RENDER.md`](docs/MAIL-RENDER.md)).
@@ -500,3 +546,4 @@ correct message.
 | 2026-09-10 | docs  | Correct auth/SSE/CORS/session facts; split Phase 2 PRs; P1.14–P1.15; P4.7/P4.12; IDLE and subscribe risks |
 | 2026-09-10 | P1    | Expo Router shell, theme/session/storage, lint+test+CI, eas.json; same Bearer session as web |
 | 2026-09-10 | P2    | Shared types/i18n/sieve/APIs/PGP/search; web Vite aliases; Expo web peers for `mobile.yml` |
+| 2026-09-10 | P3    | quick-crypto polyfills + custom entry, keyring/contact-key wiring, biometric passphrase prompt, PGP round-trip + benchmark tests, `parseMultipleKeys` multi-block fix |

@@ -13,6 +13,12 @@
       "expo-secure-store",
       "expo-localization",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "e2Mail uses Face ID to unlock your PGP private key."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",

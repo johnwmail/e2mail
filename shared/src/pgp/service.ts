@@ -262,6 +262,19 @@ const buildParsedKeyInfo = async (
   };
 };
 
+/**
+ * Split concatenated ASCII-armored key blocks into individual blocks.
+ * `openpgp.readKeys({ armoredKeys })` only decodes the first armor block in v6,
+ * so multi-key paste/upload must be split before parsing.
+ */
+const ARMORED_KEY_BLOCK =
+  /-----BEGIN PGP (?:PUBLIC|PRIVATE) KEY BLOCK-----[\s\S]+?-----END PGP (?:PUBLIC|PRIVATE) KEY BLOCK-----/g;
+
+export function splitArmoredKeys(armored: string): string[] {
+  const blocks = armored.match(ARMORED_KEY_BLOCK);
+  return blocks && blocks.length > 0 ? blocks : [armored];
+}
+
 export function createPgpService(client: ApiClient) {
   const t = (key: string, vars?: Record<string, string | number>) => client.translate(key, vars);
   const pgpService = {
@@ -310,19 +323,17 @@ export function createPgpService(client: ApiClient) {
     if (!armored) {
       throw new Error(t('pgp.noPgpBlock'));
     }
-    let keys: openpgp.Key[];
-    try {
-      keys = await openpgp.readKeys({ armoredKeys: armored });
-    } catch {
-      throw new Error(t('pgp.noPgpBlock'));
-    }
+    const blocks = splitArmoredKeys(armored);
     const results: ParsedKeyInfo[] = [];
-    for (const key of keys) {
+    for (const block of blocks) {
       try {
-        const armoredKey = key.armor();
-        results.push(await buildParsedKeyInfo(key, armoredKey, false));
+        results.push(await pgpService.parseKeyInfo(block));
       } catch {
+        // Skip malformed blocks; another block may still be valid.
       }
+    }
+    if (results.length === 0) {
+      throw new Error(t('pgp.noPgpBlock'));
     }
     return results;
   },

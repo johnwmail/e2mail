@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { getLocales } from 'expo-localization';
-import type { KeyValueStore, Platform } from '@e2mail/shared';
+import { t as sharedTranslate, type KeyValueStore, type Platform } from '@e2mail/shared';
 
 /**
  * Session token only. SecureStore keys must match [A-Za-z0-9._-];
@@ -24,16 +24,23 @@ export function deviceLanguage(): string {
   }
 }
 
+export interface MobilePlatformOptions {
+  onUnauthorized?: () => void;
+  language?: string;
+  /** Defaults to the shared i18n `t()` (locale set by `configureI18n`/`setLocale`). */
+  translate?: Platform['translate'];
+}
+
 export function createMobilePlatform(
   apiBaseUrl: string,
-  onUnauthorized?: () => void,
-  language?: string
+  options: MobilePlatformOptions = {}
 ): Platform {
   return {
     apiBaseUrl,
     fetch,
     storage: tokenStore,
-    language: language ?? deviceLanguage(),
-    onUnauthorized,
+    language: options.language ?? deviceLanguage(),
+    onUnauthorized: options.onUnauthorized,
+    translate: options.translate ?? ((key, vars) => sharedTranslate(key, vars)),
   };
 }

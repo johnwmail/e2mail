@@ -18,7 +18,7 @@ interface AuthState {
 
 function authApi(apiBaseUrl: string, onUnauthorized?: () => void): AuthApi {
   return createAuthApi(
-    createHttpClient(createMobilePlatform(apiBaseUrl, onUnauthorized))
+    createHttpClient(createMobilePlatform(apiBaseUrl, { onUnauthorized }))
   );
 }
 
