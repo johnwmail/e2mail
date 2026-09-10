@@ -25,6 +25,8 @@ export interface Platform {
   language?: string;
   /** Called after a 401 clears the stored session so the host can route to login. */
   onUnauthorized?: () => void;
+  /** Skip session-clearing on 401 (e.g. the web login page). */
+  isPublicRoute?: () => boolean;
   /** Optional translator; defaults to returning the key unchanged. */
   translate?: (key: string, vars?: Record<string, string | number>) => string;
 }

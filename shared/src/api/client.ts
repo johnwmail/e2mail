@@ -16,9 +16,12 @@ export class ApiError extends Error {
 
 export interface ApiClient {
   request<T>(endpoint: string, options?: RequestInit): Promise<T>;
+  /** Same auth/URL as `request`, but returns the raw Response (no JSON envelope). */
+  raw(endpoint: string, options?: RequestInit): Promise<Response>;
   getToken(): Promise<string | null>;
   setToken(token: string): Promise<void>;
   clearToken(): Promise<void>;
+  translate(key: string, vars?: Record<string, string | number>): string;
 }
 
 /**
@@ -34,10 +37,9 @@ export function createHttpClient(platform: Platform): ApiClient {
   const getToken = (): Promise<string | null> =>
     Promise.resolve(platform.storage.getItem(SESSION_TOKEN_KEY));
 
-  async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  async function authorized(endpoint: string, options: RequestInit = {}): Promise<Response> {
     const token = await getToken();
     const headers = new Headers(options.headers || {});
-
     if (token && !headers.has('Authorization')) {
       headers.set('Authorization', `Bearer ${token}`);
     }
@@ -45,10 +47,13 @@ export function createHttpClient(platform: Platform): ApiClient {
     if (!headers.has('Content-Type') && !isFormData) {
       headers.set('Content-Type', 'application/json');
     }
+    return platform.fetch(joinUrl(apiRoot, endpoint), { ...options, headers });
+  }
 
+  async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     let response: Response;
     try {
-      response = await platform.fetch(joinUrl(apiRoot, endpoint), { ...options, headers });
+      response = await authorized(endpoint, options);
     } catch (netErr) {
       const detail = netErr instanceof Error ? netErr.message : String(netErr);
       throw new ApiError(
@@ -62,7 +67,7 @@ export function createHttpClient(platform: Platform): ApiClient {
         endpoint.startsWith('/2fa/') ||
         endpoint.startsWith('/auth/logout') ||
         endpoint.startsWith('/auth/change-password');
-      if (!business401) {
+      if (!business401 && !platform.isPublicRoute?.()) {
         await platform.storage.removeItem(SESSION_TOKEN_KEY);
         platform.onUnauthorized?.();
       }
@@ -96,6 +101,8 @@ export function createHttpClient(platform: Platform): ApiClient {
 
   return {
     request,
+    raw: authorized,
+    translate,
     getToken,
     async setToken(value: string) {
       await platform.storage.setItem(SESSION_TOKEN_KEY, value);

@@ -21,8 +21,9 @@ import { mailApi } from '../../api/mail';
 import { contactsApi } from '../../api/addressBook';
 import { useMailStore } from '../../stores/useMailStore';
 import { useActiveAccount } from '../../hooks/useActiveAccount';
-import { MessageSummary, FolderInfo, ThreadSummary, EmailAddress } from '../../types/api';
+import { MessageSummary, FolderInfo, ThreadSummary } from '../../types/api';
 import { folderDisplayName, formatShortDate, useI18n } from '../../i18n';
+import { matchesLocalQuery, matchesLocalThread } from '@e2mail/shared';
 
 const ContactMiniAvatar: React.FC<{ contact: any }> = ({ contact }) => {
   const [url, setUrl] = useState<string | null>(null);
@@ -175,107 +176,6 @@ const ThreadRow: React.FC<ThreadRowProps> = ({
 };
 
 // ==== 即時本機搜尋過濾（對已載入嘅 list 打字即時縮窄） ====
-
-interface LocalToken {
-  op: string;
-  val: string;
-}
-
-  // 以空白切分，支援雙引號/單引號同 operator（word:value）
-  // 注意：雙引號內要用 [^"\\]（排除反斜線），令 \\. 唯一負責反斜線，避免 ReDoS 指數回溯
-  function tokenizeLocalQuery(q: string): LocalToken[] {
-    const tokens: LocalToken[] = [];
-    const re = /([a-z-]+:)?("(?:\\.|[^"\\])*"|'[^']*'|\S+)/gi;
-    let m: RegExpExecArray | null;
-    const lower = q;
-    while ((m = re.exec(lower))) {
-      const op = m[1] ? m[1].toLowerCase() : '';
-      const val = (m[2] || '').replace(/^["']|["']$/g, '');
-      if (val) tokens.push({ op, val });
-    }
-    return tokens;
-  }
-
-function containsAddr(list: EmailAddress[] | undefined, needle: string): boolean {
-  const n = needle.toLowerCase();
-  return (list || []).some((e) => e.address.toLowerCase().includes(n) || e.name.toLowerCase().includes(n));
-}
-
-// 支援純文字（AND）、from:/to:/subject:/body:/text:、is:unread/read/starred、has:attachment
-function matchesLocalQuery(msg: MessageSummary, query: string): boolean {
-  const tokens = tokenizeLocalQuery(query);
-  if (!tokens.length) return true;
-  const ops = new Set<string>(['from', 'to', 'subject', 'cc', 'bcc', 'body', 'text', 'is', 'has']);
-
-  // 純文字（無 operator）：subject/from/to/snippet 都要包含（AND）
-  const plains = tokens.filter((t) => !t.op);
-  if (plains.length) {
-    const hay = [
-      msg.subject || '',
-      msg.snippet || '',
-      ...(msg.from || []).flatMap((f) => [f.name, f.address]),
-      ...(msg.to || []).flatMap((t) => [t.name, t.address]),
-    ]
-      .join(' ')
-      .toLowerCase();
-    if (!plains.every((t) => hay.includes(t.val.toLowerCase()))) return false;
-  }
-
-  for (const t of tokens) {
-    const val = t.val.toLowerCase();
-    switch (t.op) {
-      case 'from':
-        if (!containsAddr(msg.from, t.val)) return false;
-        break;
-      case 'to':
-        if (!containsAddr(msg.to, t.val)) return false;
-        break;
-      case 'subject':
-        if (!(msg.subject || '').toLowerCase().includes(val)) return false;
-        break;
-      case 'body':
-      case 'text':
-        // 只有 snippet（預覽層），冇全文；唔達就唔顯示，等伺服器全文補充
-        if (!(msg.snippet || '').toLowerCase().includes(val) && !(msg.subject || '').toLowerCase().includes(val)) return false;
-        break;
-      case 'is':
-        if (val === 'unread' && !msg.unread) return false;
-        if (val === 'read' && msg.unread) return false;
-        if (val === 'starred' && !msg.starred) return false;
-        break;
-      case 'has':
-        if (val === 'attachment' && !msg.hasAttachment) return false;
-        break;
-      default:
-        if (!ops.has(t.op)) {
-          // 未支援嘅 operator（after:/before:/larger: 等）→ 唔做本機過濾，交返伺服器
-          if (!(msg.snippet || '').toLowerCase().includes(val) && !(msg.subject || '').toLowerCase().includes(val)) return false;
-        }
-    }
-  }
-  return true;
-}
-
-function matchesLocalThread(thread: ThreadSummary, query: string): boolean {
-  if (thread.messages.length) return thread.messages.some((m) => matchesLocalQuery(m, query));
-  return matchesLocalQuery(
-    {
-      uid: 0,
-      messageId: '',
-      subject: thread.subject,
-      date: thread.date,
-      from: [],
-      to: [],
-      flags: [],
-      unread: thread.unreadCount > 0,
-      starred: thread.starred,
-      hasAttachment: thread.hasAttachment,
-      size: 0,
-      snippet: thread.messages[0]?.snippet || '',
-    },
-    query
-  );
-}
 
 export const MessageList: React.FC = () => {
   const { t } = useI18n();

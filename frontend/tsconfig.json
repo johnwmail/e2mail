@@ -13,7 +13,13 @@
     "strict": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "*": ["./*"],
+      "@e2mail/shared/pgp": ["../shared/src/pgp/index.ts"],
+      "@e2mail/shared/i18n": ["../shared/src/i18n/index.ts"],
+      "@e2mail/shared": ["../shared/src/index.ts"]
+    }
   },
   "include": ["src"]
 }

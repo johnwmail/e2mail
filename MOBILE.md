@@ -4,10 +4,10 @@ Plan, design notes, and the full task board for a native iOS + Android client
 that talks to the existing Go backend. Companion to [`README.md`](README.md) and
 [`docs/`](docs/).
 
-> **Status: Phase 1 (foundation) complete.** Expo Router shell, themed providers,
-> session bootstrap, split storage, lint/test/CI, and `eas.json` profiles are on
-> the `mobile` branch. Login/mail screens remain Phase 4. See the
-> [task board](#task-board).
+> **Status: Phase 2 mostly complete.** `@e2mail/shared` now holds types, i18n,
+> sieve, business APIs, PGP, and local-search helpers. The web client imports
+> them via Vite aliases; `frontend/` is still **not** an npm workspace (`P2.1`).
+> Login/mail screens remain Phase 4. See the [task board](#task-board).
 
 Task-board legend: `[x]` done · `[~]` in progress · `[ ]` todo. IDs (`P4.7`) are
 stable references for commits and PRs — use them in commit messages, e.g.
@@ -64,15 +64,17 @@ REST paths in this file omit the `/api` prefix unless the distinction matters
 ```text
 e2mail/
 ├── backend/          Go server (unchanged)
-├── frontend/         React web (Vite; not in the workspace yet)
+├── frontend/         React web (Vite; own lockfile until P2.1)
 ├── shared/           @e2mail/shared — platform-agnostic TS
 │   └── src/
 │       ├── platform.ts       Platform interface + memory store + joinUrl
-│       ├── api/client.ts     createHttpClient(platform)
-│       ├── api/auth.ts       auth endpoints on top of the client
-│       ├── api/client.test.ts
-│       ├── types/api.ts      REST DTOs (copied; still duplicated in frontend)
-│       └── index.ts          public entry
+│       ├── api/              HTTP client + auth/2fa/mail/… factories
+│       ├── types/            REST + sieve DTOs
+│       ├── i18n/             catalogs + t() (no React)
+│       ├── sieve/            rulesToSieve / sieveToRules
+│       ├── pgp/              OpenPGP.js service (subpath export)
+│       ├── mail/             local-search helpers
+│       └── index.ts          public entry (pgp is `@e2mail/shared/pgp`)
 ├── mobile/           Expo app (@e2mail/mobile)
 │   ├── app/                  expo-router routes (`_layout`, login, (app))
 │   ├── app.json              scheme e2mail, splash, plugins
@@ -84,10 +86,9 @@ e2mail/
 └── MOBILE.md         this file
 ```
 
-`frontend/` is **not** part of the workspace yet, so the existing web build and
-CI are untouched. Adding it (`P2.1`) is a separate, revertible PR — it does
-**not** block Phase 3–4. Until then, copy or extract modules into `shared/`
-and leave `frontend/` on its own lockfile.
+`frontend/` is **not** part of the workspace yet. Web resolves `@e2mail/shared`
+with Vite/TS path aliases onto `shared/src`. Adding it to workspaces (`P2.1`)
+is a separate, revertible PR and does **not** block Phase 3–4.
 
 ## Why a repo folder, not a branch
 
@@ -119,8 +120,7 @@ interface Platform {
 
 `createHttpClient(platform)` reproduces the browser client's behaviour
 (`Bearer` token, JSON `StandardResponse` envelope, 401 handling) without
-touching globals. The web client can later become a thin wrapper that supplies
-a browser `Platform` (`P2.8`).
+touching globals. The web client supplies `createBrowserPlatform` (`P2.8`).
 
 Phase 0 points **all** `storage` at `expo-secure-store`. Theme / locale /
 list-mode must **not** live in Keychain (`P1.14`): token in SecureStore,
@@ -138,11 +138,11 @@ until that additive CORS change lands, or always use the query on every host.
 
 | From `frontend/src`        | To `shared/src`        | Task  | Notes                                  |
 |----------------------------|------------------------|-------|----------------------------------------|
-| `types/api.ts`, `types/sieve.ts` | `types/`         | P2.2  | `api.ts` already copied; keep in sync  |
-| `i18n/` + locales          | `i18n/`                | P2.3  | Locale via `Platform.language` + storage |
+| `types/api.ts`, `types/sieve.ts` | `types/`         | P2.2  | Web re-exports types from shared       |
+| `i18n/` + locales          | `i18n/`                | P2.3  | Locale via storage + `language`        |
 | `utils/sieveGenerator.ts`  | `sieve/`               | P2.4  | Pure functions                         |
 | `api/*.ts` except glue     | `api/`                 | P2.5  | Injected `ApiClient`; see stay-in-app  |
-| `api/pgp.ts`               | `pgp/`                 | P2.6  | Needs an RN crypto backend (Phase 3)   |
+| `api/pgp.ts`               | `pgp/`                 | P2.6  | Subpath `@e2mail/shared/pgp`; RN crypto in Phase 3 |
 
 Optional extract (not blocking): local snippet search helpers in
 `components/layout/MessageList.tsx` → `shared/src/mail/` (`P2.11`).
@@ -292,7 +292,9 @@ Notes / gotchas:
 
 - `P1.11` — path-filtered workflow [`.github/workflows/mobile.yml`](.github/workflows/mobile.yml)
   (`mobile/**`, `shared/**`). Uses `expo export --platform web --no-bytecode`
-  so Linux CI does not need a matching `hermesc`.
+  so Linux CI does not need a matching `hermesc`. Requires Expo web peers
+  (`react-native-web`, `react-dom`, `@expo/metro-runtime`); CI failed on
+  `c9030d0` until those were added.
 - `P1.12` — `mobile/eas.json` (development / preview / production). Bind the
   Expo project with `eas init` when credentials exist (`P5.8`).
 - `P5.8` — store `EXPO_TOKEN`, APNs key, Android keystore in GitHub secrets.
@@ -316,7 +318,7 @@ Notes / gotchas:
 - [x] P0.11 Commit and push the `mobile` branch
 
 **Acceptance:** `npm test` + `npm run typecheck` pass for **shared**. Bundling
-`shared` TS via `expo export` is still an outstanding check (see Hermes note).
+`shared` TS via `expo export --platform web --no-bytecode` is covered in `mobile.yml`.
 
 ### Phase 1 — Foundation & toolchain (done)
 
@@ -345,30 +347,30 @@ down.
 
 ### Phase 2 — Shared migration (web parity)
 
-Two PRs. **PR A** (`P2.2`–`P2.6`, `P2.11`): grow `shared/` so mobile can import
-modules; `frontend/` may keep copies until PR B. **PR B** (`P2.1`, `P2.7`–`P2.10`):
-add `frontend` to workspaces and delete duplicates. PR B can land **after**
-Phase 4 MVP if Vite/CI risk is too high.
+Two PRs. **PR A** (`P2.2`–`P2.6`, `P2.11`) plus web re-pointing via Vite aliases
+(`P2.7`–`P2.10`) is done. **`P2.1` (add `frontend` to npm workspaces) remains
+open** so the web lockfile and `test.yml` `npm ci` path stay unchanged.
 
-- [ ] P2.1 Add `frontend` to workspaces; reconcile lockfiles and the frontend CI job (PR B)
-- [ ] P2.2 Move `types/api.ts`, `types/sieve.ts` → `shared/src/types`
-- [ ] P2.3 Move `i18n/` + locales → `shared/src/i18n` (inject storage + language)
-- [ ] P2.4 Move `utils/sieveGenerator.ts` → `shared/src/sieve`
-- [ ] P2.5 Move business `api/*.ts` → `shared/src/api` (injected `ApiClient`).
+- [ ] P2.1 Add `frontend` to workspaces; reconcile lockfiles and the frontend CI job
+- [x] P2.2 Move `types/api.ts`, `types/sieve.ts` → `shared/src/types`
+- [x] P2.3 Move `i18n/` + locales → `shared/src/i18n` (inject storage + language)
+- [x] P2.4 Move `utils/sieveGenerator.ts` → `shared/src/sieve`
+- [x] P2.5 Move business `api/*.ts` → `shared/src/api` (injected `ApiClient`).
       Leave browser `client.ts` / `sse.ts` as adapters. Cover `2fa`, `accounts`,
       `mail`, `addressBook`, `onboarding`, `prefs`, `sieve` — not only auth
-- [ ] P2.6 Move `api/pgp.ts` → `shared/src/pgp` (crypto backend injected; MIME
-      rebuild `extractTextFromMime` goes with it)
-- [ ] P2.7 Re-point `frontend` imports; delete the duplicated modules (PR B)
-- [ ] P2.8 Browser `Platform` adapter for the web client (PR B)
-- [ ] P2.9 Keep web tests green; add shared tests for moved code
-- [ ] P2.10 Adjust `frontend` Vite/TS config for the workspace package (PR B)
-- [ ] P2.11 Optional: extract `MessageList` local-search helpers into `shared/`
+- [x] P2.6 Move `api/pgp.ts` → `shared/src/pgp` (MIME rebuild `extractTextFromMime`
+      goes with it; RN crypto backend still Phase 3)
+- [x] P2.7 Re-point `frontend` imports; delete duplicated locales/modules (thin
+      re-exports remain for DOM glue: avatars, attachment URLs, `<a download>`)
+- [x] P2.8 Browser `Platform` adapter (`frontend/src/platform.ts`)
+- [x] P2.9 Keep web tests green; add shared tests for moved code
+- [x] P2.10 Vite/TS aliases for `@e2mail/shared` (workspace package is `P2.1`)
+- [x] P2.11 Extract `MessageList` local-search helpers into `shared/src/mail`
 
-**Acceptance (PR B):** `frontend` builds and tests pass with **zero duplicated**
-types/api/i18n; both web and mobile import from `@e2mail/shared`.
-**Rollback:** PR B is its own revert; if Vite/Metro workspace resolution
-misbehaves, keep `shared` mobile-only and retain frontend copies.
+**Acceptance:** web and mobile import from `@e2mail/shared`; frontend tests and
+Vite build pass. **Still open:** `P2.1` workspace merge.
+**Rollback:** revert this commit; web aliases and `frontend/` lockfile are
+independent of `P2.1`.
 
 ### Phase 3 — Crypto on device
 
@@ -497,3 +499,4 @@ correct message.
 | 2026-09-10 | P0    | Workspace + `@e2mail/shared` client/auth/types/tests + Expo app shell; pushed on `mobile` |
 | 2026-09-10 | docs  | Correct auth/SSE/CORS/session facts; split Phase 2 PRs; P1.14–P1.15; P4.7/P4.12; IDLE and subscribe risks |
 | 2026-09-10 | P1    | Expo Router shell, theme/session/storage, lint+test+CI, eas.json; same Bearer session as web |
+| 2026-09-10 | P2    | Shared types/i18n/sieve/APIs/PGP/search; web Vite aliases; Expo web peers for `mobile.yml` |

@@ -180,7 +180,7 @@ export interface OutgoingMessage {
   references?: string;
   textBody?: string;
   htmlBody?: string;
-  attachments?: File[];
+  attachments?: Blob[];
 }
 
 export interface MailboxEvent {

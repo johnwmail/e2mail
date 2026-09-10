@@ -1,4 +1,16 @@
 export * from './platform';
 export * from './api/client';
 export * from './api/auth';
+export * from './api/2fa';
+export * from './api/accounts';
+export * from './api/mail';
+export * from './api/addressBook';
+export * from './api/onboarding';
+export * from './api/prefs';
+export * from './api/sieve';
 export * from './types/api';
+export * from './types/sieve';
+export * from './i18n';
+export * from './sieve';
+export * from './mail/localSearch';
+

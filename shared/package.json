@@ -8,12 +8,18 @@
   "exports": {
     ".": "./src/index.ts",
     "./types": "./src/types/api.ts",
-    "./platform": "./src/platform.ts"
+    "./platform": "./src/platform.ts",
+    "./i18n": "./src/i18n/index.ts",
+    "./sieve": "./src/sieve/index.ts",
+    "./pgp": "./src/pgp/index.ts"
   },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "openpgp": "^6.3.1"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
