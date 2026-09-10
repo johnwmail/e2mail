@@ -4,7 +4,7 @@
 Self-hosted end-to-end encrypted e2Mail client.
 - `backend/` — Go 1.26 + chi, IMAP/SMTP proxy + HTTP API, serves the embedded frontend.
 - `frontend/` — React 19 + Vite 8 + Tailwind 4; built by the Docker image and `go:embed` into the backend binary (see `backend/web`).
-- `Dockerfile` — single multi-stage image (node build → go build → alpine runtime); `docker-compose.yml` runs one service.
+- `Dockerfile` — single multi-stage image (node build → go build → `gcr.io/distroless/static` runtime, non-root uid/gid 8080); `docker-compose.yml` runs one service.
 
 ## Notes
 - **Responsive UI**: every feature (login, 2FA setup/verify, PGP key management, mail list/view, composer, modals) must work on both mobile and desktop browsers — use responsive Tailwind classes (`lg:`, `md:`, `sm:` breakpoints), ensure touch-friendly tap targets, and never rely on hover-only interactions. Verify on a mobile viewport before deploying.
