@@ -185,6 +185,9 @@ hourly; skipped if that period’s file already exists). Default `DISABLE`.
 See [`docs/BACKUP.md`](docs/BACKUP.md) for retention, restore, and why this is
 not an off-volume upgrade backup.
 
+A native iOS/Android client (Expo) is planned in [`MOBILE.md`](MOBILE.md)
+(`shared/` + `mobile/` on the `mobile` branch; not in the container image yet).
+
 ## Documentation
 
 Per-feature design notes and implementation plans live in [`docs/`](docs/):
@@ -198,6 +201,7 @@ Per-feature design notes and implementation plans live in [`docs/`](docs/):
 | [`MAIL-RENDER.md`](docs/MAIL-RENDER.md) | HTML mail sanitising, fit-to-width, remote-image blocking | implemented |
 | [`CONTACTS.md`](docs/CONTACTS.md) | Per-user address book with vCard/CSV import | draft |
 | [`BACKUP.md`](docs/BACKUP.md) | `DB_BACKUP` SQLite period snapshots under `$DATA_DIR/backups/` | implemented |
+| [`MOBILE.md`](MOBILE.md) | Native iOS + Android client (Expo / `@e2mail/shared`) | Phase 0 scaffold |
 
 ## Development
 

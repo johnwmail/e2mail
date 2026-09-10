@@ -4,6 +4,7 @@
 Self-hosted end-to-end encrypted e2Mail client.
 - `backend/` — Go 1.26 + chi, IMAP/SMTP proxy + HTTP API, serves the embedded frontend.
 - `frontend/` — React 19 + Vite 8 + Tailwind 4; built by the Docker image and `go:embed` into the backend binary (see `backend/web`).
+- `shared/` + `mobile/` — planned native client (`@e2mail/shared` + Expo). Not in the Docker image. See [`MOBILE.md`](MOBILE.md); do not add `frontend/` to npm workspaces until `P2.1`.
 - `Dockerfile` — single multi-stage image (node build → go build → `gcr.io/distroless/static` runtime, non-root uid/gid 8080); `docker-compose.yml` runs one service.
 
 ## Notes
@@ -13,5 +14,5 @@ Self-hosted end-to-end encrypted e2Mail client.
 - **`DB_BACKUP`** (`DISABLE` default, or `DAILY` / `WEEKLY` / `MONTHLY`): SQLite `VACUUM INTO` snapshots under `/data/backups/` (see `docs/BACKUP.md`). Same volume as the live DB — not an off-host upgrade backup.
 - **DB layout (v2, see `docs/ENCRYPTION.md`)**: all owner/contact keys are SHA-256 blind indexes (`owner_id`), and content columns (label/email/hosts/username/contacts/folder names/pref values) are DEK-encrypted (`e1:`) or migration-pending (`p:`) — the storage layer wraps/unwraps; handler code must always pass `authCtx.DEK` to content functions. Never add plaintext queries (LIKE) on encrypted columns.
 - `Version`/`BuildTime`/`CommitHash` defaults are `vdev`/`timeless`/`sha-unknown`, overridden via `-ldflags -X` (backend) and `VITE_APP_*` build env (frontend) — see the Dockerfile ARGs and `.github/workflows/container.yml`.
-- Tests: backend `go test ./...` (add `-race` for CI), frontend `npm run test` (Vitest + Testing Library). GitHub Actions runs both on push/PR to `main` (see `.github/workflows/test.yml`); run them locally before committing.
+- Tests: backend `go test ./...` (add `-race` for CI), frontend `npm run test` (Vitest + Testing Library), shared `npm test` at the repo root (workspace `@e2mail/shared`). GitHub Actions runs backend + frontend on push/PR to `main` (see `.github/workflows/test.yml`); run them locally before committing. Mobile lint/test CI is `P1.11`.
 - Lint: run `golangci-lint run ./...` in `backend/` before pushing — CI enforces it (`gocyclo` etc.).
