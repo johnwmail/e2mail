@@ -1,0 +1,14 @@
+{
+  "name": "e2mail",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Workspace root: shared TS package + Expo mobile client. The Go backend and Vite web client keep their own tooling.",
+  "workspaces": [
+    "shared",
+    "mobile"
+  ],
+  "scripts": {
+    "test": "npm test --workspace @e2mail/shared",
+    "typecheck": "npm run typecheck --workspace @e2mail/shared"
+  }
+}

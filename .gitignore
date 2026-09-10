@@ -38,6 +38,22 @@ node_modules/
 dist/
 .vite/
 
+# React Native / Expo (mobile/)
+.expo/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+*.tsbuildinfo
+*.jks
+*.keystore
+*.p8
+*.p12
+*.pem
+*.key
+*.mobileprovision
+mobile/ios/
+mobile/android/
+
 # `backend/web/dist` is go:embed-ed at build time; keep the placeholder tracked
 !backend/web/dist/
 !backend/web/dist/.gitkeep
