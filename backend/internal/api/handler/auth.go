@@ -639,6 +639,8 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if ok && sess != nil {
 		h.idleMgr.StopSessionListeners(sess.ID)
 		h.poolMgr.DestroySessionPools(sess.ID)
+		_ = h.storage.DeletePushDevicesBySession(sess.ID)
+		_ = h.storage.DeleteDeviceSession(sess.ID)
 		_ = h.store.Delete(sess.ID)
 	}
 

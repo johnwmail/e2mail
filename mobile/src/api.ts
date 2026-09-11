@@ -5,6 +5,7 @@ import {
   createOnboardingApi,
   createMailApi,
   createPrefsApi,
+  createPushApi,
   createTwoFaApi,
   type ApiClient,
 } from '@e2mail/shared';
@@ -61,6 +62,10 @@ export function onboardingApi() {
 
 export function prefsApi() {
   return createPrefsApi(getApiClient());
+}
+
+export function pushApi() {
+  return createPushApi(getApiClient());
 }
 
 export function pgpApi() {

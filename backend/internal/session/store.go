@@ -39,6 +39,7 @@ type Store interface {
 	GetDecryptedDEK(sess *Session) ([]byte, error)
 	Touch(id string) error
 	Delete(id string) error
+	Restore(sess *Session) error
 	Close() error
 }
 
@@ -169,6 +170,24 @@ func (ms *MemoryStore) Touch(id string) error {
 		return ErrSessionNotFound
 	}
 	sess.LastActiveAt = time.Now()
+	return nil
+}
+
+// Restore 將已有 EncryptedDEK 嘅 session 放回記憶體（重啟後載入 device session）。
+func (ms *MemoryStore) Restore(sess *Session) error {
+	if sess == nil || sess.ID == "" || sess.EncryptedDEK == "" {
+		return errors.New("session id and encrypted dek required")
+	}
+	now := time.Now()
+	if sess.CreatedAt.IsZero() {
+		sess.CreatedAt = now
+	}
+	if sess.LastActiveAt.IsZero() {
+		sess.LastActiveAt = now
+	}
+	ms.mu.Lock()
+	ms.sessions[sess.ID] = sess
+	ms.mu.Unlock()
 	return nil
 }
 

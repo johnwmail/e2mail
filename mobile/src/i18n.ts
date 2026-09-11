@@ -26,6 +26,16 @@ const en: Record<string, string> = {
   'onboarding.secret': 'Authenticator secret',
   'onboarding.displayName': 'Display name',
   'onboarding.backupHint': 'Save these backup codes now. They will not be shown again.',
+  'push.title': 'Notifications',
+  'push.enabled': 'Push notifications',
+  'push.quietHint': 'Quiet hours (24h, device timezone). Leave blank to always notify.',
+  'push.quietStart': 'Quiet start',
+  'push.quietEnd': 'Quiet end',
+  'push.registered': 'This device is registered for push.',
+  'push.needDevice': 'Push needs a development build on a physical device.',
+  'push.saved': 'Saved.',
+  'common.save': 'Save',
+  'common.back': 'Back',
 };
 
 const zhHant: Record<string, string> = {
@@ -52,6 +62,16 @@ const zhHant: Record<string, string> = {
   'onboarding.secret': '驗證器密鑰',
   'onboarding.displayName': '顯示名稱',
   'onboarding.backupHint': '請立即儲存這些備用代碼，之後不會再顯示。',
+  'push.title': '通知',
+  'push.enabled': '推播通知',
+  'push.quietHint': '勿擾時段（24 小時制，跟裝置時區）。留空即隨時通知。',
+  'push.quietStart': '開始時間',
+  'push.quietEnd': '結束時間',
+  'push.registered': '此裝置已登記推播。',
+  'push.needDevice': '推播需要實體裝置上的 development build。',
+  'push.saved': '已儲存。',
+  'common.save': '儲存',
+  'common.back': '返回',
 };
 
 const catalogs: Record<AppLocale, Record<string, string>> = {

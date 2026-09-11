@@ -23,6 +23,7 @@ func NewRouter(
 	configH *handler.ServerConfigHandler,
 	accountsH *handler.AccountsHandler,
 	sieveH *handler.SieveHandler,
+	pushH *handler.PushHandler,
 	store session.Store,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -131,6 +132,13 @@ func NewRouter(
 				ab.Get("/{id}/avatar", addressH.GetAvatar)
 				ab.Put("/{id}/avatar", addressH.PutAvatar)
 				ab.Delete("/{id}/avatar", addressH.DeleteAvatar)
+			})
+
+			// 推播裝置 token
+			protected.Route("/push", func(p chi.Router) {
+				p.Get("/devices", pushH.List)
+				p.Post("/devices", pushH.Register)
+				p.Delete("/devices/{token:.*}", pushH.Unregister)
 			})
 
 			// per-user 設定（key-value）

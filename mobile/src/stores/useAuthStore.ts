@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { LoginRequest, Session } from '@e2mail/shared';
 import { authApi, getApiClient, invalidateApiClient, prefsApi } from '../api';
 import { clearPersistedPassphrase } from '../crypto/passphrase';
+import { unregisterPushAsync } from '../push/register';
 import { usePrefsStore } from './usePrefsStore';
 import { useToastStore } from './useToastStore';
 
@@ -74,6 +75,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async (_apiBaseUrl) => {
+    try {
+      await unregisterPushAsync();
+    } catch {
+      // Best-effort; logout still proceeds.
+    }
     try {
       await authApi().logout();
     } catch {

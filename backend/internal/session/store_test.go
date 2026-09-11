@@ -139,3 +139,35 @@ func TestTamperedCiphertext(t *testing.T) {
 		t.Fatal("expected decryption error for tampered ciphertext")
 	}
 }
+
+func TestRestoreRehydratesSession(t *testing.T) {
+	ms := newTestStore(t)
+	orig, err := ms.Create(&Session{Email: "a@b.c", Username: "a"}, []byte("dek-bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone := &Session{
+		ID:           orig.ID,
+		Email:        orig.Email,
+		Username:     orig.Username,
+		EncryptedDEK: orig.EncryptedDEK,
+		CreatedAt:    orig.CreatedAt,
+		LastActiveAt: orig.LastActiveAt,
+	}
+	ms2, err := NewMemoryStore(time.Hour, make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ms2.Close() })
+	// different master key cannot decrypt, but Restore still stores the blob
+	if err := ms2.Restore(clone); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ms2.Get(orig.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Email != "a@b.c" {
+		t.Fatalf("email %q", got.Email)
+	}
+}

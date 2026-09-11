@@ -24,6 +24,7 @@ type ServerConfig struct {
 	RequirePGP                   bool
 	DBBackup                     DBBackupSchedule
 	LDAP                         *LDAPConfig
+	ExpoAccessToken              string
 }
 
 // DBBackupSchedule SQLite 自動備份週期（DB_BACKUP）。
@@ -125,6 +126,7 @@ func Load() *ServerConfig {
 	}
 
 	cfg.LDAP = loadLDAP()
+	cfg.ExpoAccessToken = strings.TrimSpace(os.Getenv("EXPO_ACCESS_TOKEN"))
 	return cfg
 }
 

@@ -148,6 +148,17 @@ export function FolderDrawer() {
             </Text>
           </Pressable>
 
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setOpen(false);
+              router.push('/(app)/push');
+            }}
+            style={[styles.row, { borderColor: colors.border }]}
+          >
+            <Text style={{ color: colors.text }}>{t('push.title')}</Text>
+          </Pressable>
+
           {__DEV__ ? (
             <Pressable
               onPress={() => {

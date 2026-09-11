@@ -160,6 +160,20 @@ type Store interface {
 	GetUserPref(userEmail, key string, dek []byte) (string, error)
 	SetUserPref(userEmail, key, value string, dek []byte) error
 
+	// Durable device sessions (P1.15): EncryptedDEK is SESSION_SECRET-wrapped, not DEK.
+	UpsertDeviceSession(row DeviceSession, dek []byte) error
+	GetDeviceSession(sessionID string, dek []byte) (*DeviceSession, error)
+	ListDeviceSessions() ([]DeviceSession, error)
+	DeleteDeviceSession(sessionID string) error
+	TouchDeviceSession(sessionID string) error
+
+	// Push device tokens (token/account_ids/timezone DEK-encrypted)
+	UpsertPushDevice(d PushDevice, dek []byte) error
+	ListPushDevices(ownerEmail string, dek []byte) ([]PushDevice, error)
+	GetPushDeviceByToken(token string, dek []byte) (*PushDevice, error)
+	DeletePushDevice(ownerEmail, token string) error
+	DeletePushDevicesBySession(sessionID string) error
+
 	// Lifecycle
 	MigrateLegacyKeyrings(dataDir string) (migrated int, err error)
 	Close() error
@@ -277,6 +291,30 @@ CREATE TABLE IF NOT EXISTS user_prefs (
 	PRIMARY KEY (owner_id, pref_key)
 );
 CREATE INDEX IF NOT EXISTS idx_user_prefs_owner ON user_prefs(owner_id);
+
+CREATE TABLE IF NOT EXISTS device_sessions (
+	session_id     TEXT NOT NULL PRIMARY KEY,
+	owner_id       TEXT NOT NULL,
+	enc_dek        TEXT NOT NULL,
+	owner_email    TEXT NOT NULL,
+	last_active_at INTEGER NOT NULL,
+	created_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_device_sessions_owner ON device_sessions(owner_id);
+
+CREATE TABLE IF NOT EXISTS push_devices (
+	token_hash  TEXT NOT NULL PRIMARY KEY,
+	owner_id    TEXT NOT NULL,
+	session_id  TEXT NOT NULL,
+	platform    TEXT NOT NULL,
+	token       TEXT NOT NULL,
+	account_ids TEXT NOT NULL DEFAULT '',
+	timezone    TEXT NOT NULL DEFAULT '',
+	created_at  INTEGER NOT NULL,
+	updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_push_devices_owner ON push_devices(owner_id);
+CREATE INDEX IF NOT EXISTS idx_push_devices_session ON push_devices(session_id);
 `
 
 // SQLiteStore SQLite 儲存實作

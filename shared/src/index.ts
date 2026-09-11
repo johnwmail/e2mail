@@ -7,6 +7,7 @@ export * from './api/mail';
 export * from './api/addressBook';
 export * from './api/onboarding';
 export * from './api/prefs';
+export * from './api/push';
 export * from './api/sieve';
 export * from './types/api';
 export * from './types/sieve';
@@ -15,4 +16,5 @@ export * from './sieve';
 export * from './mail/localSearch';
 export * from './mail/knownHosts';
 export * from './mail/sanitizeHtml';
+export * from './mail/push';
 

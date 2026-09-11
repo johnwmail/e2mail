@@ -194,10 +194,26 @@ export type MailAttachment =
 
 export interface MailboxEvent {
   type: 'NEW_MESSAGE' | 'EXPUNGE' | 'FLAG_UPDATE' | 'HEARTBEAT' | string;
+  sessionId?: string;
   accountId?: string;
   mailbox: string;
+  uid?: number;
   totalCount?: number;
   timestamp: string;
+}
+
+export interface PushDeviceInfo {
+  platform: 'ios' | 'android' | 'web' | string;
+  accountIds?: string[];
+  timezone?: string;
+  createdAt: string;
+}
+
+export interface PushRegisterRequest {
+  token: string;
+  platform: 'ios' | 'android' | 'web';
+  accountIds?: string[];
+  timezone?: string;
 }
 
 export interface StandardResponse<T> {

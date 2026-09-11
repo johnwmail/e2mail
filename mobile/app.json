@@ -18,6 +18,16 @@
         }
       ],
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0f172a",
+          "defaultChannel": "mail",
+          "enableBackgroundRemoteNotifications": true
+        }
+      ],
+      "expo-background-task",
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
@@ -32,7 +42,10 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.johnwmail.e2mail"
+      "bundleIdentifier": "com.johnwmail.e2mail",
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification", "fetch", "processing"]
+      }
     },
     "android": {
       "package": "com.johnwmail.e2mail",
@@ -45,7 +58,8 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.USE_BIOMETRIC",
-        "android.permission.USE_FINGERPRINT"
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {

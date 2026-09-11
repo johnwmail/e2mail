@@ -1,0 +1,50 @@
+name: eas-build
+
+# Native iOS/Android binaries via EAS. Requires GitHub secret EXPO_TOKEN
+# (Expo access token). Apple signing + Play keystore stay in EAS credentials
+# unless you opt into --local builds.
+#
+#   gh secret set EXPO_TOKEN
+#
+# Then Actions → eas-build → Run workflow.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform
+        type: choice
+        options: [android, ios, all]
+        default: android
+      profile:
+        description: EAS profile
+        type: choice
+        options: [development, preview, production]
+        default: preview
+
+jobs:
+  eas:
+    name: EAS ${{ github.event.inputs.profile }} ${{ github.event.inputs.platform }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install workspaces
+        run: npm ci
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Queue EAS build
+        working-directory: mobile
+        run: |
+          npx eas-cli@latest build --non-interactive --no-wait \
+            --platform "${{ github.event.inputs.platform }}" \
+            --profile "${{ github.event.inputs.profile }}"

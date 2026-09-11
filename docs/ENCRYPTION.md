@@ -210,6 +210,7 @@ SELECT 'user_prefs', COUNT(*) FROM user_prefs WHERE pref_value LIKE 'p:%';
 | Lazy 視窗：owner 未再登入前，佢嘅內容欄係 `p:` 可讀明文 | 限期登入政策處理（§5.2/§6）；密碼遺失者永久 |
 | 弱密碼 | `wrapped_dek` 離線暴破（Argon2id 成本）；UI 已警示 |
 | Live server 沒收 | DEK 喺 RAM；session 用 server key 包 DEK——本設計只防 cold DB theft |
+| 裝置 session（P1.15 / Phase 5） | `device_sessions.enc_dek` 用 **SESSION_SECRET** 包 DEK（同 RAM session），令重啟後 IDLE/push 可恢復。DB 賊要同時有 `SESSION_SECRET` 先解到。Token 等內容欄仍係用戶 DEK（`e1:`） |
 | avatar 圖片檔 | 存於 `/data` 檔案系統，**本次範圍外**（DB 只存 uuid 檔名）；要加密另案 |
 | IMAP/SMTP 實際郵件內容 | 從來唔入 DB（即時代理），與本設計無關 |
 

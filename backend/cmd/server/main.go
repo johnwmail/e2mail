@@ -19,6 +19,7 @@ import (
 	"github.com/johnwmail/e2mail/backend/internal/config"
 	"github.com/johnwmail/e2mail/backend/internal/imap"
 	ldapint "github.com/johnwmail/e2mail/backend/internal/ldap"
+	"github.com/johnwmail/e2mail/backend/internal/push"
 	"github.com/johnwmail/e2mail/backend/internal/session"
 	"github.com/johnwmail/e2mail/backend/internal/smtp"
 	"github.com/johnwmail/e2mail/backend/internal/storage"
@@ -34,10 +35,14 @@ var (
 
 // sensitiveEnvVars 唔會 print 出嚟嘅敏感/機密環境變數
 var sensitiveEnvVars = map[string]bool{
-	"SESSION_SECRET":  true,
-	"SECRET_KEY":      true,
-	"DOCKER_PASSWORD": true,
-	"LDAP_ROOT_PW":    true,
+	"SESSION_SECRET":           true,
+	"SECRET_KEY":               true,
+	"DOCKER_PASSWORD":          true,
+	"LDAP_ROOT_PW":             true,
+	"EXPO_ACCESS_TOKEN":        true,
+	"EXPO_TOKEN":               true,
+	"APNS_KEY_P8":              true,
+	"FCM_SERVICE_ACCOUNT_JSON": true,
 }
 
 // printDefinedEnv 啟動時打印所有已定義嘅環境變數（過濾敏感 key）
@@ -145,8 +150,25 @@ func main() {
 	configHandler := handler.NewServerConfigHandler(serverConfig)
 	accountsHandler := handler.NewAccountsHandler(sessionStore, store, poolManager, idleManager, serverConfig)
 	sieveHandler := handler.NewSieveHandler(store, serverConfig)
+	pushHandler := handler.NewPushHandler(store, sessionStore, idleManager)
 
-	router := api.NewRouter(authHandler, mailHandler, eventsHandler, pgpHandler, contactsHandler, addressContactsHandler, prefsHandler, configHandler, accountsHandler, sieveHandler, sessionStore)
+	dispatcher := &push.Dispatcher{
+		DB:       store,
+		Sessions: sessionStore,
+		Sender:   push.NewExpoSender(serverConfig.ExpoAccessToken),
+	}
+	idleManager.SetEventHook(dispatcher.Handle)
+
+	if keyBytes != nil {
+		n := push.RestoreDeviceSessions(sessionStore, store, idleManager, sessionTTL)
+		if n > 0 {
+			log.Printf("📲 Restored %d durable device session(s) for push/IDLE", n)
+		}
+	} else {
+		log.Printf("ℹ️  SESSION_SECRET unset: device sessions cannot survive process restart (P1.15)")
+	}
+
+	router := api.NewRouter(authHandler, mailHandler, eventsHandler, pgpHandler, contactsHandler, addressContactsHandler, prefsHandler, configHandler, accountsHandler, sieveHandler, pushHandler, sessionStore)
 
 	server := &http.Server{
 		Addr:         ":" + port,

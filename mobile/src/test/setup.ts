@@ -37,6 +37,27 @@ jest.mock('expo-file-system', () => ({
   Paths: { cache: 'file://cache' },
 }));
 jest.mock('expo-sharing', () => ({ isAvailableAsync: async () => false, shareAsync: jest.fn() }));
+jest.mock('expo-notifications', () => ({
+  setNotificationHandler: jest.fn(),
+  getPermissionsAsync: jest.fn(async () => ({ status: 'granted' })),
+  requestPermissionsAsync: jest.fn(async () => ({ status: 'granted' })),
+  getExpoPushTokenAsync: jest.fn(async () => ({ data: 'ExponentPushToken[test]' })),
+  setNotificationChannelAsync: jest.fn(),
+  setBadgeCountAsync: jest.fn(),
+  addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  getLastNotificationResponseAsync: jest.fn(async () => null),
+  AndroidImportance: { HIGH: 4 },
+}));
+jest.mock('expo-device', () => ({ isDevice: false }));
+jest.mock('expo-constants', () => ({
+  easConfig: { projectId: 'test' },
+  expoConfig: { extra: { eas: { projectId: 'test' } } },
+}));
+jest.mock('expo-task-manager', () => ({ defineTask: jest.fn() }));
+jest.mock('expo-background-task', () => ({
+  registerTaskAsync: jest.fn(),
+  BackgroundTaskResult: { Success: 1, Failed: 2 },
+}));
 
 const { webcrypto } = require('node:crypto');
 if (!globalThis.crypto || !globalThis.crypto.subtle) {

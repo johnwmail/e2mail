@@ -4,10 +4,12 @@ Plan, design notes, and the full task board for a native iOS + Android client
 that talks to the existing Go backend. Companion to [`README.md`](README.md) and
 [`docs/`](docs/).
 
-> **Status: Phase 4 MVP screens landed.** Login, 2FA, onboarding, folder/list/detail,
-> compose/send with PGP, and foreground SSE are in the Expo app. Phase 3 on-device
-> smoke (`P3.3`/`P3.7`) is still awaiting a development build. `frontend/` is still
-> **not** an npm workspace (`P2.1`). See the [task board](#task-board).
+> **Status: Phase 5 push landed.** Device tokens, Expo→APNs/FCM sender, IDLE
+> hook, quiet hours, deep links, and background sync are in tree. Registering
+> push needs a **development build** on a physical device and a stable
+> `SESSION_SECRET` if the backend restarts. Phase 3 on-device smoke (`P3.3`/`P3.7`)
+> is still awaiting a development build. `frontend/` is still **not** an npm
+> workspace (`P2.1`). See the [task board](#task-board).
 
 Task-board legend: `[x]` done · `[~]` in progress · `[ ]` todo. IDs (`P4.7`) are
 stable references for commits and PRs — use them in commit messages, e.g.
@@ -187,13 +189,11 @@ registered** on the router (404).
 
 ### Session lifetime (P1.15)
 
-**MVP uses the same cookie-less Bearer session as the web:** an in-memory
-UUID, default TTL 24h (`SESSION_TTL_HOURS`), sliding via `Touch`. No
-`/api/auth/token` in this phase. A killed backend still logs the phone out.
-
-Durable device sessions are **required before Phase 5 push** (a backgrounded
-device cannot usefully open a notification after the server restarted). Track
-that as backend work when push starts; do not block Phase 3–4 on it.
+API Bearer sessions remain 24h sliding TTL (`SESSION_TTL_HOURS`). Registering a
+push token also persists a **device session** (`device_sessions`: session id +
+`SESSION_SECRET`-wrapped DEK) so IMAP IDLE and APNs/FCM via Expo can resume
+after a backend restart. Set a stable `SESSION_SECRET` in `.env` or the
+container environment; without it, push only lasts for the current process.
 
 ### PGP on React Native
 
@@ -352,7 +352,11 @@ Notes / gotchas:
   `c9030d0` until those were added.
 - `P1.12` — `mobile/eas.json` (development / preview / production). Bind the
   Expo project with `eas init` when credentials exist (`P5.8`).
-- `P5.8` — store `EXPO_TOKEN`, APNs key, Android keystore in GitHub secrets.
+- `P5.8` — GitHub secret `EXPO_TOKEN` for [`.github/workflows/eas-build.yml`](.github/workflows/eas-build.yml)
+  (`workflow_dispatch`). Apple/Android signing stays in EAS credentials; APNs
+  `.p8` / FCM JSON are optional if you send through Expo Push (`EXPO_ACCESS_TOKEN`
+  on the server raises rate limits). `SESSION_SECRET` must be stable for device
+  sessions to survive restarts.
 - Existing `container.yml` release tags keep covering backend/web; mobile gets
   its own version channel (`P7.4`).
 
@@ -394,7 +398,7 @@ Notes / gotchas:
 - [x] P1.12 `eas.json` (development / preview / production); `eas init` when Expo account exists
 - [x] P1.13 Simulator + physical-device workflow documented above
 - [x] P1.14 Split storage: SecureStore for `e2Mail_token`; AsyncStorage for theme / locale / list mode / API URL
-- [x] P1.15 Session model: same 24h in-memory Bearer UUID as the web for MVP; durable device sessions before Phase 5
+- [x] P1.15 Session model: 24h Bearer UUID plus durable device sessions when a push token is registered (`SESSION_SECRET` required across restarts)
 
 **Acceptance:** app boots to a themed shell, routes on stored-token presence,
 lint/test/CI run on the mobile package; session/storage decisions are written
@@ -486,18 +490,20 @@ signed/encrypted mail from a phone.
 Depends on `P1.15` if a killed/restarted backend must still notify a logged-in
 device.
 
-- [ ] P5.1 Backend: device-token table + `/api/push/devices` endpoints + tests
-- [ ] P5.2 Backend: APNs/FCM sender (`backend/internal/push`)
-- [ ] P5.3 Backend: send on new mail (IMAP IDLE hook; INBOX/`NEW_MESSAGE` only
+- [x] P5.1 Backend: device-token table + `/api/push/devices` endpoints + tests
+- [x] P5.2 Backend: APNs/FCM sender (`backend/internal/push` via Expo Push API)
+- [x] P5.3 Backend: send on new mail (IMAP IDLE hook; INBOX/`NEW_MESSAGE` only
       unless IDLE is extended)
-- [ ] P5.4 Mobile: `expo-notifications` registration + permission flow
-- [ ] P5.5 Quiet hours / per-account push preferences
-- [ ] P5.6 Deep links + app badge count
-- [ ] P5.7 Background fetch / sync
-- [ ] P5.8 Secrets: `EXPO_TOKEN`, APNs `.p8`, FCM service account, Android keystore
+- [x] P5.4 Mobile: `expo-notifications` registration + permission flow
+- [x] P5.5 Quiet hours / per-account push preferences
+- [x] P5.6 Deep links + app badge count
+- [x] P5.7 Background fetch / sync
+- [x] P5.8 Secrets: `EXPO_TOKEN` (EAS workflow), optional `EXPO_ACCESS_TOKEN`;
+      APNs `.p8` / FCM JSON / Play keystore live in EAS credentials
 
 **Acceptance:** a new message pushes to a backgrounded device and opens the
-correct message.
+correct message (or the account Inbox when IMAP does not supply a UID).
+Physical-device + APNs/FCM credentials still required to observe a real push.
 
 ### Phase 6 — Parity
 
@@ -564,3 +570,4 @@ correct message.
 | 2026-09-10 | P2    | Shared types/i18n/sieve/APIs/PGP/search; web Vite aliases; Expo web peers for `mobile.yml` |
 | 2026-09-10 | P3    | quick-crypto polyfills + custom entry, keyring/contact-key wiring, biometric passphrase prompt, PGP round-trip + benchmark tests, `parseMultipleKeys` multi-block fix |
 | 2026-09-11 | P4    | Login/2FA/onboarding, mailbox list/detail/compose, PGP send, SSE, HTML sanitiser |
+| 2026-09-11 | P5    | Push devices + Expo APNs/FCM, durable device sessions, quiet hours, deep links, background sync, EAS workflow |

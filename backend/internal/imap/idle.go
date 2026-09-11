@@ -12,8 +12,10 @@ import (
 // MailboxEvent 定義即時推播事件
 type MailboxEvent struct {
 	Type       string    `json:"type"` // "NEW_MESSAGE", "EXPUNGE", "FLAG_UPDATE", "HEARTBEAT"
+	SessionID  string    `json:"sessionId,omitempty"`
 	AccountID  string    `json:"accountId"`
 	Mailbox    string    `json:"mailbox"`
+	UID        uint32    `json:"uid,omitempty"`
 	TotalCount uint32    `json:"totalCount,omitempty"`
 	Timestamp  time.Time `json:"timestamp"`
 }
@@ -30,6 +32,7 @@ type IdleListener struct {
 	subMu       sync.Mutex
 	stopCh      chan struct{}
 	closed      bool
+	onEvent     func(MailboxEvent)
 }
 
 // NewIdleListener 建立 IDLE 監聽器
@@ -71,14 +74,18 @@ func (l *IdleListener) Broadcast(event MailboxEvent) {
 	if l.accountID != "" {
 		event.AccountID = l.accountID
 	}
+	event.SessionID = l.sessionID
 	l.subMu.Lock()
-	defer l.subMu.Unlock()
-
 	for ch := range l.subscribers {
 		select {
 		case ch <- event:
 		default:
 		}
+	}
+	hook := l.onEvent
+	l.subMu.Unlock()
+	if hook != nil {
+		go hook(event)
 	}
 }
 
@@ -193,12 +200,25 @@ func (l *IdleListener) Stop() {
 type IdleManager struct {
 	mu        sync.RWMutex
 	listeners map[string]*IdleListener
+	onEvent   func(MailboxEvent)
 }
 
 // NewIdleManager 初始化管理器
 func NewIdleManager() *IdleManager {
 	return &IdleManager{
 		listeners: make(map[string]*IdleListener),
+	}
+}
+
+// SetEventHook 設定全域 IDLE 事件回調（push dispatcher）。已存在嘅 listener 一併更新。
+func (im *IdleManager) SetEventHook(fn func(MailboxEvent)) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	im.onEvent = fn
+	for _, l := range im.listeners {
+		l.subMu.Lock()
+		l.onEvent = fn
+		l.subMu.Unlock()
 	}
 }
 
@@ -223,6 +243,7 @@ func (im *IdleManager) GetOrStartListener(sessionID, accountID string, config Co
 	}
 
 	listener := NewIdleListener(sessionID, accountID, config, plainPassword, "INBOX")
+	listener.onEvent = im.onEvent
 	listener.Start()
 	im.listeners[key.string()] = listener
 	return listener

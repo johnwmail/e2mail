@@ -3,6 +3,7 @@ import { Redirect, Stack, usePathname } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { onboardingApi, pgpApi } from '../../src/api';
 import { useMailboxEvents } from '../../src/hooks/useMailboxEvents';
+import { usePushNotifications } from '../../src/hooks/usePushNotifications';
 import { useAuthStore } from '../../src/stores/useAuthStore';
 import { useMailboxStore } from '../../src/stores/useMailboxStore';
 import { usePrefsStore } from '../../src/stores/usePrefsStore';
@@ -19,6 +20,7 @@ export default function AppGroupLayout() {
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   useMailboxEvents();
+  usePushNotifications();
 
   useEffect(() => {
     if (isAuthenticated) {

@@ -27,7 +27,8 @@ services:
       - PORT=${PORT:-8080}
       - DATA_DIR=${DATA_DIR:-/data}
       - SESSION_TTL_HOURS=${SESSION_TTL_HOURS:-24}
-      - SESSION_SECRET=${SESSION_SECRET:-}
+      - SESSION_SECRET=${SESSION_SECRET:-}   # 32-byte raw / 64-char hex / base64；push 跨重啟必須固定
+      - EXPO_ACCESS_TOKEN=${EXPO_ACCESS_TOKEN:-}  # 可選：提高 Expo Push API 配額
       - COOKIE_SECURE=${COOKIE_SECURE:-true}
       # === Onboarding 強制設定（新帳號首次登入；true=強制要求設 2FA / PGP） ===
       # 可直接喺呢度寫死，或用 .env / shell env 覆蓋（default 都係 true）
