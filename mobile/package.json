@@ -10,7 +10,10 @@
     "web": "expo start --web",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "eas": "npx eas-cli@latest",
+    "build:dev:android": "npm run eas -- build --profile development --platform android",
+    "build:dev:ios": "npm run eas -- build --profile development --platform ios"
   },
   "dependencies": {
     "@craftzdog/react-native-buffer": "^6.1.2",
@@ -20,6 +23,7 @@
     "@tanstack/react-query": "^5.59.0",
     "expo": "~57.0.21",
     "expo-constants": "~57.0.17",
+    "expo-dev-client": "~57.0.18",
     "expo-linking": "~57.0.9",
     "expo-local-authentication": "~57.0.2",
     "expo-localization": "~57.0.1",

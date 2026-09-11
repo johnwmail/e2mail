@@ -288,8 +288,9 @@ npm run start --workspace @e2mail/mobile
 
 ### Simulator and physical device (P1.13)
 
-Need Node 24, the repo-root `npm install`, and **Expo Go** matching SDK 57
-(or a later `eas build --profile development` binary).
+Need Node 24, the repo-root `npm install`, and either **Expo Go** (login/session
+only) or a **development build** (`expo-dev-client` is installed; required for
+PGP because of `react-native-quick-crypto`).
 
 1. Start the API (`docker compose up` or `go run ./cmd/server` in `backend/`).
 2. From the repo root: `npm run start --workspace @e2mail/mobile`.
@@ -313,6 +314,25 @@ EAS: `mobile/eas.json` defines `development` / `preview` / `production`.
 Run `eas init` in `mobile/` once (needs `EXPO_TOKEN` / an Expo account) to
 bind `extra.eas.projectId`. Then `eas build --profile development` for a
 dev-client, `preview` for internal Testers, `production` for store binaries.
+
+### On-device PGP smoke + benchmark (P3.3/P3.7)
+
+The app ships a dev-only **Crypto diagnostics** screen
+(`app/crypto-diagnostics.tsx`, linked from the home screen when `__DEV__`). It
+runs keygen, encrypt+sign, decrypt+verify, detached sign+verify, then
+`benchmarkPgp()`, and shares the raw output.
+
+1. `cd mobile && npx eas-cli@latest login` (your Expo account).
+2. `npx eas-cli@latest init` once — creates the project and writes
+   `extra.eas.projectId` into `app.json`.
+3. Build the dev client: Android `npm run build:dev:android` (no Apple account),
+   or iOS `npm run build:dev:ios` (needs an Apple Developer account).
+4. Install it from the build page/QR, or `npx eas-cli@latest build:run -p android`
+   with an emulator running; then `npm start` and open the dev client.
+5. Home screen → **Crypto diagnostics (dev)** → **Run smoke + benchmark**.
+6. All steps must show `PASS`; copy the benchmark ms into the
+   [PGP on React Native](#pgp-on-react-native) baseline and flip `P3.3`/`P3.7`
+   to `[x]`.
 
 Web (`frontend/`) and backend keep their existing commands — see `README.md`.
 
@@ -417,14 +437,16 @@ Blocks `P4.11`. Prefer finishing this before compose/send of encrypted mail.
 - [x] P3.2 Polyfills: quick-crypto `install()`, `global.crypto`, native
       `TextEncoder` (`polyfills.ts` / `polyfills.web.ts`, custom `mobile/index.ts`)
 - [~] P3.3 Smoke-test OpenPGP.js: keygen, encrypt, decrypt, sign, verify.
-      Node/vitest round-trip is green (`shared/src/pgp/service.test.ts`);
-      on-device run via a dev build still pending
+      Node/vitest round-trip is green (`shared/src/pgp/service.test.ts`); the
+      dev-only **Crypto diagnostics** screen (`app/crypto-diagnostics.tsx`) runs
+      the on-device round-trip — awaiting a dev build
 - [x] P3.4 Keyring sync (`/pgp/keyring` GET/POST/DELETE) — `mobile/src/crypto/pgp.ts`
 - [x] P3.5 Contact keys (`/pgp/contacts`, bulk, import) — shared service + tests
 - [x] P3.6 Passphrase prompt + optional biometric unlock
       (`expo-local-authentication` + SecureStore; `passphrase.ts`,
       `PassphrasePrompt`, mounted in the root layout)
-- [~] P3.7 Benchmark harness + Node baseline recorded; mid-range device run pending
+- [~] P3.7 Benchmark harness + Node baseline recorded; `benchmarkPgp()` is wired
+      into the diagnostics screen for the mid-range device run
 
 **Acceptance:** round-trip PGP encrypt/decrypt against the web client's keys;
 passphrase never persisted in plaintext. Node round-trip is proven; the

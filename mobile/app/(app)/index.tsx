@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { translate } from '../../src/i18n';
 import { useAuthStore } from '../../src/stores/useAuthStore';
 import { usePrefsStore } from '../../src/stores/usePrefsStore';
@@ -58,6 +59,22 @@ export default function HomeScreen() {
             );
           })}
         </View>
+
+        {__DEV__ ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/crypto-diagnostics')}
+            style={({ pressed }) => [
+              styles.chip,
+              { borderColor: colors.border, minHeight: 44 },
+              pressed && { opacity: 0.8 },
+            ]}
+          >
+            <Text style={{ color: colors.primary, fontWeight: '600' }}>
+              Crypto diagnostics (dev)
+            </Text>
+          </Pressable>
+        ) : null}
 
         <Pressable
           accessibilityRole="button"
