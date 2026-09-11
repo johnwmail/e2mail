@@ -9,7 +9,7 @@ function accountParam(account?: string): string {
 export function createMailApi(client: ApiClient) {
   return {
     getFolders: (account?: string): Promise<FolderInfo[]> =>
-      client.request(`/mail/folders?x=1${accountParam(account).replace('?', '&')}`),
+      client.request(`/mail/folders${accountParam(account)}`),
 
     getMessages: (
       folder = 'INBOX',
@@ -129,7 +129,7 @@ function postOutgoing(
     if (msg.htmlBody) formData.append('htmlBody', msg.htmlBody);
     if (account) formData.append('account', account);
     msg.attachments.forEach((file) => {
-      formData.append('attachments', file);
+      formData.append('attachments', file as Blob);
     });
     return client.request(path, { method: 'POST', body: formData });
   }

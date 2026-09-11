@@ -13,6 +13,8 @@ config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),
 ];
-config.resolver.disableHierarchicalLookup = true;
+// Hierarchical lookup stays ON: npm workspaces nest a dependency (e.g. reanimated's
+// semver@7 under a hoisted semver@6) whenever versions conflict, and those copies
+// are only reachable by walking up from the requiring file.
 
 module.exports = config;

@@ -4,12 +4,10 @@ Plan, design notes, and the full task board for a native iOS + Android client
 that talks to the existing Go backend. Companion to [`README.md`](README.md) and
 [`docs/`](docs/).
 
-> **Status: Phase 3 code complete — device smoke pending.** Crypto backend chosen
-> and polyfilled (`react-native-quick-crypto`), keyring/contact-key flows wired,
-> biometric passphrase prompt shipped, benchmark harness added. `P3.3`/`P3.7`
-> still need a run on a physical device / dev build. `frontend/` is still **not**
-> an npm workspace (`P2.1`); login/mail screens remain Phase 4.
-> See the [task board](#task-board).
+> **Status: Phase 4 MVP screens landed.** Login, 2FA, onboarding, folder/list/detail,
+> compose/send with PGP, and foreground SSE are in the Expo app. Phase 3 on-device
+> smoke (`P3.3`/`P3.7`) is still awaiting a development build. `frontend/` is still
+> **not** an npm workspace (`P2.1`). See the [task board](#task-board).
 
 Task-board legend: `[x]` done · `[~]` in progress · `[ ]` todo. IDs (`P4.7`) are
 stable references for commits and PRs — use them in commit messages, e.g.
@@ -461,28 +459,24 @@ List/detail also need `GET /mail/messages`, `/mail/unread`, `/mail/messages/{uid
 `/raw`, `/attachments/{attId}`, `/mail/folders` (same handler as
 `/accounts/{id}/folders`). Web uses `/mail/folders?account=`.
 
-- [ ] P4.1 Login: server URL, email, password, advanced IMAP/SMTP; prefill from `/server-config`
-- [ ] P4.2 2FA verify screen (`/auth/verify-2fa`)
-- [ ] P4.3 Onboarding gate (`/onboarding/status`, `REQUIRE_2FA`/`REQUIRE_PGP`)
-- [ ] P4.4 Account switcher + folder tree + unread badges
-- [ ] P4.5 Folder list with prefs/order (`/accounts/{id}/folders*`). Do not call
+- [x] P4.1 Login: server URL, email, password, advanced IMAP/SMTP; prefill from `/server-config`
+- [x] P4.2 2FA verify screen (`/auth/verify-2fa`) — same login route after `requires2fa`
+- [x] P4.3 Onboarding gate (`/onboarding/status`, `REQUIRE_2FA`/`REQUIRE_PGP`)
+- [x] P4.4 Account switcher + folder tree + unread badges
+- [x] P4.5 Folder list with prefs/order (`/accounts/{id}/folders*`). Do not call
       `/mail/folders/subscribe`
-- [ ] P4.6 Message list: pagination, virtualization, messages/threads modes.
-      **Search is intentionally out of MVP** (`?q=` already exists on the
-      backend; add a later task if needed)
-- [ ] P4.7 Message detail: headers; HTML body in a WebView with **JS disabled**;
-      attachments fetched with **Bearer** (no cookie, no `<img src=/api/...>`).
-      Feed body/images via blob or file URI. Web uses DOMPurify + iframe;
-      RN has no DOM — sanitise before `srcDoc` / injected HTML (see
-      [`docs/MAIL-RENDER.md`](docs/MAIL-RENDER.md))
-- [ ] P4.8 Flags: read/star (`/mail/messages/flags`) — invalidate locally
-- [ ] P4.9 Move / delete / empty folder — invalidate locally
-- [ ] P4.10 Compose: text/HTML, reply/forward, attachments, drafts (`/mail/drafts`)
-- [ ] P4.11 Send, including PGP encrypt/sign (`/mail/send`) — **requires Phase 3**
-- [ ] P4.12 Foreground SSE (`/api/events`) via `react-native-sse` **or** fetch
-      stream, header `X-Session-ID`, react-query invalidation on `NEW_MESSAGE`.
-      Treat other event types as optional
-- [ ] P4.13 Offline / error / retry states
+- [x] P4.6 Message list: pagination, `FlatList` virtualization, messages/threads modes.
+      **Search is intentionally out of MVP**
+- [x] P4.7 Message detail: headers; HTML body in a WebView with **JS disabled**;
+      attachments fetched with **Bearer**; CID → data URI; remote images blocked
+      unless allowed (`shared/src/mail/sanitizeHtml.ts`)
+- [x] P4.8 Flags: read/star (`/mail/messages/flags`) — invalidate locally
+- [x] P4.9 Move / delete / empty folder — invalidate locally
+- [x] P4.10 Compose: text/HTML, reply/forward, attachments, drafts (`/mail/drafts`)
+- [x] P4.11 Send, including PGP encrypt/sign (`/mail/send`)
+- [x] P4.12 Foreground SSE (`/api/events`) via `react-native-sse`, header
+      `X-Session-ID`, react-query invalidation on `NEW_MESSAGE`
+- [x] P4.13 Offline / error / retry states (query error + retry on list/detail)
 
 **Acceptance:** a user can log in, read, search-free browse, reply, and send
 signed/encrypted mail from a phone.
@@ -569,3 +563,4 @@ correct message.
 | 2026-09-10 | P1    | Expo Router shell, theme/session/storage, lint+test+CI, eas.json; same Bearer session as web |
 | 2026-09-10 | P2    | Shared types/i18n/sieve/APIs/PGP/search; web Vite aliases; Expo web peers for `mobile.yml` |
 | 2026-09-10 | P3    | quick-crypto polyfills + custom entry, keyring/contact-key wiring, biometric passphrase prompt, PGP round-trip + benchmark tests, `parseMultipleKeys` multi-block fix |
+| 2026-09-11 | P4    | Login/2FA/onboarding, mailbox list/detail/compose, PGP send, SSE, HTML sanitiser |

@@ -29,6 +29,15 @@ jest.mock('expo-local-authentication', () => ({
   AuthenticationType: { FINGERPRINT: 1, FACIAL_RECOGNITION: 2, IRIS: 3 },
 }));
 
+jest.mock('react-native-webview', () => ({ WebView: 'WebView' }));
+jest.mock('react-native-sse', () => ({ __esModule: true, default: class EventSource { close() {} addEventListener() {} } }));
+jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
+jest.mock('expo-file-system', () => ({
+  File: class File { uri = 'file://x'; exists = false; delete() {} write() {} },
+  Paths: { cache: 'file://cache' },
+}));
+jest.mock('expo-sharing', () => ({ isAvailableAsync: async () => false, shareAsync: jest.fn() }));
+
 const { webcrypto } = require('node:crypto');
 if (!globalThis.crypto || !globalThis.crypto.subtle) {
   Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true });

@@ -180,8 +180,17 @@ export interface OutgoingMessage {
   references?: string;
   textBody?: string;
   htmlBody?: string;
-  attachments?: Blob[];
+  /** Web: `Blob`/`File`. Native: `{ uri, name, type }` for React Native FormData. */
+  attachments?: MailAttachment[];
 }
+
+export type MailAttachment =
+  | Blob
+  | {
+      uri: string;
+      name: string;
+      type: string;
+    };
 
 export interface MailboxEvent {
   type: 'NEW_MESSAGE' | 'EXPUNGE' | 'FLAG_UPDATE' | 'HEARTBEAT' | string;

@@ -10,6 +10,7 @@ import { ErrorBoundary } from '../src/components/ErrorBoundary';
 import { PassphrasePrompt } from '../src/components/PassphrasePrompt';
 import { ToastHost } from '../src/components/ToastHost';
 import { deviceLanguage } from '../src/platform';
+import { setUnauthorizedHandler } from '../src/api';
 import { useAuthStore } from '../src/stores/useAuthStore';
 import { usePrefsStore } from '../src/stores/usePrefsStore';
 import { useResolvedScheme } from '../src/theme/useTheme';
@@ -36,6 +37,18 @@ export default function RootLayout() {
   useEffect(() => {
     setLocale(locale);
   }, [locale]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      useAuthStore.setState({
+        isAuthenticated: false,
+        session: null,
+        isLoading: false,
+        pendingChallenge: null,
+      });
+    });
+    return () => setUnauthorizedHandler(undefined);
+  }, []);
 
   useEffect(() => {
     if (hydrated) void initAuth(apiBaseUrl);

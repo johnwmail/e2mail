@@ -37,7 +37,7 @@ export function createMobilePlatform(
 ): Platform {
   return {
     apiBaseUrl,
-    fetch,
+    fetch: (input, init) => globalThis.fetch(input, init),
     storage: tokenStore,
     language: options.language ?? deviceLanguage(),
     onUnauthorized: options.onUnauthorized,

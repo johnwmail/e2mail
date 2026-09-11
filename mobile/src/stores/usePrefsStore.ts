@@ -20,6 +20,7 @@ interface PrefsState {
   setApiBaseUrl: (url: string) => Promise<void>;
   setTheme: (theme: ThemePreference) => Promise<void>;
   setListMode: (mode: ListMode) => Promise<void>;
+  setLocale: (locale: AppLocale) => Promise<void>;
 }
 
 function parseTheme(raw: string | null): ThemePreference {
@@ -68,5 +69,10 @@ export const usePrefsStore = create<PrefsState>((set) => ({
   setListMode: async (mode) => {
     await writePref(PREFS_KEYS.listMode, mode);
     set({ listMode: mode });
+  },
+
+  setLocale: async (locale) => {
+    await writePref(PREFS_KEYS.locale, locale);
+    set({ locale });
   },
 }));

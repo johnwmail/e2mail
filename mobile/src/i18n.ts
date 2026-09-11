@@ -1,47 +1,57 @@
+import { t as sharedT } from '@e2mail/shared';
+
 export type AppLocale = 'en' | 'zh-Hant';
 
 const en: Record<string, string> = {
   'boot.loading': 'Loading…',
-  'login.title': 'e2Mail',
-  'login.subtitle': 'Sign in from Phase 4. For now, test the server and restore a stored session.',
   'login.serverUrl': 'Server URL',
   'login.testConnection': 'Test connection',
   'login.connecting': 'Connecting…',
-  'login.signedInHint': 'A stored session is valid. Open the app.',
-  'login.openApp': 'Open app',
-  'home.title': 'Inbox',
-  'home.placeholder': 'Mail screens start in Phase 4.',
   'home.signedInAs': 'Signed in as {email}',
-  'home.noSession': 'Session restored, but /auth/me returned no email.',
-  'home.logout': 'Log out',
-  'home.theme': 'Theme',
   'home.theme.light': 'Light',
   'home.theme.dark': 'Dark',
   'home.theme.system': 'System',
   'error.title': 'Something went wrong',
   'error.retry': 'Try again',
+  'mail.folders': 'Folders',
+  'mail.compose': 'Compose',
+  'mail.retry': 'Retry',
+  'mail.empty': 'No messages in this folder',
+  'mail.loadMore': 'Load more',
+  'mail.decrypt': 'Decrypt',
+  'mail.allowRemoteImages': 'Load remote images',
+  'mail.blockRemoteImages': 'Block remote images',
+  'mail.move': 'Move',
+  'mail.delete': 'Delete',
+  'onboarding.secret': 'Authenticator secret',
+  'onboarding.displayName': 'Display name',
+  'onboarding.backupHint': 'Save these backup codes now. They will not be shown again.',
 };
 
 const zhHant: Record<string, string> = {
   'boot.loading': '載入中…',
-  'login.title': 'e2Mail',
-  'login.subtitle': '登入畫面喺 Phase 4。而家可以測試伺服器，同恢復已儲存嘅工作階段。',
   'login.serverUrl': '伺服器網址',
   'login.testConnection': '測試連線',
   'login.connecting': '連線中…',
-  'login.signedInHint': '已有有效工作階段。開啟應用程式。',
-  'login.openApp': '開啟應用程式',
-  'home.title': '收件箱',
-  'home.placeholder': '郵件畫面由 Phase 4 開始。',
   'home.signedInAs': '已登入：{email}',
-  'home.noSession': '已恢復工作階段，但 /auth/me 沒有電郵。',
-  'home.logout': '登出',
-  'home.theme': '主題',
   'home.theme.light': '淺色',
   'home.theme.dark': '深色',
   'home.theme.system': '跟隨系統',
   'error.title': '發生錯誤',
   'error.retry': '再試一次',
+  'mail.folders': '資料夾',
+  'mail.compose': '撰寫',
+  'mail.retry': '重試',
+  'mail.empty': '此資料夾沒有郵件',
+  'mail.loadMore': '載入更多',
+  'mail.decrypt': '解密',
+  'mail.allowRemoteImages': '載入遠端圖片',
+  'mail.blockRemoteImages': '封鎖遠端圖片',
+  'mail.move': '移動',
+  'mail.delete': '刪除',
+  'onboarding.secret': '驗證器密鑰',
+  'onboarding.displayName': '顯示名稱',
+  'onboarding.backupHint': '請立即儲存這些備用代碼，之後不會再顯示。',
 };
 
 const catalogs: Record<AppLocale, Record<string, string>> = {
@@ -61,11 +71,15 @@ export function translate(
   key: string,
   vars?: Record<string, string | number>
 ): string {
-  let out = catalogs[locale][key] ?? catalogs.en[key] ?? key;
-  if (vars) {
-    for (const [name, value] of Object.entries(vars)) {
-      out = out.replaceAll(`{${name}}`, String(value));
+  const local = catalogs[locale][key] ?? catalogs.en[key];
+  if (local) {
+    let out = local;
+    if (vars) {
+      for (const [name, value] of Object.entries(vars)) {
+        out = out.replaceAll(`{${name}}`, String(value));
+      }
     }
+    return out;
   }
-  return out;
+  return sharedT(key, vars);
 }

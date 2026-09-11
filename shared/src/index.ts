@@ -13,4 +13,6 @@ export * from './types/sieve';
 export * from './i18n';
 export * from './sieve';
 export * from './mail/localSearch';
+export * from './mail/knownHosts';
+export * from './mail/sanitizeHtml';
 
