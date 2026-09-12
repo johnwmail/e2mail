@@ -4,12 +4,12 @@ Plan, design notes, and the full task board for a native iOS + Android client
 that talks to the existing Go backend. Companion to [`README.md`](README.md) and
 [`docs/`](docs/).
 
-> **Status: Phase 5 push landed.** Device tokens, Expo→APNs/FCM sender, IDLE
-> hook, quiet hours, deep links, and background sync are in tree. Registering
-> push needs a **development build** on a physical device and a stable
-> `SESSION_SECRET` if the backend restarts. Phase 3 on-device smoke (`P3.3`/`P3.7`)
-> is still awaiting a development build. `frontend/` is still **not** an npm
-> workspace (`P2.1`). See the [task board](#task-board).
+> **Status: Phase 6 settings parity is in tree.** Accounts, contacts, PGP, Sieve,
+> appearance, 2FA, and LDAP password change are reachable from the native
+> settings hub. Registering push still needs a **development build** on a
+> physical device. Phase 3 on-device smoke (`P3.3`/`P3.7`) is still awaiting that
+> build. `frontend/` is still **not** an npm workspace (`P2.1`). See the
+> [task board](#task-board).
 
 Task-board legend: `[x]` done · `[~]` in progress · `[ ]` todo. IDs (`P4.7`) are
 stable references for commits and PRs — use them in commit messages, e.g.
@@ -507,15 +507,15 @@ Physical-device + APNs/FCM credentials still required to observe a real push.
 
 ### Phase 6 — Parity
 
-- [ ] P6.1 Accounts management (CRUD, test connection, default, folder prefs/order, junk folder)
-- [ ] P6.2 Address book (list/resolve/create/update/delete, avatars, import/export)
-- [ ] P6.3 PGP key management UI, contact keys, keyserver lookup
-- [ ] P6.4 Sieve: list/edit/activate/deactivate + visual rule builder
-- [ ] P6.5 Preferences: theme, language, message/thread mode (`/prefs`)
-- [ ] P6.6 2FA management: setup/enable/disable/backup codes
-- [ ] P6.7 Change password (LDAP-aware)
-- [ ] P6.8 Appearance/dark-mode polish + i18n completeness
-- [ ] P6.9 Accessibility pass (VoiceOver/TalkBack, tap targets, dynamic type)
+- [x] P6.1 Accounts management (CRUD, test connection, default, folder prefs/order, junk folder)
+- [x] P6.2 Address book (list/resolve/create/update/delete, avatars, import/export)
+- [x] P6.3 PGP key management UI, contact keys, keyserver lookup
+- [x] P6.4 Sieve: list/edit/activate/deactivate + visual rule builder
+- [x] P6.5 Preferences: theme, language, message/thread mode (`/prefs`)
+- [x] P6.6 2FA management: setup/enable/disable/backup codes
+- [x] P6.7 Change password (LDAP-aware)
+- [x] P6.8 Appearance/dark-mode polish + i18n completeness
+- [x] P6.9 Accessibility pass (VoiceOver/TalkBack, tap targets, dynamic type)
 
 **Acceptance:** every settings surface the web offers is reachable on mobile.
 
@@ -571,3 +571,4 @@ Physical-device + APNs/FCM credentials still required to observe a real push.
 | 2026-09-10 | P3    | quick-crypto polyfills + custom entry, keyring/contact-key wiring, biometric passphrase prompt, PGP round-trip + benchmark tests, `parseMultipleKeys` multi-block fix |
 | 2026-09-11 | P4    | Login/2FA/onboarding, mailbox list/detail/compose, PGP send, SSE, HTML sanitiser |
 | 2026-09-11 | P5    | Push devices + Expo APNs/FCM, durable device sessions, quiet hours, deep links, background sync, EAS workflow |
+| 2026-09-11 | P6    | Native settings hub: accounts, contacts, PGP, Sieve builder, appearance, 2FA, LDAP password |

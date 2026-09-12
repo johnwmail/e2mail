@@ -21,6 +21,7 @@ interface AuthState {
   verify2fa: (challenge: string, code: string) => Promise<void>;
   logout: (apiBaseUrl: string) => Promise<void>;
   hydrateRemotePrefs: () => Promise<void>;
+  refreshSession: () => Promise<void>;
 }
 
 function applySession(session: Session | undefined) {
@@ -95,6 +96,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       pendingChallenge: null,
     });
     useToastStore.getState().show('Signed out');
+  },
+
+  refreshSession: async () => {
+    const session = await authApi().getMe();
+    set(applySession(session));
   },
 
   hydrateRemotePrefs: async () => {

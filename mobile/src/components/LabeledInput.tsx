@@ -4,6 +4,7 @@ import { useThemeTokens } from '../theme/useTheme';
 export function LabeledInput({
   label,
   style,
+  accessibilityLabel,
   ...props
 }: TextInputProps & { label: string }) {
   const colors = useThemeTokens();
@@ -12,6 +13,8 @@ export function LabeledInput({
       <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
       <TextInput
         placeholderTextColor={colors.textMuted}
+        {...props}
+        accessibilityLabel={accessibilityLabel ?? label}
         style={[
           styles.input,
           {
@@ -21,7 +24,6 @@ export function LabeledInput({
           },
           style,
         ]}
-        {...props}
       />
     </>
   );

@@ -433,6 +433,7 @@ export const zhHant = {
     cannotDeleteLast: '不能刪除最後一個帳號',
     deleteTitle: '刪除帳號',
     deleteConfirm: '確定要刪除帳號「{name}」嗎？此操作無法復原。',
+    ensureJunk: '若無 Junk 資料夾則建立',
   },
   sieve: {
     title: '過濾器 (Sieve)',
@@ -453,6 +454,7 @@ export const zhHant = {
     create: '建立',
     empty: '尚無腳本，點擊「新增」建立第一個過濾器',
     setActive: '設為活動',
+    deactivate: '停用篩選',
     active: '活動',
     pickOrCreate: '請選擇或建立一個腳本',
     loadingScript: '載入腳本...',

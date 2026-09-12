@@ -4,8 +4,10 @@ import {
   createHttpClient,
   createOnboardingApi,
   createMailApi,
+  createContactsApi,
   createPrefsApi,
   createPushApi,
+  createSieveApi,
   createTwoFaApi,
   type ApiClient,
 } from '@e2mail/shared';
@@ -66,6 +68,46 @@ export function prefsApi() {
 
 export function pushApi() {
   return createPushApi(getApiClient());
+}
+
+export function contactsApi() {
+  return createContactsApi(getApiClient());
+}
+
+export function sieveApi() {
+  return createSieveApi(getApiClient());
+}
+
+export async function uploadContactAvatar(
+  id: string,
+  file: { uri: string; name: string; type: string }
+): Promise<void> {
+  const form = new FormData();
+  form.append('file', file as unknown as Blob);
+  const res = await getApiClient().raw(`/contacts/${encodeURIComponent(id)}/avatar`, {
+    method: 'PUT',
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(`avatar upload failed: ${res.status}`);
+  }
+}
+
+export async function importContactsFile(
+  file: { uri: string; name: string; type: string },
+  mode: 'skip' | 'overwrite' = 'skip'
+): Promise<{ saved: number; skipped: string[]; invalid: number }> {
+  const form = new FormData();
+  form.append('file', file as unknown as Blob);
+  const res = await getApiClient().raw(`/contacts/import?mode=${mode}`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(`import failed: ${res.status}`);
+  }
+  const json = (await res.json()) as { data: { saved: number; skipped: string[]; invalid: number } };
+  return json.data;
 }
 
 export function pgpApi() {

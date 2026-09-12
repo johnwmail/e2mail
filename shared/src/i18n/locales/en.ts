@@ -435,6 +435,7 @@ export const en = {
     cannotDeleteLast: 'You cannot delete the last account',
     deleteTitle: 'Delete account',
     deleteConfirm: 'Delete account “{name}”? This cannot be undone.',
+    ensureJunk: 'Create Junk folder if missing',
   },
   sieve: {
     title: 'Filters (Sieve)',
@@ -456,6 +457,7 @@ export const en = {
     create: 'Create',
     empty: 'No scripts yet. Click New to create a filter.',
     setActive: 'Set active',
+    deactivate: 'Deactivate filters',
     active: 'Active',
     pickOrCreate: 'Select or create a script',
     loadingScript: 'Loading script…',
