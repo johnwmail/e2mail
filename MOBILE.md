@@ -308,7 +308,9 @@ PGP because of `react-native-quick-crypto`).
    + a local build) before testing Phase 3+ crypto. Login/session still work in
    Expo Go.
 
-EAS: `mobile/eas.json` defines `development` / `preview` / `production`.
+EAS: `mobile/eas.json` defines `development` / `development-simulator` /
+`preview` / `production`. Use `development-simulator` for an iOS Simulator
+`.app` (no paid Apple Developer account; no real APNs).
 Run `eas init` in `mobile/` once (needs `EXPO_TOKEN` / an Expo account) to
 bind `extra.eas.projectId`. Then `eas build --profile development` for a
 dev-client, `preview` for internal Testers, `production` for store binaries.
@@ -350,7 +352,8 @@ Notes / gotchas:
   so Linux CI does not need a matching `hermesc`. Requires Expo web peers
   (`react-native-web`, `react-dom`, `@expo/metro-runtime`); CI failed on
   `c9030d0` until those were added.
-- `P1.12` — `mobile/eas.json` (development / preview / production). Bind the
+- `P1.12` — `mobile/eas.json` (development / development-simulator / preview /
+      production). Bind the
   Expo project with `eas init` when credentials exist (`P5.8`).
 - `P5.8` — GitHub secret `EXPO_TOKEN` for [`.github/workflows/eas-build.yml`](.github/workflows/eas-build.yml)
   (`workflow_dispatch`). Apple/Android signing stays in EAS credentials; APNs

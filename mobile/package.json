@@ -13,7 +13,8 @@
     "test": "jest",
     "eas": "npx eas-cli@latest",
     "build:dev:android": "npm run eas -- build --profile development --platform android",
-    "build:dev:ios": "npm run eas -- build --profile development --platform ios"
+    "build:dev:ios": "npm run eas -- build --profile development --platform ios",
+    "build:dev:ios-sim": "npm run eas -- build --profile development-simulator --platform ios"
   },
   "dependencies": {
     "@craftzdog/react-native-buffer": "^6.1.2",
