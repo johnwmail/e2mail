@@ -24,7 +24,7 @@ on:
       profile:
         description: EAS profile
         type: choice
-        options: [development, preview, production]
+        options: [development, development-simulator, preview, production]
         default: development
 
 jobs:
