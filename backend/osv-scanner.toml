@@ -1,0 +1,12 @@
+# OSV-Scanner configuration for the backend module.
+# See https://google.github.io/osv-scanner/configuration/
+#
+# go.mod lists golang.org/x/crypto, which ships the deprecated
+# golang.org/x/crypto/openpgp package. That package has no fixed version
+# (every release of the module still contains it) and is not imported by this
+# codebase: all OpenPGP handling uses github.com/ProtonMail/go-crypto/openpgp,
+# exactly the maintained fork the advisory recommends.
+# `govulncheck ./...` reports 0 reachable vulnerabilities.
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+reason = "golang.org/x/crypto/openpgp is unused; OpenPGP uses github.com/ProtonMail/go-crypto/openpgp. Not reachable per govulncheck."
