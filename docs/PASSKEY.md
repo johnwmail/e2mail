@@ -237,9 +237,14 @@ WEBAUTHN_RP_NAME=e2Mail
 
 ## Testing
 
-- **Backend**: store CRUD + `sign_count` handling; config `Ready()` gating;
-  handler input validation and rate limiting; registration/assertion ceremony
-  against `go-webauthn`'s test authenticator where practical.
+- **Backend end-to-end**: `internal/api/handler/webauthn_e2e_test.go` drives a full
+  **register → login** ceremony through the real HTTP handlers using
+  [`descope/virtualwebauthn`](https://github.com/descope/virtualwebauthn) as a
+  virtual authenticator (`TestWebAuthnE2ERegisterThenLogin`), plus a
+  single-use / unknown-challenge guard test. This validates the
+  `go-webauthn` ↔ standard WebAuthn JSON round-trip without a browser.
+- **Backend unit**: config `Ready()` gating; storage CRUD + owner isolation;
+  ceremony store single-use/TTL; handler input validation.
 - **Frontend**: `LoginForm` passkey button render + capability fallback;
   `SecurityTab` list/register/delete; run `npm run test` and `npm run typecheck`.
 - **Manual**: iPhone Safari (Face ID), Android Chrome, Windows Hello, and a

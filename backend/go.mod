@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/ProtonMail/go-crypto v1.4.1
+	github.com/descope/virtualwebauthn v1.0.5
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
 	github.com/go-chi/chi/v5 v5.3.2
