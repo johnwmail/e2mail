@@ -1,8 +1,8 @@
 # Passkey / WebAuthn as a Login Second Factor (branch: `passkey`)
 
-Status: **design draft**. Implemented on the **`passkey`** branch (branched from
-`main`). This document is written before any code — see
-[Phases](#phases) for the build order.
+Status: **implemented** on the **`passkey`** branch (branched from `main`). Backend
+(config, storage, service, endpoints, login flow) and web UI (login second factor
++ Security settings) are in place; see [Phases](#phases).
 
 ## Goal
 

@@ -5,10 +5,25 @@ import { LoginForm } from './LoginForm';
 const mocks = vi.hoisted(() => ({
   login: vi.fn(),
   verify2fa: vi.fn(),
+  loginWithWebAuthn: vi.fn(),
+  loginBegin: vi.fn(),
+  startAuthentication: vi.fn(),
 }));
 
 vi.mock('../../stores/useAuthStore', () => ({
-  useAuthStore: () => ({ login: mocks.login, verify2fa: mocks.verify2fa }),
+  useAuthStore: () => ({
+    login: mocks.login,
+    verify2fa: mocks.verify2fa,
+    loginWithWebAuthn: mocks.loginWithWebAuthn,
+  }),
+}));
+
+vi.mock('../../api/2fa', () => ({
+  webauthnApi: { loginBegin: mocks.loginBegin },
+}));
+
+vi.mock('@simplewebauthn/browser', () => ({
+  startAuthentication: mocks.startAuthentication,
 }));
 
 const loginReq = {
@@ -120,5 +135,44 @@ describe('LoginForm', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(await screen.findByText('IMAP authentication failed: bad creds')).toBeInTheDocument();
+  });
+
+  it('offers passkey login and completes via WebAuthn when method is available', async () => {
+    (window as any).PublicKeyCredential = {};
+    mocks.login.mockResolvedValue({ requires2fa: true, challenge: 'ch-1', methods: ['webauthn'] });
+    mocks.loginBegin.mockResolvedValue({ challenge: 'cer-1', publicKey: { challenge: 'x' } });
+    mocks.startAuthentication.mockResolvedValue({ id: 'cred-1' });
+    mocks.loginWithWebAuthn.mockResolvedValue(undefined);
+
+    render(<LoginForm />);
+    fireEvent.change(screen.getByPlaceholderText('user@example.com'), { target: { value: loginReq.email } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: loginReq.password } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    const passkeyBtn = await screen.findByRole('button', { name: /Use Face ID/ });
+    fireEvent.click(passkeyBtn);
+
+    await waitFor(() => {
+      expect(mocks.loginBegin).toHaveBeenCalledWith('ch-1');
+      expect(mocks.startAuthentication).toHaveBeenCalled();
+      expect(mocks.loginWithWebAuthn).toHaveBeenCalledWith('cer-1', { id: 'cred-1' });
+    });
+
+    delete (window as any).PublicKeyCredential;
+  });
+
+  it('does not offer passkey login when the method is unavailable', async () => {
+    (window as any).PublicKeyCredential = {};
+    mocks.login.mockResolvedValue({ requires2fa: true, challenge: 'ch-1', methods: ['totp'] });
+
+    render(<LoginForm />);
+    fireEvent.change(screen.getByPlaceholderText('user@example.com'), { target: { value: loginReq.email } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: loginReq.password } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await screen.findByText('Two-factor authentication (2FA)');
+    expect(screen.queryByRole('button', { name: /Use Face ID/ })).not.toBeInTheDocument();
+
+    delete (window as any).PublicKeyCredential;
   });
 });

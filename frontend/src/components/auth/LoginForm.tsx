@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Lock, Eye, EyeOff, ChevronDown, ChevronUp, Loader2, AlertCircle, ShieldAlert, Sparkles, Server, KeyRound, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ChevronDown, ChevronUp, Loader2, AlertCircle, ShieldAlert, Sparkles, Server, KeyRound, ArrowLeft, Fingerprint } from 'lucide-react';
+import { startAuthentication } from '@simplewebauthn/browser';
 import { useAuthStore } from '../../stores/useAuthStore';
+import { webauthnApi } from '../../api/2fa';
 import { useI18n } from '../../i18n';
 
 interface ServerDefaults {
@@ -29,7 +31,7 @@ const KNOWN_DOMAINS: Record<string, { imapHost: string; imapPort: number; smtpHo
 
 export const LoginForm: React.FC = () => {
   const { t } = useI18n();
-  const { login, verify2fa } = useAuthStore();
+  const { login, verify2fa, loginWithWebAuthn } = useAuthStore();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,6 +41,8 @@ export const LoginForm: React.FC = () => {
   const [challenge, setChallenge] = useState<string | null>(null);
   const [twoFACode, setTwoFACode] = useState('');
   const [twoFALoading, setTwoFALoading] = useState(false);
+  const [methods, setMethods] = useState<string[]>([]);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
 
   // 背景自動維護的伺服器參數（預設隱藏）
   const [imapHost, setImapHost] = useState('');
@@ -159,6 +163,7 @@ export const LoginForm: React.FC = () => {
       // 需要第二階段驗證
       if (result?.requires2fa) {
         setChallenge(result.challenge);
+        setMethods(result.methods ?? []);
         setPassword('');
       }
     } catch (err: any) {
@@ -191,7 +196,30 @@ export const LoginForm: React.FC = () => {
   const handleBackToCredentials = () => {
     setChallenge(null);
     setTwoFACode('');
+    setMethods([]);
     setError(null);
+  };
+
+  // Passkey（WebAuthn）：以 device key / Face ID 完成第二階段
+  const passkeySupported =
+    typeof window !== 'undefined' && typeof (window as any).PublicKeyCredential !== 'undefined';
+  const showPasskey = !!challenge && passkeySupported && methods.includes('webauthn');
+  const showCodeForm = !challenge || methods.length === 0 || methods.includes('totp');
+
+  const handlePasskey = async () => {
+    if (!challenge) return;
+    setPasskeyLoading(true);
+    setError(null);
+    try {
+      const begin = await webauthnApi.loginBegin(challenge);
+      const assertion = await startAuthentication({ optionsJSON: begin.publicKey });
+      await loginWithWebAuthn(begin.challenge, assertion);
+    } catch (err: any) {
+      // 使用者取消（NotAllowedError）等都顯示友善訊息
+      setError(err?.message || t('login.passkeyFailed'));
+    } finally {
+      setPasskeyLoading(false);
+    }
   };
 
   return (
@@ -230,46 +258,79 @@ export const LoginForm: React.FC = () => {
 
         {challenge ? (
           /* 2FA 驗證步驟 */
-          <form onSubmit={handleTwoFASubmit} className="space-y-4">
+          <div className="space-y-4">
             <div className="flex items-start gap-3 p-3.5 rounded-xl bg-blue-50 border border-blue-200/60">
               <KeyRound className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
               <div className="text-xs text-blue-800 leading-relaxed">
                 <div className="font-bold mb-0.5">{t('login.twoFactorTitle')}</div>
-                {t('login.twoFactorHint')}
+                {showPasskey && !showCodeForm ? t('login.passkeyOnlyHint') : t('login.twoFactorHint')}
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                {t('login.verificationCode')}
-              </label>
-              <input
-                type="text"
-                required
-                autoFocus
-                autoComplete="one-time-code"
-                inputMode="numeric"
-                value={twoFACode}
-                onChange={(e) => setTwoFACode(e.target.value)}
-                placeholder="••••••"
-                className="w-full px-3.5 py-3 text-sm text-center tracking-[0.5em] font-mono bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 focus:bg-white text-slate-900 placeholder:text-slate-400 transition"
-              />
-            </div>
+            {showPasskey && (
+              <button
+                type="button"
+                onClick={handlePasskey}
+                disabled={passkeyLoading}
+                className="w-full py-3 px-4 bg-gradient-to-r from-violet-500 to-indigo-500 hover:from-violet-600 hover:to-indigo-600 active:scale-[0.99] text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {passkeyLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {t('login.verifying')}
+                  </>
+                ) : (
+                  <>
+                    <Fingerprint className="w-4 h-4" />
+                    {t('login.usePasskey')}
+                  </>
+                )}
+              </button>
+            )}
 
-            <button
-              type="submit"
-              disabled={twoFALoading}
-              className="w-full py-3 px-4 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600 active:scale-[0.99] text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-sky-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {twoFALoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {t('login.verifying')}
-                </>
-              ) : (
-                t('login.verifyAndSignIn')
-              )}
-            </button>
+            {showPasskey && showCodeForm && (
+              <div className="flex items-center gap-3 text-[11px] text-slate-400">
+                <span className="flex-1 h-px bg-slate-200" />
+                <span>{t('login.orUseCode')}</span>
+                <span className="flex-1 h-px bg-slate-200" />
+              </div>
+            )}
+
+            {showCodeForm && (
+              <form onSubmit={handleTwoFASubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    {t('login.verificationCode')}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    value={twoFACode}
+                    onChange={(e) => setTwoFACode(e.target.value)}
+                    placeholder="••••••"
+                    className="w-full px-3.5 py-3 text-sm text-center tracking-[0.5em] font-mono bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 focus:bg-white text-slate-900 placeholder:text-slate-400 transition"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={twoFALoading}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600 active:scale-[0.99] text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-sky-500/25 flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {twoFALoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('login.verifying')}
+                    </>
+                  ) : (
+                    t('login.verifyAndSignIn')
+                  )}
+                </button>
+              </form>
+            )}
 
             <button
               type="button"
@@ -279,7 +340,7 @@ export const LoginForm: React.FC = () => {
               <ArrowLeft className="w-3.5 h-3.5" />
               {t('login.backToCredentials')}
             </button>
-          </form>
+          </div>
         ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Email 輸入框 */}
