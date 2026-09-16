@@ -98,6 +98,125 @@ func TestTwoFARequiredFields(t *testing.T) {
 	}
 }
 
+func newWebAuthnCred(owner, id, name string) *WebAuthnCredential {
+	return &WebAuthnCredential{
+		OwnerEmail:     owner,
+		CredentialID:   id,
+		Name:           name,
+		CredentialJSON: `{"id":"` + id + `","publicKey":"cHVia2V5"}`,
+	}
+}
+
+func TestWebAuthnCredentialCRUD(t *testing.T) {
+	s := newTestStore(t)
+
+	// 空 -> list 空、count 0、get nil
+	if list, err := s.ListWebAuthnCredentials("a@b.c"); err != nil || len(list) != 0 {
+		t.Fatalf("empty list = %v, %v", list, err)
+	}
+	if n, err := s.CountWebAuthnCredentials("a@b.c"); err != nil || n != 0 {
+		t.Fatalf("empty count = %d, %v", n, err)
+	}
+	if got, err := s.GetWebAuthnCredential("a@b.c", "missing"); err != nil || got != nil {
+		t.Fatalf("get missing = %v, %v", got, err)
+	}
+
+	c1 := newWebAuthnCred("a@b.c", "cred-1", "iPhone Face ID")
+	c2 := newWebAuthnCred("a@b.c", "cred-2", "YubiKey")
+	if err := s.CreateWebAuthnCredential(c1); err != nil {
+		t.Fatalf("create c1: %v", err)
+	}
+	if err := s.CreateWebAuthnCredential(c2); err != nil {
+		t.Fatalf("create c2: %v", err)
+	}
+
+	list, err := s.ListWebAuthnCredentials("a@b.c")
+	if err != nil || len(list) != 2 {
+		t.Fatalf("list = %d creds, %v", len(list), err)
+	}
+	if n, _ := s.CountWebAuthnCredentials("a@b.c"); n != 2 {
+		t.Fatalf("count = %d, want 2", n)
+	}
+
+	got, err := s.GetWebAuthnCredential("a@b.c", "cred-1")
+	if err != nil || got == nil {
+		t.Fatalf("get cred-1: %v, %v", got, err)
+	}
+	if got.Name != "iPhone Face ID" || got.CredentialJSON == "" {
+		t.Fatalf("unexpected cred-1: %+v", got)
+	}
+	if got.CreatedAt.IsZero() || got.LastUsedAt.IsZero() {
+		t.Fatal("timestamps should be set")
+	}
+
+	// 回寫完整 credential record（sign count / flags）+ rename
+	if err := s.UpdateWebAuthnCredential("a@b.c", "cred-1", `{"id":"cred-1","signCount":7}`); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	got, _ = s.GetWebAuthnCredential("a@b.c", "cred-1")
+	if got.CredentialJSON != `{"id":"cred-1","signCount":7}` {
+		t.Fatalf("credential_json = %q", got.CredentialJSON)
+	}
+	if err := s.UpdateWebAuthnCredential("a@b.c", "nope", `{}`); err == nil {
+		t.Fatal("expected error updating missing credential")
+	}
+	if err := s.RenameWebAuthnCredential("a@b.c", "cred-1", "My Phone"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	got, _ = s.GetWebAuthnCredential("a@b.c", "cred-1")
+	if got.Name != "My Phone" {
+		t.Fatalf("name after rename = %q", got.Name)
+	}
+
+	// 大細寫 email 映射同一 owner
+	if n, _ := s.CountWebAuthnCredentials("A@B.C"); n != 2 {
+		t.Fatalf("case-variant owner count = %d, want 2", n)
+	}
+
+	// 刪除只限本人
+	if n, err := s.DeleteWebAuthnCredential("other@x.com", "cred-1"); err != nil || n != 0 {
+		t.Fatalf("cross-owner delete = %d, %v; want 0 rows", n, err)
+	}
+	if n, err := s.DeleteWebAuthnCredential("a@b.c", "cred-1"); err != nil || n != 1 {
+		t.Fatalf("delete cred-1 = %d, %v; want 1 row", n, err)
+	}
+	if got, _ := s.GetWebAuthnCredential("a@b.c", "cred-1"); got != nil {
+		t.Fatal("cred-1 should be gone")
+	}
+	if n, _ := s.CountWebAuthnCredentials("a@b.c"); n != 1 {
+		t.Fatalf("count after delete = %d, want 1", n)
+	}
+}
+
+func TestWebAuthnCredentialOwnerIsolation(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.CreateWebAuthnCredential(newWebAuthnCred("a@b.c", "cred-a", "A")); err != nil {
+		t.Fatalf("create a: %v", err)
+	}
+	if err := s.CreateWebAuthnCredential(newWebAuthnCred("b@b.c", "cred-b", "B")); err != nil {
+		t.Fatalf("create b: %v", err)
+	}
+	if got, _ := s.GetWebAuthnCredential("a@b.c", "cred-b"); got != nil {
+		t.Fatal("owner a must not see owner b's credential")
+	}
+	if list, _ := s.ListWebAuthnCredentials("b@b.c"); len(list) != 1 || list[0].CredentialID != "cred-b" {
+		t.Fatalf("owner b list = %#v", list)
+	}
+}
+
+func TestWebAuthnCredentialRequiredFields(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.CreateWebAuthnCredential(&WebAuthnCredential{CredentialID: "c", CredentialJSON: "{}"}); err == nil {
+		t.Fatal("expected error when OwnerEmail missing")
+	}
+	if err := s.CreateWebAuthnCredential(&WebAuthnCredential{OwnerEmail: "a@b.c", CredentialJSON: "{}"}); err == nil {
+		t.Fatal("expected error when CredentialID missing")
+	}
+	if err := s.CreateWebAuthnCredential(&WebAuthnCredential{OwnerEmail: "a@b.c", CredentialID: "c"}); err == nil {
+		t.Fatal("expected error when CredentialJSON missing")
+	}
+}
+
 func TestContactsCRUD(t *testing.T) {
 	s := newTestStore(t)
 	dek := testDEK()

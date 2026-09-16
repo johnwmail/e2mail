@@ -106,30 +106,35 @@ applies to existing databases on next boot; `PRAGMA user_version` stays `2`):
 
 ```sql
 CREATE TABLE IF NOT EXISTS webauthn_credentials (
-  owner_id      TEXT NOT NULL,          -- blind index: crypto.OwnerID(email)
-  credential_id TEXT NOT NULL PRIMARY KEY, -- base64url; lookup only, not secret
-  public_key    BLOB NOT NULL,
-  sign_count    INTEGER NOT NULL DEFAULT 0,
-  transports    TEXT NOT NULL DEFAULT '',
-  aaguid        TEXT NOT NULL DEFAULT '',
-  name          TEXT NOT NULL DEFAULT '',   -- user label, e.g. "iPhone Face ID"
-  created_at    INTEGER NOT NULL,
-  last_used_at  INTEGER NOT NULL
+  owner_id        TEXT NOT NULL,          -- blind index: crypto.OwnerID(email)
+  credential_id   TEXT NOT NULL PRIMARY KEY, -- base64url; lookup only, not secret
+  name            TEXT NOT NULL DEFAULT '',  -- user label, e.g. "iPhone Face ID"
+  credential_json TEXT NOT NULL,          -- serialized webauthn.Credential (public data)
+  created_at      INTEGER NOT NULL,
+  last_used_at    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_webauthn_owner ON webauthn_credentials(owner_id);
 ```
 
-The **private key never leaves the authenticator**; only the public key is
-stored. `public_key` is not a secret, so it is not DEK-wrapped. The `sign_count`
-lets us detect cloned authenticators.
+The **private key never leaves the authenticator**; only public data is stored.
+`credential_json` holds the full `webauthn.Credential` record (ID, public key,
+`Flags`, sign count, transports, AAGUID, attestation). The `Flags` and sign count
+are **required** for assertion verification — the library rejects a login when the
+`BackupEligible` flag is inconsistent, and detects cloned authenticators via a
+non-increasing sign count — so the whole record must round-trip.
 
-`Store` interface additions (`sqlite.go:107`):
+`credential_json` is **not** DEK-wrapped on purpose: it must be read to verify the
+second factor, which happens *before* the password unwraps the DEK. It contains
+only public data. The storage layer treats it as an opaque JSON string; the
+`auth/webauthn` service does the marshal/unmarshal.
+
+`Store` interface additions (`sqlite.go:109`):
 
 ```go
 ListWebAuthnCredentials(ownerEmail string) ([]WebAuthnCredential, error)
-GetWebAuthnCredential(credentialID string) (*WebAuthnCredential, error)
+GetWebAuthnCredential(ownerEmail, credentialID string) (*WebAuthnCredential, error)
 CreateWebAuthnCredential(c *WebAuthnCredential) error
-UpdateWebAuthnCredentialCounter(credentialID string, signCount uint32) error
+UpdateWebAuthnCredential(ownerEmail, credentialID, credentialJSON string) error
 RenameWebAuthnCredential(ownerEmail, credentialID, name string) error
 DeleteWebAuthnCredential(ownerEmail, credentialID string) (int64, error)
 CountWebAuthnCredentials(ownerEmail string) (int, error)
@@ -254,7 +259,8 @@ WEBAUTHN_RP_NAME=e2Mail
 - **HTTPS is mandatory**; a plain-HTTP deployment simply cannot use passkeys.
 - **RP ID is bound to the domain** — moving domains forces re-registration.
 - `go-webauthn` version must be confirmed compatible with Go 1.26 (`go get`
-  verifies this in P1).
+  verifies this in P1). **Verified: `github.com/go-webauthn/webauthn v0.18.1`
+  builds on Go 1.26.**
 - Whether a passkey-only user (no TOTP) should still receive backup codes —
   recommended: yes, keep the existing backup-code flow.
 

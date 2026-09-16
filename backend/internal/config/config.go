@@ -24,6 +24,7 @@ type ServerConfig struct {
 	RequirePGP                   bool
 	DBBackup                     DBBackupSchedule
 	LDAP                         *LDAPConfig
+	WebAuthn                     *WebAuthnConfig
 }
 
 // DBBackupSchedule SQLite 自動備份週期（DB_BACKUP）。
@@ -54,6 +55,20 @@ type LDAPConfig struct {
 func (l *LDAPConfig) Ready() bool {
 	return l != nil && l.Enabled &&
 		l.URL != "" && l.RootDN != "" && l.RootPW != "" && l.UserDNTemplate != ""
+}
+
+// WebAuthnConfig passkey / WebAuthn 第二因素設定。文檔見 docs/PASSKEY.md。
+// RP ID 必須係 origin 嘅 registrable domain，且同 origin 一致（唔可以係 IP）；
+// 換 domain 會令已註冊 passkey 失效。未設定即功能停用。
+type WebAuthnConfig struct {
+	RPID      string   // WEBAUTHN_RP_ID，例 "mail.example.com"
+	RPOrigins []string // WEBAUTHN_RP_ORIGINS，逗號分隔，例 "https://mail.example.com"
+	RPName    string   // WEBAUTHN_RP_NAME，OS 提示顯示名，預設 "e2Mail"
+}
+
+// Ready 判斷 passkey 功能是否配置完整可用（nil-safe）
+func (w *WebAuthnConfig) Ready() bool {
+	return w != nil && w.RPID != "" && len(w.RPOrigins) > 0
 }
 
 // Load 從環境變數載入設定；未設定的欄位採用安全預設值（IMAP 993 / SMTP 587 / 不容許自簽）
@@ -125,6 +140,7 @@ func Load() *ServerConfig {
 	}
 
 	cfg.LDAP = loadLDAP()
+	cfg.WebAuthn = loadWebAuthn()
 	return cfg
 }
 
@@ -172,6 +188,35 @@ func loadLDAP() *LDAPConfig {
 		l.CAFile = v
 	}
 	return l
+}
+
+// loadWebAuthn 由 WEBAUTHN_* 環境變數載入 passkey 設定（未設定即 Ready()=false）
+func loadWebAuthn() *WebAuthnConfig {
+	w := &WebAuthnConfig{RPName: "e2Mail"}
+	if v := strings.TrimSpace(os.Getenv("WEBAUTHN_RP_NAME")); v != "" {
+		w.RPName = v
+	}
+	w.RPID = strings.TrimSpace(os.Getenv("WEBAUTHN_RP_ID"))
+	w.RPOrigins = parseOrigins(os.Getenv("WEBAUTHN_RP_ORIGINS"))
+
+	if w.RPID == "" || len(w.RPOrigins) == 0 {
+		if os.Getenv("WEBAUTHN_RP_ID") != "" || os.Getenv("WEBAUTHN_RP_ORIGINS") != "" {
+			log.Printf("⚠️  WEBAUTHN_RP_ID / WEBAUTHN_RP_ORIGINS 設定不完整，passkey 功能保持停用")
+		}
+	}
+	return w
+}
+
+// parseOrigins 解析逗號分隔嘅 origin 清單，去除空白同結尾斜線
+func parseOrigins(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		origin := strings.TrimRight(strings.TrimSpace(part), "/")
+		if origin != "" {
+			out = append(out, origin)
+		}
+	}
+	return out
 }
 
 // HasDefaults 是否至少設定了一個主機（用以判斷要不要回傳給前端）
