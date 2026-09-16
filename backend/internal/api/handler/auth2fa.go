@@ -17,6 +17,10 @@ import (
 // TwoFAStatusResponse 2FA 狀態回應
 type TwoFAStatusResponse struct {
 	Enabled bool `json:"enabled"`
+	// WebAuthnEnabled 伺服器是否啟用 passkey 功能（WEBAUTHN_* 設定完整）
+	WebAuthnEnabled bool `json:"webauthnEnabled"`
+	// PasskeyCount 目前已註冊嘅 passkey 數量
+	PasskeyCount int `json:"passkeyCount"`
 }
 
 // TwoFASetupRequest 自訂 secret（選填，用於沿用舊 2FA）
@@ -61,8 +65,17 @@ func (h *AuthHandler) TwoFAStatus(w http.ResponseWriter, r *http.Request) {
 		response.InternalServerError(w, "failed to load 2FA settings")
 		return
 	}
+	passkeyCount, err := h.storage.CountWebAuthnCredentials(normalizeEmail(sess.Email))
+	if err != nil {
+		response.InternalServerError(w, "failed to load 2FA settings")
+		return
+	}
 
-	response.Success(w, TwoFAStatusResponse{Enabled: twoFA != nil})
+	response.Success(w, TwoFAStatusResponse{
+		Enabled:         twoFA != nil,
+		WebAuthnEnabled: h.webauthnReady(),
+		PasskeyCount:    passkeyCount,
+	})
 }
 
 // TwoFASetup 生成新的 TOTP secret 與 otpauth URI（尚未啟用，等待 verify）

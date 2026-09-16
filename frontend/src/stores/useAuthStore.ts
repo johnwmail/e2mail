@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 import { authApi } from '../api/auth';
+import { webauthnApi } from '../api/2fa';
 import { pgpService } from '../api/pgp';
-import { LoginRequest, Session } from '../types/api';
+import { LoginRequest, LoginResponse, Session } from '../types/api';
 
 export interface LoginResult {
   requires2fa: true;
   challenge: string;
+  methods?: string[];
 }
 
 interface AuthState {
@@ -15,23 +17,13 @@ interface AuthState {
   isLoading: boolean;
   login: (req: LoginRequest) => Promise<LoginResult | null>;
   verify2fa: (challenge: string, code: string) => Promise<void>;
+  loginWithWebAuthn: (challenge: string, assertion: unknown) => Promise<void>;
   logout: () => Promise<void>;
   initAuth: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  token: localStorage.getItem('e2Mail_token'),
-  session: localStorage.getItem('e2Mail_session')
-    ? JSON.parse(localStorage.getItem('e2Mail_session')!)
-    : null,
-  isAuthenticated: !!localStorage.getItem('e2Mail_token'),
-  isLoading: true,
-
-  login: async (req: LoginRequest) => {
-    const res = await authApi.login(req);
-    if (res.requires2fa) {
-      return { requires2fa: true, challenge: res.challenge! };
-    }
+export const useAuthStore = create<AuthState>((set) => {
+  const applyLogin = (res: LoginResponse) => {
     localStorage.setItem('e2Mail_token', res.token!);
     localStorage.setItem('e2Mail_session', JSON.stringify(res.session));
     set({
@@ -40,64 +32,79 @@ export const useAuthStore = create<AuthState>((set) => ({
       isAuthenticated: true,
       isLoading: false,
     });
-    return null;
-  },
+  };
 
-  verify2fa: async (challenge: string, code: string) => {
-    const res = await authApi.verify2fa({ challenge, code });
-    localStorage.setItem('e2Mail_token', res.token!);
-    localStorage.setItem('e2Mail_session', JSON.stringify(res.session));
-    set({
-      token: res.token,
-      session: res.session,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-  },
+  return {
+    token: localStorage.getItem('e2Mail_token'),
+    session: localStorage.getItem('e2Mail_session')
+      ? JSON.parse(localStorage.getItem('e2Mail_session')!)
+      : null,
+    isAuthenticated: !!localStorage.getItem('e2Mail_token'),
+    isLoading: true,
 
-  logout: async () => {
-    try {
-      await authApi.logout();
-    } catch {
-      // 忽略登出網路錯誤
-    }
-    localStorage.removeItem('e2Mail_token');
-    localStorage.removeItem('e2Mail_session');
-    // logout 同時清除 in-memory PGP key（唔留 localStorage），下次登入重新自 server fetch
-    pgpService.clearKey();
-    set({
-      token: null,
-      session: null,
-      isAuthenticated: false,
-      isLoading: false,
-    });
-  },
+    login: async (req: LoginRequest) => {
+      const res = await authApi.login(req);
+      if (res.requires2fa) {
+        return { requires2fa: true, challenge: res.challenge!, methods: res.methods };
+      }
+      applyLogin(res);
+      return null;
+    },
 
-  initAuth: async () => {
-    const token = localStorage.getItem('e2Mail_token');
-    if (!token) {
-      set({ isLoading: false, isAuthenticated: false });
-      return;
-    }
+    verify2fa: async (challenge: string, code: string) => {
+      const res = await authApi.verify2fa({ challenge, code });
+      applyLogin(res);
+    },
 
-    try {
-      const session = await authApi.getMe();
-      localStorage.setItem('e2Mail_session', JSON.stringify(session));
-      set({
-        token,
-        session,
-        isAuthenticated: true,
-        isLoading: false,
-      });
-    } catch {
+    loginWithWebAuthn: async (challenge: string, assertion: unknown) => {
+      const res = await webauthnApi.loginVerify(challenge, assertion);
+      applyLogin(res);
+    },
+
+    logout: async () => {
+      try {
+        await authApi.logout();
+      } catch {
+        // 忽略登出網路錯誤
+      }
       localStorage.removeItem('e2Mail_token');
       localStorage.removeItem('e2Mail_session');
+      // logout 同時清除 in-memory PGP key（唔留 localStorage），下次登入重新自 server fetch
+      pgpService.clearKey();
       set({
         token: null,
         session: null,
         isAuthenticated: false,
         isLoading: false,
       });
-    }
-  },
-}));
+    },
+
+    initAuth: async () => {
+      const token = localStorage.getItem('e2Mail_token');
+      if (!token) {
+        set({ isLoading: false, isAuthenticated: false });
+        return;
+      }
+
+      try {
+        const session = await authApi.getMe();
+        localStorage.setItem('e2Mail_session', JSON.stringify(session));
+        set({
+          token,
+          session,
+          isAuthenticated: true,
+          isLoading: false,
+        });
+      } catch {
+        localStorage.removeItem('e2Mail_token');
+        localStorage.removeItem('e2Mail_session');
+        set({
+          token: null,
+          session: null,
+          isAuthenticated: false,
+          isLoading: false,
+        });
+      }
+    },
+  };
+});

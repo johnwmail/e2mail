@@ -67,3 +67,64 @@ func TestLoadDBBackupSchedules(t *testing.T) {
 		}
 	})
 }
+
+func TestWebAuthnDisabledByDefault(t *testing.T) {
+	t.Setenv("WEBAUTHN_RP_ID", "")
+	t.Setenv("WEBAUTHN_RP_ORIGINS", "")
+	cfg := Load()
+	if cfg.WebAuthn == nil {
+		t.Fatal("WebAuthn config should be non-nil")
+	}
+	if cfg.WebAuthn.Ready() {
+		t.Fatal("WebAuthn should be unready when env unset")
+	}
+	if cfg.WebAuthn.RPName != "e2Mail" {
+		t.Fatalf("default RPName = %q, want e2Mail", cfg.WebAuthn.RPName)
+	}
+}
+
+func TestLoadWebAuthn(t *testing.T) {
+	t.Setenv("WEBAUTHN_RP_ID", "mail.example.com")
+	t.Setenv("WEBAUTHN_RP_ORIGINS", " https://mail.example.com/ , https://alt.example.com ")
+	t.Setenv("WEBAUTHN_RP_NAME", "e2Mail Test")
+	cfg := Load()
+	if !cfg.WebAuthn.Ready() {
+		t.Fatal("WebAuthn should be ready with full env")
+	}
+	if cfg.WebAuthn.RPID != "mail.example.com" {
+		t.Fatalf("RPID = %q", cfg.WebAuthn.RPID)
+	}
+	if len(cfg.WebAuthn.RPOrigins) != 2 {
+		t.Fatalf("origins = %#v, want 2", cfg.WebAuthn.RPOrigins)
+	}
+	if cfg.WebAuthn.RPOrigins[0] != "https://mail.example.com" {
+		t.Fatalf("origin[0] = %q (trailing slash/space not trimmed)", cfg.WebAuthn.RPOrigins[0])
+	}
+	if cfg.WebAuthn.RPName != "e2Mail Test" {
+		t.Fatalf("RPName = %q", cfg.WebAuthn.RPName)
+	}
+}
+
+func TestWebAuthnPartialEnvNotReady(t *testing.T) {
+	t.Run("only rp id", func(t *testing.T) {
+		t.Setenv("WEBAUTHN_RP_ID", "mail.example.com")
+		t.Setenv("WEBAUTHN_RP_ORIGINS", "")
+		if Load().WebAuthn.Ready() {
+			t.Fatal("RP ID alone must not be ready")
+		}
+	})
+	t.Run("only origins", func(t *testing.T) {
+		t.Setenv("WEBAUTHN_RP_ID", "")
+		t.Setenv("WEBAUTHN_RP_ORIGINS", "https://mail.example.com")
+		if Load().WebAuthn.Ready() {
+			t.Fatal("origins alone must not be ready")
+		}
+	})
+}
+
+func TestWebAuthnReadyNilSafe(t *testing.T) {
+	var w *WebAuthnConfig
+	if w.Ready() {
+		t.Fatal("nil WebAuthnConfig must not be ready")
+	}
+}

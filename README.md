@@ -143,6 +143,9 @@ Uncomment in `docker-compose.yml` (or set via your orchestrator) to activate.
 | `REQUIRE_2FA`             | `true`  | Enforce 2FA onboarding for new logins                   |
 | `REQUIRE_PGP`             | `true`  | Enforce PGP key setup onboarding for new logins         |
 | `DB_BACKUP`               | `DISABLE` | Auto-backup SQLite to `$DATA_DIR/backups/` (`DISABLE` / `DAILY` / `WEEKLY` / `MONTHLY`; see [`docs/BACKUP.md`](docs/BACKUP.md)) |
+| `WEBAUTHN_RP_ID`          | —       | Relying Party ID for passkeys (e.g. `mail.example.com`); feature off when unset. See [`docs/PASSKEY.md`](docs/PASSKEY.md) |
+| `WEBAUTHN_RP_ORIGINS`     | —       | Comma-separated allowed origins (e.g. `https://mail.example.com`); must be HTTPS |
+| `WEBAUTHN_RP_NAME`        | `e2Mail` | Display name shown in the OS passkey prompt             |
 
 The public endpoint `GET /api/server-config` exposes the defaults so the login
 page can pre-populate the advanced settings panel.
@@ -198,6 +201,7 @@ Per-feature design notes and implementation plans live in [`docs/`](docs/):
 | [`MAIL-RENDER.md`](docs/MAIL-RENDER.md) | HTML mail sanitising, fit-to-width, remote-image blocking | implemented |
 | [`CONTACTS.md`](docs/CONTACTS.md) | Per-user address book with vCard/CSV import | draft |
 | [`BACKUP.md`](docs/BACKUP.md) | `DB_BACKUP` SQLite period snapshots under `$DATA_DIR/backups/` | implemented |
+| [`PASSKEY.md`](docs/PASSKEY.md) | Passkey / WebAuthn as a login second factor (Face ID, device keys, security keys) | implemented |
 
 ## Development
 

@@ -49,6 +49,21 @@ type TwoFA struct {
 	EnabledAt    time.Time
 }
 
+// WebAuthnCredential 儲存於 SQLite 之 passkey / WebAuthn 憑證。
+// 只存公開資料：private key 永遠留喺 authenticator。CredentialJSON 為完整
+// webauthn.Credential（含 Flags / sign count / attestation），係公開資料，
+// 且必須喺 DEK 解鎖前讀取（2FA 就係用嚟 gate DEK），故唔可以 DEK 加密。
+// storage 層只當佢係 opaque JSON，由 auth/webauthn service marshal/unmarshal。
+// 文檔見 docs/PASSKEY.md。
+type WebAuthnCredential struct {
+	OwnerEmail     string    `json:"-"`
+	CredentialID   string    `json:"id"` // base64url, unique
+	Name           string    `json:"name"`
+	CredentialJSON string    `json:"-"` // serialized webauthn.Credential
+	CreatedAt      time.Time `json:"createdAt"`
+	LastUsedAt     time.Time `json:"lastUsedAt"`
+}
+
 // Account 儲存於 SQLite 之郵件帳號設定。
 // DB 欄位：owner_id(hash)、label/email/hosts/username(WrapField DEK 密文)、enc_*_password(既有 DEK raw base64)。
 // struct 欄位保持明文視圖，加解密於 storage 邊界完成。
@@ -133,6 +148,15 @@ type Store interface {
 	GetTwoFA(ownerEmail string) (*TwoFA, error)
 	SaveTwoFA(t *TwoFA) error
 	DeleteTwoFA(ownerEmail string) error
+
+	// Passkey / WebAuthn credentials (second factor; public key only, not DEK-wrapped)
+	ListWebAuthnCredentials(ownerEmail string) ([]WebAuthnCredential, error)
+	GetWebAuthnCredential(ownerEmail, credentialID string) (*WebAuthnCredential, error)
+	CreateWebAuthnCredential(c *WebAuthnCredential) error
+	UpdateWebAuthnCredential(ownerEmail, credentialID, credentialJSON string) error
+	RenameWebAuthnCredential(ownerEmail, credentialID, name string) error
+	DeleteWebAuthnCredential(ownerEmail, credentialID string) (int64, error)
+	CountWebAuthnCredentials(ownerEmail string) (int, error)
 
 	// Accounts (multi-account registry, per-user)
 	ListAccounts(userEmail string, dek []byte) ([]Account, error)
@@ -277,6 +301,16 @@ CREATE TABLE IF NOT EXISTS user_prefs (
 	PRIMARY KEY (owner_id, pref_key)
 );
 CREATE INDEX IF NOT EXISTS idx_user_prefs_owner ON user_prefs(owner_id);
+
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+	owner_id        TEXT NOT NULL,
+	credential_id   TEXT NOT NULL PRIMARY KEY,
+	name            TEXT NOT NULL DEFAULT '',
+	credential_json TEXT NOT NULL,
+	created_at      INTEGER NOT NULL,
+	last_used_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_webauthn_owner ON webauthn_credentials(owner_id);
 `
 
 // SQLiteStore SQLite 儲存實作
@@ -954,6 +988,157 @@ func (s *SQLiteStore) DeleteTwoFA(ownerEmail string) error {
 		return fmt.Errorf("failed to delete two_fa: %w", err)
 	}
 	return nil
+}
+
+// ===== Passkey / WebAuthn =====
+
+// ErrWebAuthnNotFound 表示指定 passkey 唔存在（或唔屬於該使用者）
+var ErrWebAuthnNotFound = errors.New("webauthn credential not found")
+
+// scanWebAuthnCredential 由一列查詢結果掃描成 WebAuthnCredential
+func scanWebAuthnCredential(ownerEmail string, scan func(dest ...any) error) (*WebAuthnCredential, error) {
+	var c WebAuthnCredential
+	var createdAt, lastUsedAt int64
+	if err := scan(&c.CredentialID, &c.Name, &c.CredentialJSON, &createdAt, &lastUsedAt); err != nil {
+		return nil, err
+	}
+	c.OwnerEmail = ownerEmail
+	c.CreatedAt = time.Unix(createdAt, 0).UTC()
+	c.LastUsedAt = time.Unix(lastUsedAt, 0).UTC()
+	return &c, nil
+}
+
+// ListWebAuthnCredentials 取得使用者所有 passkey（按建立時間排序）
+func (s *SQLiteStore) ListWebAuthnCredentials(ownerEmail string) ([]WebAuthnCredential, error) {
+	rows, err := s.db.Query(
+		`SELECT credential_id, name, credential_json, created_at, last_used_at
+		 FROM webauthn_credentials WHERE owner_id = ? ORDER BY created_at ASC`,
+		crypto.OwnerID(ownerEmail),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list webauthn credentials: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []WebAuthnCredential
+	for rows.Next() {
+		c, err := scanWebAuthnCredential(ownerEmail, rows.Scan)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan webauthn credential: %w", err)
+		}
+		out = append(out, *c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate webauthn credentials: %w", err)
+	}
+	return out, nil
+}
+
+// GetWebAuthnCredential 取得指定使用者之單一 passkey（無則回傳 nil）
+func (s *SQLiteStore) GetWebAuthnCredential(ownerEmail, credentialID string) (*WebAuthnCredential, error) {
+	c, err := scanWebAuthnCredential(ownerEmail, func(dest ...any) error {
+		return s.db.QueryRow(
+			`SELECT credential_id, name, credential_json, created_at, last_used_at
+			 FROM webauthn_credentials WHERE owner_id = ? AND credential_id = ?`,
+			crypto.OwnerID(ownerEmail), credentialID,
+		).Scan(dest...)
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get webauthn credential: %w", err)
+	}
+	return c, nil
+}
+
+// CreateWebAuthnCredential 新增一個 passkey 憑證
+func (s *SQLiteStore) CreateWebAuthnCredential(c *WebAuthnCredential) error {
+	if c.OwnerEmail == "" || c.CredentialID == "" || c.CredentialJSON == "" {
+		return errors.New("owner_email, credential_id and credential_json are required")
+	}
+	if c.CreatedAt.IsZero() {
+		c.CreatedAt = time.Now().UTC()
+	}
+	if c.LastUsedAt.IsZero() {
+		c.LastUsedAt = c.CreatedAt
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`INSERT INTO webauthn_credentials
+		   (owner_id, credential_id, name, credential_json, created_at, last_used_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		crypto.OwnerID(c.OwnerEmail), c.CredentialID, c.Name, c.CredentialJSON,
+		c.CreatedAt.Unix(), c.LastUsedAt.Unix(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create webauthn credential: %w", err)
+	}
+	return nil
+}
+
+// UpdateWebAuthnCredential 以驗證後嘅完整 credential record 回寫（sign count、flags、backup state），
+// 並更新 last_used_at。用嚟偵測 cloned authenticator（sign count 必須遞增）。
+func (s *SQLiteStore) UpdateWebAuthnCredential(ownerEmail, credentialID, credentialJSON string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(
+		`UPDATE webauthn_credentials SET credential_json = ?, last_used_at = ?
+		 WHERE owner_id = ? AND credential_id = ?`,
+		credentialJSON, time.Now().UTC().Unix(), crypto.OwnerID(ownerEmail), credentialID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update webauthn credential: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrWebAuthnNotFound
+	}
+	return nil
+}
+
+// RenameWebAuthnCredential 更新 passkey 顯示名（只限本人）
+func (s *SQLiteStore) RenameWebAuthnCredential(ownerEmail, credentialID, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(
+		`UPDATE webauthn_credentials SET name = ? WHERE owner_id = ? AND credential_id = ?`,
+		name, crypto.OwnerID(ownerEmail), credentialID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to rename webauthn credential: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrWebAuthnNotFound
+	}
+	return nil
+}
+
+// DeleteWebAuthnCredential 刪除指定 passkey（只限本人），回傳受影響列數
+func (s *SQLiteStore) DeleteWebAuthnCredential(ownerEmail, credentialID string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(
+		`DELETE FROM webauthn_credentials WHERE owner_id = ? AND credential_id = ?`,
+		crypto.OwnerID(ownerEmail), credentialID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete webauthn credential: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// CountWebAuthnCredentials 回傳使用者已註冊 passkey 數量
+func (s *SQLiteStore) CountWebAuthnCredentials(ownerEmail string) (int, error) {
+	var n int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM webauthn_credentials WHERE owner_id = ?`,
+		crypto.OwnerID(ownerEmail),
+	).Scan(&n); err != nil {
+		return 0, fmt.Errorf("failed to count webauthn credentials: %w", err)
+	}
+	return n, nil
 }
 
 // ===== Folder display prefs (e2Mail-only) =====

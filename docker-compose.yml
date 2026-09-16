@@ -53,6 +53,11 @@ services:
       # - LDAP_USER_DN_TEMPLATE=uid=%s,ou=people,dc=example,dc=com
       # - LDAP_CA_FILE=/certs/rootCA.crt         # 自簽 RootCA 容器內路徑（需配合 volumes 掛載）
       # - LDAP_ALLOW_INSECURE_TLS=false
+      # === Passkey / WebAuthn 第二因素（Face ID / Touch ID / 安全鑰匙；詳見 docs/PASSKEY.md） ===
+      # 必須 HTTPS；RP ID 要同 origin 一致（https://mail.example.com → mail.example.com）
+      # - WEBAUTHN_RP_ID=mail.example.com
+      # - WEBAUTHN_RP_ORIGINS=https://mail.example.com
+      # - WEBAUTHN_RP_NAME=e2Mail
     volumes:
       - data:/data
       # 自簽 CA 例子（將宿主機 ./certs/rootCA.crt 掛到容器 /certs/rootCA.crt）：

@@ -32,6 +32,7 @@ type AuthHandler struct {
 	sessionTTL   time.Duration
 	pwChanger    passwordChanger
 	pwLimiter    *auth.AttemptLimiter
+	webauthn     *auth.WebAuthnService // nil = passkey 功能停用
 }
 
 // passwordChanger 抽象 ldap.Client，方便測試注入
@@ -61,6 +62,16 @@ func NewAuthHandler(store session.Store, storageStore storage.Store, poolMgr *im
 // SetPasswordChanger 注入 LDAP 密碼變更客戶端（LDAP 未啟用時保持 nil）
 func (h *AuthHandler) SetPasswordChanger(c passwordChanger) {
 	h.pwChanger = c
+}
+
+// SetWebAuthnService 注入 passkey service（WEBAUTHN_* 未設定時保持 nil，功能停用）
+func (h *AuthHandler) SetWebAuthnService(s *auth.WebAuthnService) {
+	h.webauthn = s
+}
+
+// webauthnReady 回報 passkey 功能是否可用
+func (h *AuthHandler) webauthnReady() bool {
+	return h.webauthn != nil && h.cfg != nil && h.cfg.WebAuthn.Ready()
 }
 
 // cookieSecure 根據 COOKIE_SECURE 設定決定 Secure flag（預設 true）
@@ -180,6 +191,8 @@ type LoginResponse struct {
 	Session     *session.Session `json:"session,omitempty"`
 	Requires2FA bool             `json:"requires2fa,omitempty"`
 	Challenge   string           `json:"challenge,omitempty"`
+	// Methods 列出該帳號可用嘅第二因素方法："totp"、"webauthn"（可並存）
+	Methods []string `json:"methods,omitempty"`
 }
 
 // Verify2FARequest 2FA 驗證參數結構
@@ -252,8 +265,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = testClient.Close()
 
-	// 1.5 若使用者已啟用 2FA，先建立 pending challenge，等待驗證碼
-	if twoFA, _ := h.storage.GetTwoFA(ownerEmail); twoFA != nil {
+	// 1.5 若使用者已啟用第二因素（TOTP 或 passkey），先建立 pending challenge
+	twoFA, _ := h.storage.GetTwoFA(ownerEmail)
+	passkeyCount, _ := h.storage.CountWebAuthnCredentials(ownerEmail)
+	if twoFA != nil || passkeyCount > 0 {
 		challenge := h.pendingLogin.Create(&auth.PendingLogin{
 			Email:                req.Email,
 			Username:             username,
@@ -267,10 +282,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			SMTPUseTLS:           smtpUseTLS,
 			SMTPAllowInsecureTLS: req.SMTPAllowInsecureTLS,
 		})
-		log.Printf("[AUTH] 2FA required for %s (challenge created)", req.Email)
+		log.Printf("[AUTH] 2FA required for %s (challenge created, methods=%s)", req.Email, strings.Join(secondFactorMethods(twoFA != nil, passkeyCount > 0), "+"))
 		response.Success(w, LoginResponse{
 			Requires2FA: true,
 			Challenge:   challenge,
+			Methods:     secondFactorMethods(twoFA != nil, passkeyCount > 0),
 		})
 		return
 	}

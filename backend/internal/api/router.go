@@ -45,6 +45,8 @@ func NewRouter(
 		// 公開認證端點
 		api.Post("/auth/login", authH.Login)
 		api.Post("/auth/verify-2fa", authH.Verify2FA)
+		api.Post("/auth/webauthn/begin", authH.WebAuthnLoginBegin)
+		api.Post("/auth/webauthn/verify", authH.WebAuthnLoginVerify)
 
 		// 公開伺服器預設值（無需登入，登入頁面預填用）
 		api.Get("/server-config", configH.Get)
@@ -64,6 +66,13 @@ func NewRouter(
 			protected.Post("/2fa/enable", authH.TwoFAEnable)
 			protected.Post("/2fa/disable", authH.TwoFADisable)
 			protected.Post("/2fa/regenerate-backup-codes", authH.TwoFARegenerateBackupCodes)
+
+			// Passkey / WebAuthn 管理（第二因素）
+			protected.Get("/2fa/webauthn", authH.WebAuthnList)
+			protected.Post("/2fa/webauthn/register/begin", authH.WebAuthnRegisterBegin)
+			protected.Post("/2fa/webauthn/register/finish", authH.WebAuthnRegisterFinish)
+			protected.Patch("/2fa/webauthn/{id}", authH.WebAuthnRename)
+			protected.Delete("/2fa/webauthn/{id}", authH.WebAuthnDelete)
 
 			// 即時事件推播 (SSE)
 			protected.Get("/events", eventsH.SSE)

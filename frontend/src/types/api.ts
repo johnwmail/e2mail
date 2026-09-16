@@ -143,6 +143,8 @@ export interface LoginResponse {
   session?: Session;
   requires2fa?: boolean;
   challenge?: string;
+  /** 可用嘅第二因素方法："totp" / "webauthn" */
+  methods?: string[];
 }
 
 export interface Verify2FARequest {
@@ -152,6 +154,34 @@ export interface Verify2FARequest {
 
 export interface TwoFAStatusResponse {
   enabled: boolean;
+  /** 伺服器是否啟用 passkey（WEBAUTHN_* 設定完整） */
+  webauthnEnabled?: boolean;
+  /** 目前已註冊嘅 passkey 數量 */
+  passkeyCount?: number;
+}
+
+export interface WebAuthnCredential {
+  id: string;
+  name?: string;
+  createdAt: string;
+  lastUsedAt: string;
+  transports?: string[];
+  aaguid?: string;
+}
+
+export interface WebAuthnCredentialListResponse {
+  credentials: WebAuthnCredential[];
+}
+
+/** WebAuthn begin 回應：ceremony challenge id + 標準 options JSON */
+export interface WebAuthnBeginResponse {
+  challenge: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  publicKey: any;
+}
+
+export interface WebAuthnLoginBeginRequest {
+  challenge: string;
 }
 
 export interface TwoFASetupResponse {

@@ -7,10 +7,27 @@ import { Account, Session } from '../../types/api';
 const mocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
   changePassword: vi.fn(),
+  waList: vi.fn(),
+  waRegisterBegin: vi.fn(),
+  waRegisterFinish: vi.fn(),
+  waRename: vi.fn(),
+  waRemove: vi.fn(),
+  startRegistration: vi.fn(),
 }));
 
 vi.mock('../../api/2fa', () => ({
   twoFApi: { getStatus: mocks.getStatus },
+  webauthnApi: {
+    list: mocks.waList,
+    registerBegin: mocks.waRegisterBegin,
+    registerFinish: mocks.waRegisterFinish,
+    rename: mocks.waRename,
+    remove: mocks.waRemove,
+  },
+}));
+
+vi.mock('@simplewebauthn/browser', () => ({
+  startRegistration: mocks.startRegistration,
 }));
 
 vi.mock('../../api/auth', () => ({
@@ -155,5 +172,58 @@ describe('SecurityTab change-password section', () => {
     fireEvent.click(screen.getByRole('button', { name: /Change password/ }));
 
     expect(await screen.findByText('舊密碼不正確')).toBeInTheDocument();
+  });
+});
+
+describe('SecurityTab passkeys section', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAuthStore.setState({ session: null });
+    stubServerConfig(false);
+    mocks.getStatus.mockResolvedValue({ enabled: false, webauthnEnabled: true, passkeyCount: 0 });
+    mocks.waList.mockResolvedValue({ credentials: [] });
+  });
+
+  it('lists existing passkeys and adds a new one', async () => {
+    (window as any).PublicKeyCredential = {};
+    mocks.getStatus.mockResolvedValue({ enabled: false, webauthnEnabled: true, passkeyCount: 1 });
+    mocks.waList.mockResolvedValue({
+      credentials: [
+        { id: 'c1', name: 'iPhone', createdAt: '2026-01-01T00:00:00Z', lastUsedAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mocks.waRegisterBegin.mockResolvedValue({ challenge: 'cer-1', publicKey: {} });
+    mocks.startRegistration.mockResolvedValue({ id: 'newcred' });
+    mocks.waRegisterFinish.mockResolvedValue({
+      id: 'newcred',
+      name: 'Passkey',
+      createdAt: '',
+      lastUsedAt: '',
+    });
+
+    render(<SecurityTab />);
+    expect(await screen.findByText('iPhone')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add a passkey' }));
+
+    await waitFor(() => {
+      expect(mocks.waRegisterBegin).toHaveBeenCalled();
+      expect(mocks.startRegistration).toHaveBeenCalled();
+      expect(mocks.waRegisterFinish).toHaveBeenCalledWith('cer-1', { id: 'newcred' }, undefined);
+    });
+    expect(await screen.findByText('Passkey added.')).toBeInTheDocument();
+
+    delete (window as any).PublicKeyCredential;
+  });
+
+  it('hides the section when the server disables WebAuthn', async () => {
+    (window as any).PublicKeyCredential = {};
+    mocks.getStatus.mockResolvedValue({ enabled: false, webauthnEnabled: false });
+
+    render(<SecurityTab />);
+    await screen.findByText('Two-factor authentication is off');
+    expect(screen.queryByText('Passkeys')).not.toBeInTheDocument();
+
+    delete (window as any).PublicKeyCredential;
   });
 });
