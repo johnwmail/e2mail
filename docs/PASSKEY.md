@@ -179,8 +179,9 @@ Login (**public**, next to `router.go:46`):
   compatibility.
 - `completeLogin()` is reused unchanged — the pending login already holds the
   password needed to unwrap the DEK.
-- `/api/2fa/status` (`auth2fa.go:52`) gains `webauthnCount`; onboarding
-  (`Require2FA`) treats a registered passkey as satisfying the 2FA requirement.
+- `/api/2fa/status` (`auth2fa.go:52`) gains `webauthnEnabled` + `passkeyCount`;
+  onboarding (`Require2FA`) treats a registered passkey as satisfying the 2FA
+  requirement.
 
 ### 6. Security
 
@@ -189,8 +190,12 @@ Login (**public**, next to `router.go:46`):
 - The passkey verify endpoint reuses the existing rate limiter
   (`pwLimiter`, `backend/internal/auth/attempts.go`), like `Verify2FA`
   (`auth.go:105`).
-- `sign_count` must be strictly increasing per credential; a regression is
-  rejected (possible cloned authenticator).
+- **Sign counter**: `go-webauthn` sets `Authenticator.CloneWarning` when the
+  assertion counter does not advance (the "possible cloned authenticator"
+  signal) and the updated record is written back. It does **not** reject the
+  ceremony, and we do not reject on it either: many synced platform passkeys
+  always report `signCount = 0`, so hard-rejecting would lock out legitimate
+  users. Treat `CloneWarning` as an audit signal, not a gate.
 - Completing with **any** enabled method (TOTP, backup code, or passkey) is
   accepted, which is standard multi-factor behaviour and keeps backup codes as a
   fallback.
@@ -250,7 +255,7 @@ WEBAUTHN_RP_NAME=e2Mail
   begin/finish, list, rename, delete endpoints; `SecurityTab` passkey UI; i18n.
 - **P3 — login**: `/api/auth/webauthn/begin` + `/verify`; `methods` on
   `LoginResponse`; `LoginForm` passkey button and capability fallback.
-- **P4 — hardening & docs**: `sign_count` clone detection, rate-limit wiring,
+- **P4 — hardening & docs**: sign-counter write-back, rate-limit wiring,
   onboarding/`2fa/status` integration, README/`.env.example`/`docker-compose`
   updates, manual device matrix.
 
