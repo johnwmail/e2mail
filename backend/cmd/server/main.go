@@ -16,6 +16,7 @@ import (
 
 	"github.com/johnwmail/e2mail/backend/internal/api"
 	"github.com/johnwmail/e2mail/backend/internal/api/handler"
+	"github.com/johnwmail/e2mail/backend/internal/auth"
 	"github.com/johnwmail/e2mail/backend/internal/config"
 	"github.com/johnwmail/e2mail/backend/internal/imap"
 	ldapint "github.com/johnwmail/e2mail/backend/internal/ldap"
@@ -135,6 +136,22 @@ func main() {
 		log.Printf("🔐 LDAP change-password enabled (url: %s)", serverConfig.LDAP.URL)
 	} else if serverConfig.LDAP.Enabled {
 		log.Printf("⚠️  LDAP_ENABLED=true 但設定不完整（LDAP_URL / LDAP_ROOT_DN / LDAP_ROOT_PW / LDAP_USER_DN_TEMPLATE），change-password 保持停用")
+	}
+
+	if serverConfig.WebAuthn.Ready() {
+		waService, err := auth.NewWebAuthnService(
+			serverConfig.WebAuthn.RPID,
+			serverConfig.WebAuthn.RPName,
+			serverConfig.WebAuthn.RPOrigins,
+		)
+		if err != nil {
+			log.Printf("⚠️  WebAuthn 初始化失敗，passkey 功能停用: %v", err)
+		} else {
+			authHandler.SetWebAuthnService(waService)
+			log.Printf("🔐 Passkey / WebAuthn enabled (rpID: %s, origins: %v)", serverConfig.WebAuthn.RPID, serverConfig.WebAuthn.RPOrigins)
+		}
+	} else if serverConfig.WebAuthn.RPID != "" || len(serverConfig.WebAuthn.RPOrigins) > 0 {
+		log.Printf("⚠️  WEBAUTHN_RP_ID / WEBAUTHN_RP_ORIGINS 設定不完整，passkey 功能保持停用")
 	}
 	mailHandler := handler.NewMailHandler(poolManager, smtpSender)
 	eventsHandler := handler.NewEventsHandler(idleManager)

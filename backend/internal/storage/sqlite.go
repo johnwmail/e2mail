@@ -992,6 +992,9 @@ func (s *SQLiteStore) DeleteTwoFA(ownerEmail string) error {
 
 // ===== Passkey / WebAuthn =====
 
+// ErrWebAuthnNotFound 表示指定 passkey 唔存在（或唔屬於該使用者）
+var ErrWebAuthnNotFound = errors.New("webauthn credential not found")
+
 // scanWebAuthnCredential 由一列查詢結果掃描成 WebAuthnCredential
 func scanWebAuthnCredential(ownerEmail string, scan func(dest ...any) error) (*WebAuthnCredential, error) {
 	var c WebAuthnCredential
@@ -1089,7 +1092,7 @@ func (s *SQLiteStore) UpdateWebAuthnCredential(ownerEmail, credentialID, credent
 		return fmt.Errorf("failed to update webauthn credential: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return sql.ErrNoRows
+		return ErrWebAuthnNotFound
 	}
 	return nil
 }
@@ -1107,7 +1110,7 @@ func (s *SQLiteStore) RenameWebAuthnCredential(ownerEmail, credentialID, name st
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return sql.ErrNoRows
+		return ErrWebAuthnNotFound
 	}
 	return nil
 }

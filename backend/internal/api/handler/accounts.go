@@ -68,8 +68,9 @@ func (h *AccountsHandler) OnboardingStatus(w http.ResponseWriter, r *http.Reques
 
 	twoFA, _ := h.storage.GetTwoFA(email)
 	keyring, _ := h.storage.GetKeyring(email, authCtx.DEK)
+	passkeyCount, _ := h.storage.CountWebAuthnCredentials(email)
 
-	has2FA := twoFA != nil
+	has2FA := twoFA != nil || passkeyCount > 0
 	hasPGP := keyring != nil
 
 	require2FA := true
