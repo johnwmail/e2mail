@@ -69,10 +69,10 @@ export const useMailStore = create<MailState>((set) => ({
   })(),
 
   setCurrentFolder: (folder) =>
-    set({ currentFolder: folder, selectedUID: null, selectedFolder: null, page: 1, isSidebarOpen: false, unreadView: false }),
+    set({ currentFolder: folder, selectedUID: null, selectedFolder: null, page: 1, isSidebarOpen: false, unreadView: false, view: 'mail' }),
 
   setActiveAccountId: (id) =>
-    set({ activeAccountId: id, currentFolder: 'INBOX', selectedUID: null, selectedFolder: null, page: 1, inboxUnread: 0, unreadView: false }),
+    set({ activeAccountId: id, currentFolder: 'INBOX', selectedUID: null, selectedFolder: null, page: 1, inboxUnread: 0, unreadView: false, view: 'mail' }),
 
   setSelectedUID: (uid) =>
     set((s) => ({ selectedUID: uid, selectedFolder: uid === null ? null : s.selectedFolder })),
@@ -86,12 +86,12 @@ export const useMailStore = create<MailState>((set) => ({
   clearSearch: () =>
     set({ searchInput: '', searchQuery: '', page: 1, selectedUID: null, selectedFolder: null }),
 
-  setUnreadView: (flag) => set({ unreadView: flag, page: 1, selectedUID: null, selectedFolder: null }),
+  setUnreadView: (flag) => set({ unreadView: flag, page: 1, selectedUID: null, selectedFolder: null, view: 'mail' }),
 
   setPage: (page) => set({ page }),
 
   openComposer: (draft = {}) =>
-    set((s) => ({ isComposerOpen: true, composerDraft: draft, composerKey: s.composerKey + 1 })),
+    set((s) => ({ isComposerOpen: true, composerDraft: draft, composerKey: s.composerKey + 1, view: 'mail' })),
 
   closeComposer: () =>
     set({ isComposerOpen: false, composerDraft: null }),

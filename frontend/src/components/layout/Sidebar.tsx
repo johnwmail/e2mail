@@ -379,7 +379,7 @@ const AccountFolders: React.FC<{
   );
 };
 
-export const Sidebar: React.FC = () => {
+export const Sidebar: React.FC<{ hideDesktop?: boolean }> = ({ hideDesktop = false }) => {
   const { t } = useI18n();
   const { openComposer, isSidebarOpen, setSidebarOpen, openSettings } = useMailStore();
   const { session, logout } = useAuthStore();
@@ -486,14 +486,17 @@ export const Sidebar: React.FC = () => {
 
   return (
     <>
-      {/* 桌面端靜態側邊欄 (≥ lg) */}
-      <aside className="hidden lg:flex w-60 bg-slate-50/80 dark:bg-slate-900/50 border-r border-slate-200 dark:border-slate-800 flex-col shrink-0 select-none">
+      {/* 桌面端靜態側邊欄 (≥ lg)；hideDesktop 時唔顯示（例如 Settings 頁） */}
+      <aside
+        data-testid="desktop-sidebar"
+        className={`${hideDesktop ? 'hidden' : 'hidden lg:flex'} w-60 bg-slate-50/80 dark:bg-slate-900/50 border-r border-slate-200 dark:border-slate-800 flex-col shrink-0 select-none`}
+      >
         {sidebarContent}
       </aside>
 
       {/* 行動端抽屜式側邊欄 (< lg) */}
       {isSidebarOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex">
+        <div data-testid="mobile-sidebar" className="lg:hidden fixed inset-0 z-50 flex">
           <div
             onClick={() => setSidebarOpen(false)}
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
