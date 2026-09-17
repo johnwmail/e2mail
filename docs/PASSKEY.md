@@ -1,8 +1,8 @@
 # Passkey / WebAuthn as a Login Second Factor (branch: `passkey`)
 
-Status: **implemented** on the **`passkey`** branch (branched from `main`). Backend
-(config, storage, service, endpoints, login flow) and web UI (login second factor
-+ Security settings) are in place; see [Phases](#phases).
+Status: **implemented** (merged to `main`). Backend (config, storage, service,
+endpoints, login flow) and web UI (login second factor + Security settings) are
+in place; see [Phases](#phases).
 
 ## Goal
 
@@ -81,6 +81,84 @@ password ──► IMAP bind (proves mail credential) ──► [ pending login 
 - Passkey creation normally prompts for **user verification** (Face ID / PIN /
   fingerprint). We request `userVerification: "preferred"` and do not require it,
   so security keys without a PIN still work as a second factor.
+
+## Authenticator types (what actually holds the passkey)
+
+WebAuthn works with any of these; the browser/OS decides which are offered.
+
+| Type | Examples | Notes |
+|------|----------|-------|
+| On-device platform authenticator | Windows Hello, macOS/iOS Touch ID / Face ID (iCloud Keychain), Android screen lock | Bound to the device; may sync within the **same ecosystem** |
+| Password-manager platform authenticator | **Google Password Manager** (Chrome/Edge on Windows/macOS/**Linux**/ChromeOS) | Cloud-synced, E2E encrypted; on **Linux this is the only platform authenticator**; needs a signed-in Google account + a **GPM PIN** |
+| Roaming security key | YubiKey / other FIDO2+CTAP2 keys | USB / NFC / BLE; needs no OS platform support |
+| Cross-device (hybrid / caBLE) | A phone used as the authenticator via QR | Requires **BLE on both devices** (see below) |
+
+## Environment limitations (root cause of "No passkeys available")
+
+A WebAuthn ceremony needs at least one **usable authenticator on the machine
+running the browser**. Several environments have none — this is not an e2Mail
+bug, it is how the platform is configured. When none is available the browser
+shows *"No passkeys available — There aren't any passkeys for &lt;rp&gt; on this
+device"*.
+
+### Linux desktops
+
+- Linux has **no OS-level on-device platform authenticator** (no Windows
+  Hello / Touch ID equivalent). Google's own support matrix lists `On-device`
+  as unsupported on Linux.
+- **Google Chrome** provides **GPM** as the platform authenticator on Linux. It
+  requires being **signed in to a Google account**; the first passkey created on
+  desktop asks for a **GPM PIN** (or an Android device screen lock).
+- **Chromium** (the open-source build) has **no GPM / Google Sync integration**,
+  so on Linux it has **no platform authenticator at all** — only security keys
+  and phone hybrid.
+- Chrome's profile secret uses gnome-keyring/libsecret or KWallet; a container
+  without a keyring daemon + D-Bus falls back to `--password-store=basic`. That
+  weakens local profile encryption but does not by itself add/remove
+  authenticators.
+
+### Cross-device (phone) / QR code
+
+- The **QR code only starts** the ceremony. The desktop then performs an
+  **encrypted BLE advertisement + handshake** with the phone; the CTAP data
+  itself travels over an encrypted WebSocket tunnel (CTAP 2.2). BLE is used for
+  **proximity + handshake**, not as the data channel.
+- **BLE is required on both the desktop and the phone.** If either has no
+  Bluetooth adapter, the flow cannot complete — **the QR code alone is not
+  enough**.
+- CTAP 2.3 adds BLE as an optional *data* channel; it still requires BLE.
+- Chromium: without a BLE adapter the QR/phone option is not offered (or
+  dead-ends), leaving only a security key.
+
+### Cloud containers / remote desktops (e.g. LinuxServer **webtop** / KasmVNC)
+
+- Webtop streams an XFCE desktop to your browser, so the WebAuthn call runs in
+  the **container's Chromium**, not in your local browser.
+- KasmVNC does **no WebAuthn redirection** — your local Face ID / fingerprint /
+  security key cannot be used inside the session.
+- Cloud containers normally have **no Bluetooth and no USB passthrough**, so
+  neither hybrid/phone nor a USB security key is available.
+- Chromium has no GPM → **no usable authenticator**.
+- The only options inside such a session are: install **Google Chrome + sign in
+  to Google (GPM)**, or use **TOTP / backup codes**.
+- Contrast: Citrix, Azure Virtual Desktop and Windows 365 support **WebAuthn
+  redirection** (RDP `redirectwebauthn`) which forwards the ceremony to the
+  local device. KasmVNC/webtop does not.
+
+### "Turn off my phone's Bluetooth" — what actually breaks
+
+Only the cross-device path breaks; a passkey that is already available locally
+keeps working:
+
+| Where the passkey lives | Login on a Windows/other desktop | Needs phone BLE? |
+|-------------------------|----------------------------------|:---------------:|
+| Google Password Manager (Chrome/Edge signed in) | Works (cloud-synced) | No |
+| iCloud Keychain (via **iCloud for Windows**) | Works | No |
+| Windows Hello / on-device passkey | Works | No |
+| Phone as a roaming authenticator (QR / hybrid) | Requires the phone every time | **Yes** |
+
+Android can also act as a **USB** authenticator (no BLE) over a cable; iPhone
+has no such USB mode.
 
 ## Backend design
 
@@ -209,7 +287,7 @@ No `shared/` package on this branch — changes are web-only.
 - `frontend/package.json`: add `@simplewebauthn/browser`.
 - `frontend/src/types/api.ts`: add `WebAuthnCredential`, begin/finish request and
   response types, and `LoginResponse.methods`.
-- `frontend/src/api/webauthn.ts` (new): thin wrappers over `request()` from
+- `frontend/src/api/2fa.ts`: `webauthnApi` — thin wrappers over `request()` from
   `frontend/src/api/client.ts`; the actual `navigator.credentials` call happens
   in the component via `startRegistration()` / `startAuthentication()`.
 - `frontend/src/components/auth/LoginForm.tsx`: in the 2FA step add a
@@ -273,6 +351,11 @@ WEBAUTHN_RP_NAME=e2Mail
   builds on Go 1.26.**
 - Whether a passkey-only user (no TOTP) should still receive backup codes —
   recommended: yes, keep the existing backup-code flow.
+- **Environments with no usable authenticator** (e.g. Linux Chromium, cloud
+  containers/VDI without BLE/USB/WebAuthn redirection) cannot use passkeys at
+  all — see [Environment limitations](#environment-limitations-root-cause-of-no-passkeys-available).
+  Such users must fall back to TOTP / backup codes or install Google Chrome and
+  sign in to Google (GPM).
 
 ## References
 
