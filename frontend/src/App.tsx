@@ -143,11 +143,13 @@ export const App: React.FC = () => {
     <div className="h-[100dvh] w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
       <Header />
       <div className="flex-1 flex overflow-hidden relative">
+        {/* Sidebar 全域掛載：hamburger 喺任何頁（含 Settings）都開到手機 drawer。
+            Settings 時隱藏桌面版側欄，保持原有全寬設定版面。 */}
+        <Sidebar hideDesktop={view === 'settings'} />
         {view === 'settings' ? (
           <SettingsPage />
         ) : (
           <>
-            <Sidebar />
             <MessageList />
             <ViewerPane />
           </>

@@ -95,6 +95,27 @@ describe('useMailStore', () => {
     expect(s.isSidebarOpen).toBe(false);
   });
 
+  it('mail navigation from settings returns to the mail view', () => {
+    // 由 Settings 揀 folder / 開未讀 / 轉帳號 / 寫信，都應該返去 mail view，
+    // 否則手機 drawer 揀完 folder 會停留喺 Settings（hamburger「冇反應」）。
+    useMailStore.setState({ view: 'settings' });
+    useMailStore.getState().setCurrentFolder('Sent');
+    expect(useMailStore.getState().view).toBe('mail');
+
+    useMailStore.setState({ view: 'settings' });
+    useMailStore.getState().setUnreadView(true);
+    expect(useMailStore.getState().view).toBe('mail');
+
+    useMailStore.setState({ view: 'settings' });
+    useMailStore.getState().setActiveAccountId('acc-1');
+    expect(useMailStore.getState().view).toBe('mail');
+
+    useMailStore.setState({ view: 'settings' });
+    useMailStore.getState().openComposer();
+    expect(useMailStore.getState().view).toBe('mail');
+    expect(useMailStore.getState().isComposerOpen).toBe(true);
+  });
+
   it('persists the selected theme', () => {
     useMailStore.getState().setTheme('dark');
     expect(useMailStore.getState().theme).toBe('dark');
