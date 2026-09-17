@@ -81,6 +81,8 @@ export const zhHant = {
     orUseCode: '或使用驗證碼',
     passkeyOnlyHint: '此帳號使用 passkey，請以 Face ID / Touch ID 或安全鑰匙確認。',
     passkeyFailed: 'Passkey 登入失敗或被取消，請重試。',
+    passkeyNoDeviceHint:
+      '呢部裝置冇 passkey？Passkey 只會存喺建立佢嘅裝置／生態圈（Apple / Google / Windows），唔會互相同步 — 可以改用驗證碼或其他裝置，或去「設定」為呢部裝置新增一個 passkey。',
   },
   header: {
     searchPlaceholder: '搜尋郵件主旨、內文或寄件者...（可用 from: to: is:unread）',
@@ -390,6 +392,8 @@ export const zhHant = {
     disableNeedCode: '輸入目前驗證碼或備份碼以停用 2FA。',
     passkeysTitle: 'Passkey',
     passkeysHint: '用 Face ID / Touch ID / Windows Hello 或硬件安全鑰匙登入，唔需要 App 驗證碼。',
+    passkeysDeviceNote:
+      'Passkey 只會存喺建立佢嘅裝置／生態圈（Apple、Google、Windows），唔會互相同步。請喺你每部會用嘅裝置各自新增一個 passkey。',
     addPasskey: '新增 passkey',
     passkeyNamePlaceholder: '例如 iPhone',
     passkeyAdded: '已新增 passkey。',

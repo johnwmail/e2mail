@@ -83,6 +83,8 @@ export const en = {
     passkeyOnlyHint:
       'This account uses a passkey. Confirm with Face ID / Touch ID or your security key.',
     passkeyFailed: 'Passkey sign-in failed or was cancelled. Try again.',
+    passkeyNoDeviceHint:
+      'No passkey on this device? Passkeys live on the device or ecosystem (Apple / Google / Windows) that created them and do not sync between them — use a verification code or another device, or add a passkey for this device in Settings.',
   },
   header: {
     searchPlaceholder: 'Search subject, body, or sender… (from: to: is:unread)',
@@ -394,6 +396,8 @@ export const en = {
     passkeysTitle: 'Passkeys',
     passkeysHint:
       'Sign in with Face ID / Touch ID / Windows Hello or a hardware security key — no app code needed.',
+    passkeysDeviceNote:
+      'Passkeys are stored on the device or ecosystem that created them (Apple, Google, Windows) and do not sync between them. Add a separate passkey on each device you use.',
     addPasskey: 'Add a passkey',
     passkeyNamePlaceholder: 'e.g. iPhone',
     passkeyAdded: 'Passkey added.',

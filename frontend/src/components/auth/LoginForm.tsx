@@ -288,6 +288,12 @@ export const LoginForm: React.FC = () => {
               </button>
             )}
 
+            {showPasskey && (
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                {t('login.passkeyNoDeviceHint')}
+              </p>
+            )}
+
             {showPasskey && showCodeForm && (
               <div className="flex items-center gap-3 text-[11px] text-slate-400">
                 <span className="flex-1 h-px bg-slate-200" />

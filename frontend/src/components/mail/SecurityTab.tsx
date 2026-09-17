@@ -331,6 +331,7 @@ const PasskeysSection: React.FC = () => {
         <h4 className="text-sm font-bold text-slate-900 dark:text-white">{t('security.passkeysTitle')}</h4>
       </div>
       <p className="text-[11px] text-slate-500 leading-relaxed">{t('security.passkeysHint')}</p>
+      <p className="text-[11px] text-slate-400 leading-relaxed">{t('security.passkeysDeviceNote')}</p>
 
       {msg && (
         <div
