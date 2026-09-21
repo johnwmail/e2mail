@@ -29,6 +29,12 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Build
         run: go build ./...
+      - name: Cross-compile check (openbsd/amd64)
+        env:
+          CGO_ENABLED: '0'
+          GOOS: openbsd
+          GOARCH: amd64
+        run: go build -o /dev/null ./cmd/server
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:

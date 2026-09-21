@@ -1,8 +1,8 @@
 # Running e2Mail on OpenBSD (branch: `OpenBSD`)
 
-Status: **planned / in progress**. Goal: run e2Mail as a **single, statically
-linked binary** on OpenBSD with **no Docker**, fronted by OpenBSD's own TLS
-termination (`relayd`). This document is written before the code/CI work.
+Status: **planned / in progress**. Goal: run e2Mail as a **single,
+self-contained binary** on OpenBSD with **no Docker**, fronted by OpenBSD's own
+TLS termination (`relayd`). This document is written before the code/CI work.
 
 ## Why this is feasible
 
@@ -16,7 +16,7 @@ OpenBSD:
 | Other deps | `go-imap`, `go-message`, `go-ldap`, `go-webauthn`, `circl`, `go-tpm`, `chi`, … are all pure Go. |
 | OS-specific code | The only platform call in the backend is `syscall.SIGTERM` (`cmd/server/main.go`). No `/proc`, `/sys`, cgroups, `os/user`, or `os/exec`. |
 | Frontend | Embedded with `//go:embed all:dist` (`backend/web/web.go`), so the backend serves the SPA → one file. |
-| Static linking | `CGO_ENABLED=0` produces a static binary with no runtime library dependencies. |
+| Runtime deps | `CGO_ENABLED=0` needs no CGO. On OpenBSD the Go linker still links against the **base system `libc`** (`file` reports `dynamically linked, interpreter /usr/libexec/ld.so`), which is always present — no third-party libraries. |
 
 **Cross-compile verified** during planning:
 
@@ -64,7 +64,10 @@ CGO_ENABLED=0 GOOS=openbsd GOARCH=amd64 go build \
   -o e2mail ./cmd/server
 ```
 
-`e2mail` is a single static binary. `GOARCH=arm64` works too.
+`e2mail` is a single, self-contained binary. On OpenBSD, Go links it against the
+base system `libc` (`file` shows `dynamically linked, interpreter
+/usr/libexec/ld.so`) — always present, so there are no extra runtime
+dependencies. `GOARCH=arm64` works too.
 
 ### Option B — build natively on OpenBSD
 
