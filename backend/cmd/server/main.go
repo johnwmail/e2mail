@@ -107,6 +107,9 @@ func main() {
 	idleManager := imap.NewIdleManager()
 	smtpSender := smtp.NewSender()
 
+	// OpenBSD only, opt-in (OPENBSD_HARDEN): unveil(2) + pledge(2).
+	hardenProcess(dataDir)
+
 	store, err := storage.NewSQLiteStore(dataDir)
 	if err != nil {
 		log.Fatalf("Failed to initialize storage: %v", err)
