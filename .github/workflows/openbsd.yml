@@ -4,15 +4,10 @@ permissions:
   contents: read
 
 # Build the single, statically linked OpenBSD binary (frontend embedded).
-# - push to main / OpenBSD and PRs to main: build + upload artifact
 # - v* tags: also attach the binary to the GitHub release
 on:
   push:
-    branches: [main, OpenBSD]
     tags: ['v*']
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
 
 jobs:
   build:
