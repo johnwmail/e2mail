@@ -173,30 +173,62 @@ doas rcctl restart relayd
 Set `WEBAUTHN_RP_ORIGINS=https://mail.example.com` (must match the browser
 origin exactly) and keep `COOKIE_SECURE=true`.
 
+## Hardening: unveil(2) + pledge(2) (opt-in)
+
+`golang.org/x/sys/unix` exposes `Pledge`, `PledgePromises`, `Unveil`, and
+`UnveilBlock` on OpenBSD (≥ 6.4), so **no cgo is needed**. `cmd/server` applies
+them at startup **only when `OPENBSD_HARDEN` is set** (`cmd/server/harden_openbsd.go`);
+otherwise it is a no-op (`harden_other.go`). This is opt-in because a
+too-narrow path/promise set aborts the process — validate on your host first.
+
+```sh
+export OPENBSD_HARDEN=1
+# optional overrides:
+# export OPENBSD_PLEDGE="stdio rpath wpath cpath inet dns flock fattr tmppath"
+# export OPENBSD_UNVEIL_EXTRA="/some/extra/path,/another"
+```
+
+Unveiled paths: `$DATA_DIR` (`rwc`), `/etc/ssl` (`r`), `/etc/resolv.conf` (`r`),
+`/etc/hosts` (`r`), `/etc/localtime` (`r`), `/usr/share/zoneinfo` (`r`),
+`/tmp` (`rwc`), `/dev/null` (`rw`). Then `UnveilBlock()`, then
+`Pledge(promises, "")`.
+
+Default promises: `stdio rpath wpath cpath inet dns flock fattr tmppath`
+(stdio/kqueue, file read/write/create, TCP, DNS, SQLite locking, chmod, temp
+files).
+
+If the daemon dies right after `[HARDEN] ... applied`, widen `OPENBSD_PLEDGE`
+(e.g. add `unix`, `getpw`, `route`, `sendfd`, `recvfd`, `proc`) or add paths via
+`OPENBSD_UNVEIL_EXTRA`; once stable, make `OPENBSD_HARDEN` the default.
+
 ## CI
 
-`.github/workflows/openbsd.yml` builds the OpenBSD binary from source (frontend
-`npm ci && npm run build` → embed → `GOOS=openbsd GOARCH=amd64 CGO_ENABLED=0 go
-build`) and uploads it as an artifact. It runs on `workflow_dispatch`, on
-pushes to the `OpenBSD` branch, and on `v*` tags (where the binary is attached
-to the GitHub release).
+- `.github/workflows/openbsd.yml` — on **`v*` tags only**: builds the single
+  OpenBSD binary from source (frontend `npm ci && npm run build` → embed →
+  `GOOS=openbsd GOARCH=amd64 CGO_ENABLED=0 go build -trimpath`) and attaches it
+  to the GitHub release.
+- `.github/workflows/test.yml` — a `cross-build` matrix (`linux/amd64`,
+  `linux/arm64`, `openbsd/amd64`, CGO disabled) compile-checks the backend on
+  every push/PR to `main`.
 
 ## Testing
 
-- Cross-compile must succeed for `openbsd/amd64` (and `arm64`).
+- Cross-compile must succeed for `openbsd/amd64` (CI `cross-build` matrix);
+  `openbsd/arm64` also builds.
 - Run the normal backend suite on a host: `cd backend && go test ./...`
   (`CGO_ENABLED=1 go test -race ./...` needs a C compiler).
 - On an OpenBSD host, smoke-test: SPA loads, login (IMAP/SMTP), SQLite writes,
   `DB_BACKUP` snapshot, and — if `WEBAUTHN_*` is set — the passkey flow over the
-  `https://` origin.
+  `https://` origin. Then test `OPENBSD_HARDEN=1` (see
+  [Hardening](#hardening-unveil2--pledge2-opt-in)).
 
 ## Risks / open questions
 
 - `modernc.org/sqlite` on OpenBSD is less battle-tested than the C library;
   verify DB create/migrate/backup/restore on the target.
-- `pledge(2)`/`unveil(2)` are not reachable from a pure-Go binary without cgo.
-  A hardened variant would need an `openbsd`-tagged cgo file (separate build,
-  `CGO_ENABLED=1`) — optional, not in the initial scope.
+- `pledge(2)`/`unveil(2)` are reachable from pure Go via `golang.org/x/sys/unix`
+  (no cgo). The shipped path/promise set is **opt-in** and must be validated on
+  the target — see [Hardening](#hardening-unveil2--pledge2-opt-in).
 - Go toolchain availability/version on the target; prefer the official tarball.
 - `relayd` must forward the client IP (`X-Forwarded-For`) for the login rate
   limiter to key on the real address.
