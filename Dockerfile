@@ -31,7 +31,7 @@ COPY backend/ .
 COPY --from=frontend-builder /app/dist ./web/dist
 RUN go mod tidy
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -X main.CommitHash=${COMMIT_HASH}" -o server cmd/server/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -X main.CommitHash=${COMMIT_HASH}" -o server ./cmd/server
 
 # Pre-create /data owned by uid/gid 8080 so a fresh named volume inherits
 # writable ownership (Docker creates root-owned volumes otherwise).
