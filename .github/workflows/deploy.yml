@@ -1,0 +1,97 @@
+name: deploy
+
+permissions:
+  contents: read
+
+# 只經 workflow_dispatch 手動觸發；向 webhook-action 發送 HMAC 簽名請求，部署指定 tag。
+#
+# 需要喺 GitHub repo Secrets 設定：
+#   WEBHOOK_HOST    webhook-action 嘅 HTTPS URL（必須 https:// 開頭）
+#   WEBHOOK_SECRET  用於 HMAC-SHA256 簽名嘅密鑰（與對端 WEBHOOK_SECRET 一致）
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to deploy（例如 v0.6.2）'
+        required: true
+        type: string
+      env_type:
+        description: 'env_type（production / staging）'
+        required: false
+        default: 'production'
+        type: string
+      debug_mode:
+        description: 'debug_mode（true / false）'
+        required: false
+        default: 'false'
+        type: string
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Trigger remote webhook-action
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 3
+    environment: production
+
+    env:
+      WEBHOOK_HOST: ${{ secrets.WEBHOOK_HOST }}
+
+    steps:
+      - name: Skip if no webhook host configured
+        if: env.WEBHOOK_HOST == ''
+        run: |
+          echo "::notice::WEBHOOK_HOST secret not set — skipping deployment."
+          echo "To enable deployment, add WEBHOOK_HOST and WEBHOOK_SECRET secrets."
+
+      - name: Validate webhook host is https
+        if: env.WEBHOOK_HOST != ''
+        run: |
+          case "${{ secrets.WEBHOOK_HOST }}" in
+            https://*) echo "WEBHOOK_HOST is https — ok" ;;
+            *) echo "::error::WEBHOOK_HOST must start with https:// (got ${WEBHOOK_HOST:0:20}…)" ; exit 1 ;;
+          esac
+
+      - name: Send signed HTTPS trigger
+        if: env.WEBHOOK_HOST != ''
+        env:
+          WEBHOOK_TAG: ${{ inputs.tag }}
+          WEBHOOK_REPO: ${{ github.event.repository.name }}
+          ENV_TYPE: ${{ inputs.env_type || 'production' }}
+          DEBUG_MODE: ${{ inputs.debug_mode || 'false' }}
+        run: |
+          # Build the JSON payload; any additional parameters go here and become
+          # WEBHOOK_PARAM_* env vars in the deploy script.
+          PAYLOAD=$(cat <<EOF
+          {
+            "repository": "$WEBHOOK_REPO",
+            "tag": "$WEBHOOK_TAG",
+            "env_type": "$ENV_TYPE",
+            "debug_mode": "$DEBUG_MODE"
+          }
+          EOF
+          )
+
+          # Sign the exact payload bytes with HMAC-SHA256 using WEBHOOK_SECRET.
+          SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "${{ secrets.WEBHOOK_SECRET }}" | awk '{print $2}')
+
+          # Deliver with the signature in X-Hub-Signature-256 as webhook-action expects.
+          # --max-time 15 避免單次掛起；--retry 5 + --retry-delay 3 容忍瞬間網絡抖動 /
+          # webhook server 重啟中（--retry-connrefused）；--retry-max-time 90 為整個
+          # retry 窗口設上限（配合 job timeout-minutes: 3）。
+          curl -X POST \
+            --fail \
+            --max-time 15 \
+            --retry 5 \
+            --retry-delay 3 \
+            --retry-max-time 90 \
+            --retry-connrefused \
+            -H "Content-Type: application/json" \
+            -H "X-Hub-Signature-256: sha256=$SIGNATURE" \
+            -d "$PAYLOAD" \
+            "${{ secrets.WEBHOOK_HOST }}"
