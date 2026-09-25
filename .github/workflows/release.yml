@@ -1,23 +1,141 @@
 name: release
 
+# 喺 v* tag 推送時，build OpenBSD/amd64 + Linux/amd64 + Linux/arm64 單一靜態
+# binary（frontend 已 embed），attach 埋去 GitHub release。
 on:
   push:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
+  # 只 build 一次 frontend，之後三個 target 共用，避免重複 npm ci/build。
+  frontend:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compute build metadata
+        id: meta
+        run: |
+          echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%FT%TZ)" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_APP_VERSION: ${{ steps.meta.outputs.version }}
+          VITE_APP_BUILD_TIME: ${{ steps.meta.outputs.build_time }}
+          VITE_APP_COMMIT_HASH: ${{ steps.meta.outputs.commit }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64 }
+          - { goos: linux,   goarch: arm64 }
+          - { goos: openbsd, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compute build metadata
+        id: meta
+        run: |
+          echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%FT%TZ)" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: Embed frontend into the Go binary
+        run: |
+          rm -rf backend/web/dist/*
+          cp -r frontend-dist/* backend/web/dist/
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Build ${{ matrix.goos }}/${{ matrix.goarch }} (CGO disabled, static)
+        working-directory: backend
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p ../dist
+          go build -trimpath \
+            -ldflags "-s -w \
+              -X main.Version=${{ steps.meta.outputs.version }} \
+              -X main.BuildTime=${{ steps.meta.outputs.build_time }} \
+              -X main.CommitHash=${{ steps.meta.outputs.commit }}" \
+            -o "../dist/e2mail-${{ matrix.goos }}-${{ matrix.goarch }}" ./cmd/server
+
+      - name: Inspect artifact
+        run: |
+          file "dist/e2mail-${{ matrix.goos }}-${{ matrix.goarch }}"
+          ls -lh dist/
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2mail-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/e2mail-${{ matrix.goos }}-${{ matrix.goarch }}
+          if-no-files-found: error
+
   release:
-    name: Create GitHub Release
+    name: Publish GitHub release
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - name: Download binaries
+        uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
-      - name: Create GitHub Release
+          pattern: e2mail-*
+          path: dist
+          merge-multiple: true
+
+      - name: List binaries
+        run: ls -lh dist/
+
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           generate_release_notes: true
-          # 若需上傳附件，可在此加 files: |
-          #   dist/*.zip
+          files: dist/e2mail-*
