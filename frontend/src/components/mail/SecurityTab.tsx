@@ -24,6 +24,7 @@ import { authApi } from '../../api/auth';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { TwoFASetupResponse, WebAuthnCredential } from '../../types/api';
 import { useI18n } from '../../i18n';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 interface SecurityTabProps {
   sessionEmail?: string;
@@ -236,6 +237,7 @@ const PasskeysSection: React.FC = () => {
   const [newName, setNewName] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -298,12 +300,13 @@ const PasskeysSection: React.FC = () => {
     }
   };
 
-  const handleRemove = async (id: string) => {
-    if (!window.confirm(t('security.passkeyDelete') + '?')) return;
+  // 真正執行刪除（經 ConfirmDialog 確認後才呼叫）
+  const doRemove = async (id: string) => {
     setBusy(true);
     setMsg(null);
     try {
       await webauthnApi.remove(id);
+      setDeleteId(null);
       setMsg({ type: 'success', text: t('security.passkeyDeleted') });
       await load();
     } catch (err: any) {
@@ -425,7 +428,7 @@ const PasskeysSection: React.FC = () => {
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => handleRemove(c.id)}
+                          onClick={() => setDeleteId(c.id)}
                           className="flex items-center gap-1 px-2.5 py-1.5 min-h-9 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg text-[11px] font-semibold transition border border-red-200 dark:border-red-900/60 disabled:opacity-50"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -459,6 +462,21 @@ const PasskeysSection: React.FC = () => {
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        isOpen={deleteId !== null}
+        title={t('security.passkeyDelete')}
+        message={t('security.passkeyDeleteConfirm', {
+          name: creds.find((c) => c.id === deleteId)?.name || t('security.passkeysTitle'),
+        })}
+        confirmText={t('security.passkeyDelete')}
+        danger
+        loading={busy}
+        onConfirm={() => {
+          if (deleteId) doRemove(deleteId);
+        }}
+        onCancel={() => setDeleteId(null)}
+      />
     </div>
   );
 };

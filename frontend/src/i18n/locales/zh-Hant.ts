@@ -403,6 +403,7 @@ export const zhHant = {
     passkeyLastUsed: '最後使用 {date}',
     passkeyRename: '改名',
     passkeyDelete: '移除',
+    passkeyDeleteConfirm: '移除 passkey「{name}」？該裝置之後就唔可以再用佢登入。',
     passkeyUnsupported: '此瀏覽器唔支援 passkey。',
     passkeyServerDisabled: '伺服器未啟用 passkey 功能。',
     passkeyNotAllowed: 'Passkey 提示被取消或唔允許。',

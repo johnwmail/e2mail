@@ -407,6 +407,8 @@ export const en = {
     passkeyLastUsed: 'Last used {date}',
     passkeyRename: 'Rename',
     passkeyDelete: 'Remove',
+    passkeyDeleteConfirm:
+      'Remove the passkey “{name}”? You will no longer be able to sign in with it on that device.',
     passkeyUnsupported: 'This browser does not support passkeys.',
     passkeyServerDisabled: 'Passkey support is not enabled on this server.',
     passkeyNotAllowed: 'The passkey prompt was cancelled or not allowed.',
