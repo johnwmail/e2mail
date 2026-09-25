@@ -154,26 +154,40 @@ doas -u _e2mail /usr/local/bin/e2mail # run in the foreground as the service use
 ### TLS with relayd
 
 OpenBSD `httpd` is not a general reverse proxy; use **relayd** to terminate TLS
-and forward to the app. `/etc/relayd.conf`:
+and forward to the app.
+
+TLS certificates (e.g. from `acme-client`) go in `/etc/ssl/mail.example.com.crt`
+and `/etc/ssl/private/mail.example.com.key`. `/etc/relayd.conf`:
 
 ```
-ip4="0.0.0.0"
-
 http protocol "e2mail" {
 	match request header append "X-Forwarded-For" value "$REMOTE_ADDR"
 	match request header append "X-Forwarded-Proto" value "https"
+	tls { keypair "mail.example.com" }
 }
 
 relay "e2mail" {
-	listen on $ip4 port 443 tls
+	listen on egress port 443 tls
 	protocol "e2mail"
 	forward to 127.0.0.1 port 8080
 }
 ```
 
+- `egress` is the interface group of the default-route interface; `listen on
+  0.0.0.0` is rejected because `0.0.0.0` is not a local address.
+- `keypair` must match the cert/key filename under `/etc/ssl[/private]`, i.e.
+  `/etc/ssl/mail.example.com.crt` + `/etc/ssl/private/mail.example.com.key`.
+- `acme-client` usually writes `/etc/ssl/acme/fullchain.pem` and
+  `/etc/ssl/acme/private/privkey.pem`; symlink them to the names relayd looks for
+  (a `keypair` statement cannot take both `cert` and `key` paths at once):
+  `doas ln -sf /etc/ssl/acme/fullchain.pem /etc/ssl/mail.example.com.crt`
+  `doas ln -sf /etc/ssl/acme/private/privkey.pem /etc/ssl/private/mail.example.com.key`
+
 ```sh
+doas relayd -n -f /etc/relayd.conf   # config test
 doas rcctl enable relayd
-doas rcctl restart relayd
+doas rcctl start relayd
+doas rcctl check relayd
 ```
 
 Set `WEBAUTHN_RP_ORIGINS=https://mail.example.com` (must match the browser
