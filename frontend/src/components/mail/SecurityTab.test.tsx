@@ -226,4 +226,36 @@ describe('SecurityTab passkeys section', () => {
 
     delete (window as any).PublicKeyCredential;
   });
+
+  it('removes a passkey only after confirming the in-app dialog', async () => {
+    (window as any).PublicKeyCredential = {};
+    mocks.getStatus.mockResolvedValue({ enabled: false, webauthnEnabled: true, passkeyCount: 1 });
+    mocks.waList.mockResolvedValue({
+      credentials: [
+        { id: 'c1', name: 'iPhone', createdAt: '2026-01-01T00:00:00Z', lastUsedAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mocks.waRemove.mockResolvedValue(undefined);
+
+    render(<SecurityTab />);
+    await screen.findByText('iPhone');
+
+    // 撳「移除」只會開對話框，唔會即刻刪
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(mocks.waRemove).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(/Remove the passkey “iPhone”\?/)
+    ).toBeInTheDocument();
+
+    // 對話框嘅確認掣（DOM 最後一個 "Remove"）才真正刪除
+    const removeButtons = screen.getAllByRole('button', { name: 'Remove' });
+    fireEvent.click(removeButtons[removeButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(mocks.waRemove).toHaveBeenCalledWith('c1');
+    });
+    expect(await screen.findByText('Passkey removed.')).toBeInTheDocument();
+
+    delete (window as any).PublicKeyCredential;
+  });
 });
