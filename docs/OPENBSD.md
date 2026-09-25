@@ -1,8 +1,8 @@
-# Running e2Mail on OpenBSD (branch: `OpenBSD`)
+# Running e2Mail on OpenBSD
 
-Status: **planned / in progress**. Goal: run e2Mail as a **single,
-self-contained binary** on OpenBSD with **no Docker**, fronted by OpenBSD's own
-TLS termination (`relayd`). This document is written before the code/CI work.
+Status: **supported**. e2Mail runs as a **single, self-contained binary** on
+OpenBSD with **no Docker**, fronted by OpenBSD's own TLS termination (`relayd`).
+Release binaries include `openbsd/amd64`.
 
 ## Why this is feasible
 
@@ -81,7 +81,9 @@ doas pkg_add go node          # or install the official Go tarball
 ### Dedicated user + data dir
 
 ```sh
-doas useradd -r -d /var/e2mail -s /sbin/nologin _e2mail
+# OpenBSD's useradd has no -r (that is a Linux flag). Use a low system UID via
+# -u, -m to create the home, and -g =uid to give the account its own group.
+doas useradd -m -u 700 -g =uid -d /var/e2mail -L daemon -s /sbin/nologin _e2mail
 doas install -d -o _e2mail -g _e2mail -m 700 /var/e2mail
 doas install -m 0755 e2mail /usr/local/bin/e2mail
 ```
@@ -89,9 +91,11 @@ doas install -m 0755 e2mail /usr/local/bin/e2mail
 `/var/e2mail` holds the SQLite DB (`e2Mail.db`) and, if enabled, the
 `backups/` directory (`DB_BACKUP`). Same rules as the Docker named volume.
 
-### `rc.d` script
+### `rc.d` script (single file)
 
-`/etc/rc.d/e2mail`:
+`/etc/rc.d/e2mail` — the only file you need. `rc.subr` starts the daemon
+through `su -fl`, which **clears the environment**, so the config is passed
+explicitly with `env(1)` from a small `rc_start` override:
 
 ```sh
 #!/bin/ksh
@@ -103,35 +107,33 @@ daemon_user="_e2mail"
 daemon_execdir="/var/e2mail"
 daemon_logger="daemon.info"
 
-# --- configuration (keep secrets out of world-readable files) ---
-export PORT=8080
-export DATA_DIR=/var/e2mail
-export SESSION_TTL_HOURS=24
-# 32-byte raw / 64-char hex / base64; required for multi-instance or to keep
-# device sessions across restarts. Generate: openssl rand -base64 32
-export SESSION_SECRET="REPLACE_ME"
-export COOKIE_SECURE=true
-export REQUIRE_2FA=true
-export REQUIRE_PGP=true
-export DB_BACKUP=WEEKLY
-# export WEBAUTHN_RP_ID=mail.example.com
-# export WEBAUTHN_RP_ORIGINS=https://mail.example.com
-# export WEBAUTHN_RP_NAME=e2Mail
-# export LDAP_ENABLED=true
-# export LDAP_URL=ldaps://ldap.example.com:636
-# ... see .env.example for the full list
+rc_bg=YES
+rc_reload=NO
 
 . /etc/rc.d/rc.subr
 
-rc_reload=NO
-rc_bg=YES
-
+# Generate the secret once, then paste it below:
+#   openssl rand -base64 32
 rc_start() {
-	${rcexec} "${daemon} ${daemon_flags}"
+	rc_exec "env \
+		PORT=8080 \
+		DATA_DIR=/var/e2mail \
+		SESSION_TTL_HOURS=24 \
+		SESSION_SECRET=REPLACE_ME \
+		COOKIE_SECURE=true \
+		REQUIRE_2FA=true \
+		REQUIRE_PGP=true \
+		DB_BACKUP=WEEKLY \
+		${daemon}${daemon_flags:+ ${daemon_flags}}"
 }
 
 rc_cmd $1
 ```
+
+- `rc_exec` is the documented hook. Do **not** reference the old global
+  `${rcexec}` — it no longer exists in current `rc.subr` and makes start fail.
+- Add `WEBAUTHN_*`, `LDAP_*`, … as extra `NAME=value \` lines.
+- This file holds `SESSION_SECRET`, so keep it `root:wheel` `chmod 600`.
 
 Then:
 
@@ -141,9 +143,13 @@ doas rcctl start e2mail
 doas rcctl check e2mail
 ```
 
-`su -m` (used by `rcexec`) preserves the exported environment, so the `export`
-lines above reach the daemon. Keep the file `chmod 600` if it contains
-`SESSION_SECRET` / `LDAP_ROOT_PW`.
+If it fails to start, get the real reason with:
+
+```sh
+doas rcctl -d start e2mail            # debug output
+doas tail -f /var/log/messages        # daemon_logger output
+doas -u _e2mail /usr/local/bin/e2mail # run in the foreground as the service user
+```
 
 ### TLS with relayd
 
@@ -203,10 +209,10 @@ If the daemon dies right after `[HARDEN] ... applied`, widen `OPENBSD_PLEDGE`
 
 ## CI
 
-- `.github/workflows/openbsd.yml` — on **`v*` tags only**: builds the single
-  OpenBSD binary from source (frontend `npm ci && npm run build` → embed →
-  `GOOS=openbsd GOARCH=amd64 CGO_ENABLED=0 go build -trimpath`) and attaches it
-  to the GitHub release.
+- `.github/workflows/release.yml` — on **`v*` tags**: builds the static,
+  frontend-embedded binary for `linux/amd64`, `linux/arm64` and `openbsd/amd64`
+  (frontend `npm ci && npm run build` → embed → `CGO_ENABLED=0 go build
+  -trimpath`) and attaches them to the GitHub release.
 - `.github/workflows/test.yml` — a `cross-build` matrix (`linux/amd64`,
   `linux/arm64`, `openbsd/amd64`, CGO disabled) compile-checks the backend on
   every push/PR to `main`.
