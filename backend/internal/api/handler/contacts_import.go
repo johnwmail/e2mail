@@ -32,7 +32,7 @@ func (h *ContactsHandler) ImportContacts(w http.ResponseWriter, r *http.Request)
 	var req ImportContactsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[IMPORT] %s: bad json: %v", owner, err)
-		response.BadRequest(w, "invalid json body: "+err.Error())
+		respondBodyParseError(w, err, "invalid json body: "+err.Error())
 		return
 	}
 

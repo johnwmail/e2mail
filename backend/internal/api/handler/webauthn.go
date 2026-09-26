@@ -248,7 +248,7 @@ func (h *AuthHandler) WebAuthnRename(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		response.BadRequest(w, "invalid request body format")
+		respondBodyParseError(w, err, "invalid request body format")
 		return
 	}
 	name := trimPasskeyName(body.Name)
@@ -304,7 +304,11 @@ func (h *AuthHandler) WebAuthnLoginBegin(w http.ResponseWriter, r *http.Request)
 		Challenge string `json:"challenge"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Challenge == "" {
-		response.BadRequest(w, "challenge is required")
+		if err != nil {
+			respondBodyParseError(w, err, "challenge is required")
+		} else {
+			response.BadRequest(w, "challenge is required")
+		}
 		return
 	}
 

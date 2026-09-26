@@ -114,7 +114,7 @@ func (h *AddressContactsHandler) CreateAddressContact(w http.ResponseWriter, r *
 		Source      string `json:"source"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json body: "+err.Error())
+		respondBodyParseError(w, err, "invalid json body: "+err.Error())
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
@@ -188,7 +188,7 @@ func (h *AddressContactsHandler) UpdateAddressContact(w http.ResponseWriter, r *
 		Note        string `json:"note"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json body: "+err.Error())
+		respondBodyParseError(w, err, "invalid json body: "+err.Error())
 		return
 	}
 	if req.Email != "" {
@@ -267,7 +267,7 @@ func (h *AddressContactsHandler) CreateFromEmail(w http.ResponseWriter, r *http.
 		Note        string `json:"note"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json body: "+err.Error())
+		respondBodyParseError(w, err, "invalid json body: "+err.Error())
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
@@ -417,7 +417,7 @@ func (h *AddressContactsHandler) PutAvatar(w http.ResponseWriter, r *http.Reques
 	// 限 2MB
 	r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
 	if err := r.ParseMultipartForm(2 << 20); err != nil {
-		response.BadRequest(w, "avatar too large (max 2MB) or invalid multipart")
+		respondBodyParseError(w, err, "avatar too large (max 2MB) or invalid multipart")
 		return
 	}
 	file, header, err := r.FormFile("file")
@@ -595,7 +595,7 @@ func (h *AddressContactsHandler) Import(w http.ResponseWriter, r *http.Request) 
 	// 限 5MB
 	r.Body = http.MaxBytesReader(w, r.Body, 5<<20)
 	if err := r.ParseMultipartForm(5 << 20); err != nil {
-		response.BadRequest(w, "file too large (max 5MB) or invalid multipart: "+err.Error())
+		respondBodyParseError(w, err, "file too large (max 5MB) or invalid multipart: "+err.Error())
 		return
 	}
 	file, header, err := r.FormFile("file")

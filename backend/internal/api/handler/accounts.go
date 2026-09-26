@@ -176,7 +176,7 @@ func (h *AccountsHandler) SetFolderPref(w http.ResponseWriter, r *http.Request) 
 		Visible bool   `json:"visible"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json payload")
+		respondBodyParseError(w, err, "invalid json payload")
 		return
 	}
 	if req.Folder == "" {
@@ -221,7 +221,7 @@ func (h *AccountsHandler) SetFolderOrder(w http.ResponseWriter, r *http.Request)
 		Order []string `json:"order"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json payload")
+		respondBodyParseError(w, err, "invalid json payload")
 		return
 	}
 	if err := h.storage.SetFolderOrder(authCtx.Session.Email, id, req.Order, authCtx.DEK); err != nil {
@@ -257,7 +257,7 @@ func (h *AccountsHandler) CreateAccount(w http.ResponseWriter, r *http.Request) 
 
 	var req AccountRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json payload: "+err.Error())
+		respondBodyParseError(w, err, "invalid json payload: "+err.Error())
 		return
 	}
 	if req.Email == "" || req.IMAPHost == "" || req.SMTPHost == "" || req.Password == "" {
@@ -356,7 +356,7 @@ func (h *AccountsHandler) UpdateAccount(w http.ResponseWriter, r *http.Request) 
 
 	var req AccountRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json payload: "+err.Error())
+		respondBodyParseError(w, err, "invalid json payload: "+err.Error())
 		return
 	}
 
@@ -469,7 +469,7 @@ func (h *AccountsHandler) SetDefaultAccount(w http.ResponseWriter, r *http.Reque
 func (h *AccountsHandler) TestAccount(w http.ResponseWriter, r *http.Request) {
 	var req AccountRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json payload")
+		respondBodyParseError(w, err, "invalid json payload")
 		return
 	}
 	if req.IMAPHost == "" || req.SMTPHost == "" {

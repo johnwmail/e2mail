@@ -176,7 +176,7 @@ func (h *SieveHandler) PutScript(w http.ResponseWriter, r *http.Request) {
 	}
 	var req PutScriptRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json: "+err.Error())
+		respondBodyParseError(w, err, "invalid json: "+err.Error())
 		return
 	}
 	client, _, _, cleanup, err := h.acquireSieveClient(r.Context(), r)
@@ -270,7 +270,7 @@ type CheckScriptRequest struct {
 func (h *SieveHandler) CheckScript(w http.ResponseWriter, r *http.Request) {
 	var req CheckScriptRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json: "+err.Error())
+		respondBodyParseError(w, err, "invalid json: "+err.Error())
 		return
 	}
 	client, _, _, cleanup, err := h.acquireSieveClient(r.Context(), r)

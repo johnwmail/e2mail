@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/base32"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -100,7 +101,13 @@ func (h *AuthHandler) TwoFASetup(w http.ResponseWriter, r *http.Request) {
 
 	// 支援自訂 secret（沿用舊 2FA）
 	var setupReq TwoFASetupRequest
-	_ = json.NewDecoder(r.Body).Decode(&setupReq) // body 可為空，忽略錯誤以兼容舊客戶端
+	if err := json.NewDecoder(r.Body).Decode(&setupReq); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			respondBodyParseError(w, err, "request body too large")
+			return
+		}
+	} // body 可為空，其他錯誤仍兼容舊客戶端
 	secret := ""
 	if s := normalizeSecret(setupReq.Secret); s != "" {
 		if err := validateSecret(s); err != nil {
@@ -135,7 +142,7 @@ func (h *AuthHandler) TwoFAEnable(w http.ResponseWriter, r *http.Request) {
 
 	var req TwoFAEnableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid request body format")
+		respondBodyParseError(w, err, "invalid request body format")
 		return
 	}
 
@@ -200,7 +207,7 @@ func (h *AuthHandler) TwoFADisable(w http.ResponseWriter, r *http.Request) {
 
 	var req TwoFAEnableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid request body format")
+		respondBodyParseError(w, err, "invalid request body format")
 		return
 	}
 
@@ -240,7 +247,7 @@ func (h *AuthHandler) TwoFARegenerateBackupCodes(w http.ResponseWriter, r *http.
 
 	var req TwoFARegenerateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid request body format")
+		respondBodyParseError(w, err, "invalid request body format")
 		return
 	}
 

@@ -67,7 +67,7 @@ func (h *MailHandler) SetFolderSubscription(w http.ResponseWriter, r *http.Reque
 		Subscribed bool   `json:"subscribed"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json payload: "+err.Error())
+		respondBodyParseError(w, err, "invalid json payload: "+err.Error())
 		return
 	}
 	if req.Name == "" {
@@ -379,7 +379,7 @@ type FlagsRequest struct {
 func (h *MailHandler) SetFlags(w http.ResponseWriter, r *http.Request) {
 	var req FlagsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid request body")
+		respondBodyParseError(w, err, "invalid request body")
 		return
 	}
 
@@ -417,7 +417,7 @@ type MoveRequest struct {
 func (h *MailHandler) MoveMessages(w http.ResponseWriter, r *http.Request) {
 	var req MoveRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid request body")
+		respondBodyParseError(w, err, "invalid request body")
 		return
 	}
 
@@ -452,7 +452,7 @@ type EmptyFolderRequest struct {
 func (h *MailHandler) EmptyFolder(w http.ResponseWriter, r *http.Request) {
 	var req EmptyFolderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid request body")
+		respondBodyParseError(w, err, "invalid request body")
 		return
 	}
 	if req.Folder == "" {
@@ -488,7 +488,7 @@ type DeleteRequest struct {
 func (h *MailHandler) DeleteMessages(w http.ResponseWriter, r *http.Request) {
 	var req DeleteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid request body")
+		respondBodyParseError(w, err, "invalid request body")
 		return
 	}
 
@@ -521,7 +521,7 @@ func parseOutgoingMessage(r *http.Request, acc *storage.Account) (smtp.OutgoingM
 	var outMsg smtp.OutgoingMessage
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		if err := r.ParseMultipartForm(32 << 20); err != nil {
+		if err := r.ParseMultipartForm(8 << 20); err != nil {
 			return outMsg, err
 		}
 		outMsg.From = acc.Email
@@ -580,7 +580,7 @@ func (h *MailHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	outMsg, err := parseOutgoingMessage(r, acc)
 	if err != nil {
-		response.BadRequest(w, "invalid payload: "+err.Error())
+		respondBodyParseError(w, err, "invalid payload: "+err.Error())
 		return
 	}
 
@@ -654,7 +654,7 @@ func (h *MailHandler) SaveDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	outMsg, err := parseOutgoingMessage(r, acc)
 	if err != nil {
-		response.BadRequest(w, "invalid payload: "+err.Error())
+		respondBodyParseError(w, err, "invalid payload: "+err.Error())
 		return
 	}
 	rawMIME, err := h.sender.BuildMIMEMessage(outMsg)

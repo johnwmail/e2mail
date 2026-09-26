@@ -67,7 +67,7 @@ func (h *PrefsHandler) SetPref(w http.ResponseWriter, r *http.Request) {
 		Value string `json:"value"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json body: "+err.Error())
+		respondBodyParseError(w, err, "invalid json body: "+err.Error())
 		return
 	}
 	if err := h.store.SetUserPref(owner, key, req.Value, ctxDEK(r)); err != nil {

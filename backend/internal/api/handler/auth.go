@@ -205,7 +205,7 @@ type Verify2FARequest struct {
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid request body format")
+		respondBodyParseError(w, err, "invalid request body format")
 		return
 	}
 
@@ -460,7 +460,7 @@ func (h *AuthHandler) startIdleForAccounts(sess *session.Session, dek []byte, ac
 func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 	var req Verify2FARequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid request body format")
+		respondBodyParseError(w, err, "invalid request body format")
 		return
 	}
 	if req.Challenge == "" || req.Code == "" {
@@ -725,7 +725,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	var req ChangePasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid request body format")
+		respondBodyParseError(w, err, "invalid request body format")
 		return
 	}
 	if req.OldPassword == "" || req.NewPassword == "" {
