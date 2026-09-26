@@ -26,3 +26,37 @@ func TestStaticHandlerSetsContentSecurityPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestStaticHandlerRejectsSecretAndTraversalPaths(t *testing.T) {
+	for _, p := range []string{
+		"/.env",
+		"/.git/config",
+		"/root/.ssh/key",
+		"/../../../../root/.ssh/key",
+		"/%2e%2e/%2e%2e/root/.ssh/key",
+		"/wp-login.php",
+		"/backup.sql",
+	} {
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		rec := httptest.NewRecorder()
+		staticHandler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("GET %s status = %d, want 404", p, rec.Code)
+		}
+	}
+}
+
+func TestIsSPARoute(t *testing.T) {
+	yes := []string{"settings", "mail/inbox", "threads"}
+	for _, p := range yes {
+		if !isSPARoute(p) {
+			t.Errorf("isSPARoute(%q) = false, want true", p)
+		}
+	}
+	no := []string{".env", ".git/config", "root/.ssh/key", "wp-login.php", "x.key", "robots.txt", "assets/index.js"}
+	for _, p := range no {
+		if isSPARoute(p) {
+			t.Errorf("isSPARoute(%q) = true, want false", p)
+		}
+	}
+}

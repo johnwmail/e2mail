@@ -121,6 +121,7 @@ rc_start() {
 		SESSION_TTL_HOURS=24 \
 		SESSION_SECRET=REPLACE_ME \
 		COOKIE_SECURE=true \
+		ALLOWED_HOSTS=mail.example.com \
 		REQUIRE_2FA=true \
 		REQUIRE_PGP=true \
 		DB_BACKUP=WEEKLY \
@@ -132,6 +133,10 @@ rc_cmd $1
 
 - `rc_exec` is the documented hook. Do **not** reference the old global
   `${rcexec}` — it no longer exists in current `rc.subr` and makes start fail.
+- Set `ALLOWED_HOSTS` to the public hostname (or comma-separated hostnames) served
+  by relayd. The `http protocol` below leaves the incoming `Host` header intact,
+  so relayd forwards it to e2Mail by default; do not add a rule that rewrites or
+  removes `Host`.
 - Add `WEBAUTHN_*`, `LDAP_*`, … as extra `NAME=value \` lines.
 - This file holds `SESSION_SECRET`, so keep it `root:wheel` `chmod 600`.
 
@@ -172,6 +177,11 @@ relay "e2mail" {
 	forward to 127.0.0.1 port 8080
 }
 ```
+
+The incoming `Host` header is forwarded unchanged unless a protocol rule changes
+or removes it. No special `Host` rule is needed here. Set `ALLOWED_HOSTS` in the
+e2Mail service environment to the public hostname (for example,
+`ALLOWED_HOSTS=mail.example.com`) so requests for other hostnames receive `421`.
 
 - `egress` is the interface group of the default-route interface; `listen on
   0.0.0.0` is rejected because `0.0.0.0` is not a local address.

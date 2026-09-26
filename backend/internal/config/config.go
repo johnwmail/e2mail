@@ -25,6 +25,9 @@ type ServerConfig struct {
 	DBBackup                     DBBackupSchedule
 	LDAP                         *LDAPConfig
 	WebAuthn                     *WebAuthnConfig
+	// AllowedHosts 只回應呢啲 Host（忽略大小寫同 port）；空 = 不限制。
+	// 由 ALLOWED_HOSTS 環境變數載入（逗號分隔）。
+	AllowedHosts []string
 }
 
 // DBBackupSchedule SQLite 自動備份週期（DB_BACKUP）。
@@ -138,10 +141,24 @@ func Load() *ServerConfig {
 			cfg.DBBackup = DBBackupDisable
 		}
 	}
+	if v := os.Getenv("ALLOWED_HOSTS"); v != "" {
+		cfg.AllowedHosts = splitCSV(v)
+	}
 
 	cfg.LDAP = loadLDAP()
 	cfg.WebAuthn = loadWebAuthn()
 	return cfg
+}
+
+// splitCSV 將逗號分隔字串拆成清理後嘅非空清單
+func splitCSV(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 // ParseDBBackup 解析 DB_BACKUP：DISABLE / DAILY / WEEKLY / MONTHLY（大小寫不敏感）。

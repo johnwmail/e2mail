@@ -24,6 +24,7 @@ func NewRouter(
 	accountsH *handler.AccountsHandler,
 	sieveH *handler.SieveHandler,
 	store session.Store,
+	allowedHosts []string,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -32,6 +33,7 @@ func NewRouter(
 	r.Use(chimiddleware.RealIP) //nolint:staticcheck // RealIP deprecated in chi v5.2.1+, but still needed for X-Forwarded-For behind OpenBSD httpd reverse proxy
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
+	r.Use(middleware.HostAllowlist(allowedHosts))
 	r.Use(middleware.CORS())
 	r.Use(middleware.SecurityHeaders)
 
