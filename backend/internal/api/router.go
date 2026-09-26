@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -30,6 +31,7 @@ func NewRouter(
 
 	// 全域中間件
 	r.Use(chimiddleware.RequestID)
+	r.Use(middleware.CapturePeerAddr)
 	r.Use(chimiddleware.RealIP) //nolint:staticcheck // RealIP deprecated in chi v5.2.1+, but still needed for X-Forwarded-For behind OpenBSD httpd reverse proxy
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
@@ -44,11 +46,15 @@ func NewRouter(
 
 	// /api 路由群組
 	r.Route("/api", func(api chi.Router) {
+		api.Use(middleware.RequestBodyLimit)
+		requestLimiter := middleware.NewIPRateLimiter()
+		api.Use(requestLimiter.Middleware("api", 600, time.Minute))
+
 		// 公開認證端點
-		api.Post("/auth/login", authH.Login)
-		api.Post("/auth/verify-2fa", authH.Verify2FA)
-		api.Post("/auth/webauthn/begin", authH.WebAuthnLoginBegin)
-		api.Post("/auth/webauthn/verify", authH.WebAuthnLoginVerify)
+		api.With(requestLimiter.Middleware("auth", 60, time.Minute)).Post("/auth/login", authH.Login)
+		api.With(requestLimiter.Middleware("auth", 60, time.Minute)).Post("/auth/verify-2fa", authH.Verify2FA)
+		api.With(requestLimiter.Middleware("auth", 60, time.Minute)).Post("/auth/webauthn/begin", authH.WebAuthnLoginBegin)
+		api.With(requestLimiter.Middleware("auth", 60, time.Minute)).Post("/auth/webauthn/verify", authH.WebAuthnLoginVerify)
 
 		// 公開伺服器預設值（無需登入，登入頁面預填用）
 		api.Get("/server-config", configH.Get)
@@ -110,8 +116,8 @@ func NewRouter(
 				mail.Post("/messages/move", mailH.MoveMessages)
 				mail.Post("/messages/delete", mailH.DeleteMessages)
 				mail.Post("/messages/empty", mailH.EmptyFolder)
-				mail.Post("/send", mailH.SendMessage)
-				mail.Post("/drafts", mailH.SaveDraft)
+				mail.With(requestLimiter.Middleware("mail-send", 30, time.Minute)).Post("/send", mailH.SendMessage)
+				mail.With(requestLimiter.Middleware("mail-send", 30, time.Minute)).Post("/drafts", mailH.SaveDraft)
 			})
 
 			// PGP 雲端加密金鑰庫同步
@@ -123,8 +129,8 @@ func NewRouter(
 				// 聯絡人公鑰庫（per-user，伺服器端 SQLite 儲存）
 				pgp.Get("/contacts", contactsH.ListContacts)
 				pgp.Post("/contacts", contactsH.UpsertContact)
-				pgp.Post("/contacts/bulk", contactsH.BulkUpsertContacts)
-				pgp.Post("/contacts/import", contactsH.ImportContacts)
+				pgp.With(requestLimiter.Middleware("contact-import", 30, time.Minute)).Post("/contacts/bulk", contactsH.BulkUpsertContacts)
+				pgp.With(requestLimiter.Middleware("contact-import", 30, time.Minute)).Post("/contacts/import", contactsH.ImportContacts)
 				pgp.Delete("/contacts/{email}", contactsH.DeleteContact)
 			})
 
@@ -133,7 +139,7 @@ func NewRouter(
 				ab.Get("/", addressH.ListAddressContacts)
 				ab.Get("/resolve", addressH.Resolve)
 				ab.Get("/export", addressH.Export)
-				ab.Post("/import", addressH.Import)
+				ab.With(requestLimiter.Middleware("contact-import", 30, time.Minute)).Post("/import", addressH.Import)
 				ab.Post("/", addressH.CreateAddressContact)
 				ab.Post("/from-email", addressH.CreateFromEmail)
 				ab.Get("/{id}", addressH.GetAddressContact)
@@ -159,7 +165,7 @@ func NewRouter(
 				sieve.Delete("/scripts/{name}", sieveH.DeleteScript)
 				sieve.Post("/scripts/{name}/activate", sieveH.SetActive)
 				sieve.Post("/scripts/deactivate", sieveH.Deactivate)
-				sieve.Post("/check", sieveH.CheckScript)
+				sieve.With(requestLimiter.Middleware("sieve-check", 30, time.Minute)).Post("/check", sieveH.CheckScript)
 			})
 		})
 	})

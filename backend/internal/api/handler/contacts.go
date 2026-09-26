@@ -115,7 +115,7 @@ func (h *ContactsHandler) UpsertContact(w http.ResponseWriter, r *http.Request) 
 	}
 	var dto ContactKeyDTO
 	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
-		response.BadRequest(w, "invalid json body: "+err.Error())
+		respondBodyParseError(w, err, "invalid json body: "+err.Error())
 		return
 	}
 	contact, err := fromDTO(owner, dto)
@@ -144,7 +144,7 @@ func (h *ContactsHandler) BulkUpsertContacts(w http.ResponseWriter, r *http.Requ
 		Contacts []ContactKeyDTO `json:"contacts"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.BadRequest(w, "invalid json body: "+err.Error())
+		respondBodyParseError(w, err, "invalid json body: "+err.Error())
 		return
 	}
 	if len(req.Contacts) == 0 {
