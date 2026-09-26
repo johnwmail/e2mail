@@ -218,7 +218,7 @@ too-narrow path/promise set aborts the process — validate on your host first.
 ```sh
 export OPENBSD_HARDEN=1
 # optional overrides:
-# export OPENBSD_PLEDGE="stdio rpath wpath cpath inet dns flock fattr tmppath"
+# export OPENBSD_PLEDGE="stdio rpath wpath cpath inet dns flock fattr"
 # export OPENBSD_UNVEIL_EXTRA="/some/extra/path,/another"
 ```
 
@@ -227,9 +227,10 @@ Unveiled paths: `$DATA_DIR` (`rwc`), `/etc/ssl` (`r`), `/etc/resolv.conf` (`r`),
 `/tmp` (`rwc`), `/dev/null` (`rw`). Then `UnveilBlock()`, then
 `Pledge(promises, "")`.
 
-Default promises: `stdio rpath wpath cpath inet dns flock fattr tmppath`
-(stdio/kqueue, file read/write/create, TCP, DNS, SQLite locking, chmod, temp
-files).
+Default promises: `stdio rpath wpath cpath inet dns flock fattr`
+(stdio/kqueue, file read/write/create, TCP, DNS, SQLite locking, chmod). Temp
+files are permitted by `unveil("/tmp", "rwc")` plus `wpath`/`cpath`; do not add
+the removed `tmppath` promise (it returns `EINVAL` on newer OpenBSD releases).
 
 If the daemon dies right after `[HARDEN] ... applied`, widen `OPENBSD_PLEDGE`
 (e.g. add `unix`, `getpw`, `route`, `sendfd`, `recvfd`, `proc`) or add paths via

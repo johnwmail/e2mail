@@ -20,8 +20,8 @@ import (
 //	dns     resolver (/etc/resolv.conf, /etc/hosts)
 //	flock   SQLite advisory file locking
 //	fattr   chmod/chown (data dir + files)
-//	tmppath mkstemp-style temp files
-const defaultPledgePromises = "stdio rpath wpath cpath inet dns flock fattr tmppath"
+//	/tmp is separately unveiled with rwc for temporary files.
+const defaultPledgePromises = "stdio rpath wpath cpath inet dns flock fattr"
 
 // hardenProcess applies OpenBSD unveil(2) + pledge(2). It is **opt-in** via
 // OPENBSD_HARDEN so a too-narrow path/promise set cannot kill the daemon on a
