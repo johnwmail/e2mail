@@ -128,3 +128,15 @@ func TestWebAuthnReadyNilSafe(t *testing.T) {
 		t.Fatal("nil WebAuthnConfig must not be ready")
 	}
 }
+
+func TestLoadAllowedHosts(t *testing.T) {
+	t.Setenv("ALLOWED_HOSTS", " mail.example.com , alt.example.com ")
+	cfg := Load()
+	if len(cfg.AllowedHosts) != 2 || cfg.AllowedHosts[0] != "mail.example.com" || cfg.AllowedHosts[1] != "alt.example.com" {
+		t.Fatalf("AllowedHosts = %#v", cfg.AllowedHosts)
+	}
+	t.Setenv("ALLOWED_HOSTS", "")
+	if got := Load().AllowedHosts; len(got) != 0 {
+		t.Fatalf("empty ALLOWED_HOSTS should give no hosts, got %#v", got)
+	}
+}

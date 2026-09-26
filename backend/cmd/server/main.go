@@ -166,7 +166,10 @@ func main() {
 	accountsHandler := handler.NewAccountsHandler(sessionStore, store, poolManager, idleManager, serverConfig)
 	sieveHandler := handler.NewSieveHandler(store, serverConfig)
 
-	router := api.NewRouter(authHandler, mailHandler, eventsHandler, pgpHandler, contactsHandler, addressContactsHandler, prefsHandler, configHandler, accountsHandler, sieveHandler, sessionStore)
+	router := api.NewRouter(authHandler, mailHandler, eventsHandler, pgpHandler, contactsHandler, addressContactsHandler, prefsHandler, configHandler, accountsHandler, sieveHandler, sessionStore, serverConfig.AllowedHosts)
+	if len(serverConfig.AllowedHosts) > 0 {
+		log.Printf("🔒 Host allow-list enabled: %v", serverConfig.AllowedHosts)
+	}
 
 	server := &http.Server{
 		Addr:         ":" + port,
