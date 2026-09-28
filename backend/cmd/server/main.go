@@ -107,7 +107,7 @@ func main() {
 	idleManager := imap.NewIdleManager()
 	smtpSender := smtp.NewSender()
 
-	// OpenBSD only, opt-in (OPENBSD_HARDEN): unveil(2) + pledge(2).
+	// OpenBSD only: unveil(2) + pledge(2) are enabled by default.
 	hardenProcess(dataDir)
 
 	store, err := storage.NewSQLiteStore(dataDir)

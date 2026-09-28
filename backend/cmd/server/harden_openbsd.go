@@ -5,6 +5,7 @@ package main
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -23,28 +24,31 @@ import (
 //	/tmp is separately unveiled with rwc for temporary files.
 const defaultPledgePromises = "stdio rpath wpath cpath inet dns flock fattr"
 
-// hardenProcess applies OpenBSD unveil(2) + pledge(2). It is **opt-in** via
-// OPENBSD_HARDEN so a too-narrow path/promise set cannot kill the daemon on a
-// deployment that has not been tuned yet. Overrides:
+// hardenProcess applies OpenBSD unveil(2) + pledge(2) by default. Set
+// OPENBSD_HARDEN=0 only as a temporary troubleshooting escape hatch. Overrides:
 //
-//	OPENBSD_HARDEN=1         enable
-//	OPENBSD_PLEDGE="..."     replace the promise set
-//	OPENBSD_UNVEIL_EXTRA="p1,p2"  extra paths, unveiled "rwc"
+//	OPENBSD_HARDEN=0              temporarily disable hardening
+//	OPENBSD_PLEDGE="..."         replace the promise set
+//	OPENBSD_UNVEIL_EXTRA="p1,p2" extra paths, unveiled "rwc"
 //
 // See docs/OPENBSD.md.
 func hardenProcess(dataDir string) {
-	if !envTruthy("OPENBSD_HARDEN") {
+	if envFalse("OPENBSD_HARDEN") {
 		return
 	}
 
-	// unveil(2) needs the path to exist to be resolved reliably.
+	// unveil(2) needs an existing absolute path to resolve reliably.
+	dataDir, err := filepath.Abs(dataDir)
+	if err != nil {
+		log.Fatalf("[HARDEN] resolve data directory: %v", err)
+	}
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
-		log.Printf("[HARDEN] mkdir %s failed: %v", dataDir, err)
+		log.Fatalf("[HARDEN] mkdir %s failed: %v", dataDir, err)
 	}
 
 	unveil := func(path, perms string) {
 		if err := unix.Unveil(path, perms); err != nil {
-			log.Printf("[HARDEN] unveil %q %q: %v", path, perms, err)
+			log.Fatalf("[HARDEN] unveil %q %q: %v", path, perms, err)
 		}
 	}
 	unveil(dataDir, "rwc")
@@ -60,8 +64,7 @@ func hardenProcess(dataDir string) {
 	}
 
 	if err := unix.UnveilBlock(); err != nil {
-		log.Printf("[HARDEN] unveil block failed: %v", err)
-		return
+		log.Fatalf("[HARDEN] unveil block failed: %v", err)
 	}
 
 	promises := strings.TrimSpace(os.Getenv("OPENBSD_PLEDGE"))
@@ -69,15 +72,14 @@ func hardenProcess(dataDir string) {
 		promises = defaultPledgePromises
 	}
 	if err := unix.Pledge(promises, ""); err != nil {
-		log.Printf("[HARDEN] pledge %q failed: %v", promises, err)
-		return
+		log.Fatalf("[HARDEN] pledge %q failed: %v", promises, err)
 	}
 	log.Printf("[HARDEN] openbsd unveil+pledge applied (promises=%q)", promises)
 }
 
-func envTruthy(name string) bool {
+func envFalse(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
-	case "1", "true", "yes", "on":
+	case "0", "false", "no", "off":
 		return true
 	default:
 		return false
