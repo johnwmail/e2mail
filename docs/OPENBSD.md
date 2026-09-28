@@ -166,6 +166,8 @@ and `/etc/ssl/private/mail.example.com.key`. `/etc/relayd.conf`:
 
 ```
 http protocol "e2mail" {
+	block
+	pass request header "Host" value "mail.example.com"
 	match request header set "X-Forwarded-For" value "$REMOTE_ADDR"
 	match request header append "X-Forwarded-Proto" value "https"
 	tls { keypair "mail.example.com" }
@@ -182,6 +184,9 @@ The incoming `Host` header is forwarded unchanged unless a protocol rule changes
 or removes it. No special `Host` rule is needed here. Set `ALLOWED_HOSTS` in the
 e2Mail service environment to the public hostname (for example,
 `ALLOWED_HOSTS=mail.example.com`) so requests for other hostnames receive `421`.
+The relayd protocol defaults to blocking requests and only passes the exact
+`Host: mail.example.com` match above; other hostnames are blocked before they
+reach e2Mail.
 `X-Forwarded-For` is deliberately **set**, not appended: this single-proxy setup
 replaces any client-supplied value with relayd's observed client IP. Keep the
 backend reachable only through relayd; multi-proxy deployments need an explicit
