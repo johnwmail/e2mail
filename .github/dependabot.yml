@@ -3,23 +3,26 @@
 # Please see the documentation for all configuration options:
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
-# Basic `dependabot.yml` file with
-# minimum configuration for two package managers
-
 version: 2
 updates:
-  # Enable version updates for npm
+  # Enable version updates for npm (frontend)
   - package-ecosystem: "npm"
-    # Look for `package.json` and `lock` files in the `root` directory
-    directory: "/"
+    # Look for `package.json` and `package-lock.json` in `frontend/`
+    directory: "/frontend"
     # Check the npm registry for updates every day (weekdays)
     schedule:
       interval: "daily"
 
-  # Enable version updates for Docker
+  # Enable version updates for Go modules (backend)
   - package-ecosystem: "gomod"
-    # Look for a `Dockerfile` in the `root` directory
-    directory: "/"
+    # Look for `go.mod` in `backend/`
+    directory: "/backend"
     # Check for updates once a week
+    schedule:
+      interval: "weekly"
+
+  # Enable version updates for GitHub Actions workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
     schedule:
       interval: "weekly"

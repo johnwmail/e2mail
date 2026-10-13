@@ -1,6 +1,6 @@
 module github.com/johnwmail/e2mail/backend
 
-go 1.26.0
+go 1.26.9
 
 require (
 	github.com/ProtonMail/go-crypto v1.4.1
@@ -13,10 +13,10 @@ require (
 	github.com/go-webauthn/webauthn v0.18.1
 	github.com/google/uuid v1.6.0
 	github.com/pquerna/otp v1.5.0
-	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.58.0
-	golang.org/x/sys v0.48.0
-	golang.org/x/text v0.42.0
+	golang.org/x/crypto v0.58.0
+	golang.org/x/net v0.61.0
+	golang.org/x/sys v0.49.0
+	golang.org/x/text v0.43.0
 	modernc.org/sqlite v1.57.0
 )
 
