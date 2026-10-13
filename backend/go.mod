@@ -3,7 +3,7 @@ module github.com/johnwmail/e2mail/backend
 go 1.26.9
 
 require (
-	github.com/ProtonMail/go-crypto v1.4.1
+	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/descope/virtualwebauthn v1.0.5
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
