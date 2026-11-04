@@ -75,30 +75,49 @@ export const LoginForm: React.FC = () => {
       .catch(() => {});
   }, []);
 
+  // 將伺服器設定重設為部署預設（冇預設時清空），避免沿用上一個 email 的 domain
+  const resetServerSettings = () => {
+    setImapHost(serverDefaults?.imapHost ?? '');
+    setImapPort(serverDefaults?.imapPort ?? 993);
+    setSmtpHost(serverDefaults?.smtpHost ?? '');
+    setSmtpPort(serverDefaults?.smtpPort ?? 587);
+    setAllowInsecureTls(serverDefaults?.allowInsecureTls ?? false);
+  };
+
   // 輸入 Email 自動解析並填入伺服器配置
   const handleEmailChange = (val: string) => {
     setEmail(val);
     const atIndex = val.lastIndexOf('@');
-    if (atIndex > 0 && atIndex < val.length - 1) {
-      const domain = val.slice(atIndex + 1).toLowerCase().trim();
+    const domain =
+      atIndex > 0 && atIndex < val.length - 1
+        ? val.slice(atIndex + 1).toLowerCase().trim()
+        : '';
 
-      if (KNOWN_DOMAINS[domain]) {
-        const known = KNOWN_DOMAINS[domain];
-        setImapHost(known.imapHost);
-        setImapPort(known.imapPort);
-        setSmtpHost(known.smtpHost);
-        setSmtpPort(known.smtpPort);
-        setAllowInsecureTls(known.allowInsecure ?? false);
-        setDetectedDomain(domain);
-      } else if (domain.includes('.')) {
-        // 自訂網域（例如 example.com）— 若伺服器已預設 IMAP/SMTP，沿用之；否則以網域作為主機
-        if (!serverDefaults?.imapHost) setImapHost(domain);
-        if (!serverDefaults?.smtpHost) setSmtpHost(domain);
-        setDetectedDomain(domain);
-      }
-    } else {
+    if (!domain || !domain.includes('.')) {
+      // email 被清空或未完成：重設為預設值，唔可以留住上一個 domain
       setDetectedDomain(null);
+      resetServerSettings();
+      return;
     }
+
+    const known = KNOWN_DOMAINS[domain];
+    if (known) {
+      setImapHost(known.imapHost);
+      setImapPort(known.imapPort);
+      setSmtpHost(known.smtpHost);
+      setSmtpPort(known.smtpPort);
+      setAllowInsecureTls(known.allowInsecure ?? false);
+      setDetectedDomain(domain);
+      return;
+    }
+
+    // 自訂網域（例如 example.com）— 若伺服器已預設 IMAP/SMTP，沿用之；否則以網域作為主機
+    setImapHost(serverDefaults?.imapHost || domain);
+    setImapPort(serverDefaults?.imapPort ?? 993);
+    setSmtpHost(serverDefaults?.smtpHost || domain);
+    setSmtpPort(serverDefaults?.smtpPort ?? 587);
+    setAllowInsecureTls(serverDefaults?.allowInsecureTls ?? false);
+    setDetectedDomain(domain);
   };
 
   // 當 email 只填 user part，且 IMAP server host 已確定 → 顯示補全後嘅完整地址（一律用 imap server）
@@ -342,7 +361,7 @@ export const LoginForm: React.FC = () => {
             </button>
           </div>
         ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} autoComplete="off" className="space-y-4">
           {/* Email 輸入框 */}
           <div>
             <div className="flex items-center justify-between mb-1.5 gap-2">
@@ -362,6 +381,12 @@ export const LoginForm: React.FC = () => {
                 type="text"
                 required
                 autoFocus
+                name="email"
+                autoComplete="off"
+                inputMode="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 value={email}
                 onChange={(e) => handleEmailChange(e.target.value)}
                 placeholder="user@example.com"
@@ -388,6 +413,8 @@ export const LoginForm: React.FC = () => {
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
+                name="password"
+                autoComplete="off"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
