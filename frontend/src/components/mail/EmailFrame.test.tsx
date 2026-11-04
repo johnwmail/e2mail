@@ -97,6 +97,39 @@ describe('EmailFrame', () => {
     expect(allowed).not.toMatch(/<img[^>]*data-blocked-src/);
   });
 
+  it('injects a restrictive CSP into the email iframe', () => {
+    renderFrame({ htmlBody: '<p>hello</p>' });
+    const doc = getFrame().srcdoc;
+    expect(doc).toContain('http-equiv="Content-Security-Policy"');
+    expect(doc).toContain("img-src 'self' data: blob:;");
+    expect(doc).not.toContain("img-src 'self' data: blob: https:;");
+    expect(doc).toContain("media-src 'self' data: blob:;");
+    expect(doc).toContain("connect-src 'none'");
+    expect(doc).toContain("frame-src 'none'");
+    expect(doc).toContain("form-action 'none'");
+    expect(getFrame().getAttribute('referrerpolicy')).toBe('no-referrer');
+  });
+
+  it('blocks SVG / video poster / inline-CSS remote loads until images are allowed', () => {
+    renderFrame({
+      htmlBody:
+        '<svg><image href="https://track.example/a.png"></image></svg>' +
+        '<video poster="https://track.example/p.jpg"></video>' +
+        '<div style="background:url(https://track.example/bg.png)">x</div>',
+    });
+
+    const blocked = getFrame().srcdoc;
+    expect(blocked).toContain("img-src 'self' data: blob:;");
+    expect(blocked).toContain("media-src 'self' data: blob:;");
+    expect(screen.getByRole('button', { name: /Show images/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Show images/ }));
+
+    const allowed = getFrame().srcdoc;
+    expect(allowed).toContain("img-src 'self' data: blob: https:;");
+    expect(allowed).toContain("media-src 'self' data: blob: https:;");
+  });
+
   it('auto-allows remote images for trusted senders', () => {
     renderFrame({
       htmlBody: '<img src="https://cdn.example/logo.png">',

@@ -21,6 +21,20 @@ const WIDTH_EPS = 40; // 只處理超出閱讀欄 40px 以上的闊郵件，避�
 const WIDTH_MAX_FRAMES = 8; // 穩定量度最多等 ~8 個 rAF（image load / table reflow）
 const WIDTH_MIN_SCALE = 0.45; // 縮放下限，再闊都用橫向捲動而非無限縮細
 
+// 郵件 iframe 內部 CSP：最後防線，連 SVG <image href>、<video poster>、
+// inline style url() 等唔經 <img> 嘅遠端載入都會被擋。預設只允許同源附件、
+// data/blob 同 inline style；用戶按「顯示圖片」後才放寬 https 遠端資源。
+const emailCspMeta = (allowRemote: boolean): string => {
+  const remote = allowRemote ? ' https:' : '';
+  return `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data: blob:${remote}; media-src 'self' data: blob:${remote}; style-src 'unsafe-inline'; font-src data:; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">`;
+};
+
+// 偵測任何會自動載入遠端資源的屬性（<img> 以外仲有 SVG/video/table/inline CSS）。
+// <a href> 唔計，因為連結要用戶點擊才會載入。
+const hasRemoteResources = (html: string): boolean =>
+  /<(?:img|image|video|audio|source|input|table|thead|tbody|tfoot|tr|td|th|body|svg)\b[^>]*(?:src|srcset|poster|background|href|xlink:href)\s*=\s*["']?\s*https?:/i.test(html) ||
+  /style\s*=\s*["'][^"']*url\(\s*['"]?\s*https?:/i.test(html);
+
 export const computeFitScale = (paneW: number, intrinsicW: number): number => {
   if (paneW <= 0 || intrinsicW <= 0) return 1;
   const s = paneW / intrinsicW;
@@ -283,6 +297,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       if (looksLikeHtml) {
         let htmlForSanitize = decryptedContent.replace(/<img[^>]*Template_Bilingual[^>]*>/gi, '');
         htmlForSanitize = htmlForSanitize.replace(/<img[^>]*width=["']?1["']?[^>]*height=["']?1["']?[^>]*>/gi, '');
+        setHasRemoteImages(hasRemoteResources(htmlForSanitize));
         const { css: mailCss, rest: bodyHtml } = extractMailStyles(htmlForSanitize);
         const clean = DOMPurify.sanitize(bodyHtml, {
           WHOLE_DOCUMENT: false,
@@ -291,7 +306,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
           FORBID_TAGS: ['script', 'object', 'embed', 'applet'],
           FORBID_ATTR: ['onload', 'onerror', 'onclick', 'onmouseover'],
         });
-        return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;width:100%;box-sizing:border-box}.email-content{max-width:720px;margin:0 auto}table{border-collapse:collapse}td,th{word-break:normal;vertical-align:top}.email-content{max-width:720px;margin:0 auto}img{max-width:100% !important;height:auto}img[data-blocked-src]{background:#f8fafc;border:1px dashed #cbd5e1;color:#94a3b8;font-size:12px;box-sizing:border-box}a{color:#2563eb}</style>${mailCss ? `<style>${mailCss}</style>` : ''}</head><body><div class="email-content">${forceNewTabLinks(clean)}</div></body></html>`;
+        return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${emailCspMeta(allowRemoteImages)}<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1e293b;margin:0;padding:16px;word-break:normal;overflow-wrap:break-word;width:100%;box-sizing:border-box}.email-content{max-width:720px;margin:0 auto}table{border-collapse:collapse}td,th{word-break:normal;vertical-align:top}.email-content{max-width:720px;margin:0 auto}img{max-width:100% !important;height:auto}img[data-blocked-src]{background:#f8fafc;border:1px dashed #cbd5e1;color:#94a3b8;font-size:12px;box-sizing:border-box}a{color:#2563eb}</style>${mailCss ? `<style>${mailCss}</style>` : ''}</head><body><div class="email-content">${forceNewTabLinks(clean)}</div></body></html>`;
       }
       let escaped = decryptedContent
         .replace(/&/g, '&amp;')
@@ -324,6 +339,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
           <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
+            ${emailCspMeta(allowRemoteImages)}
             <style>
               body {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -376,8 +392,8 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       ''
     );
 
-    // 偵測是否含有外部 http/https 圖片
-    const hasExternal = /<img[^>]+src=["']https?:\/\//i.test(content);
+    // 偵測是否含有任何會自動載入的遠端資源（img / SVG / video / table background / inline CSS）
+    const hasExternal = hasRemoteResources(content);
     setHasRemoteImages(hasExternal);
 
     // 若未允許外部圖片，只改寫 src 屬性、保留原圖所有屬性（含 width/height），
@@ -415,6 +431,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
+          ${emailCspMeta(allowRemoteImages)}
           <style>
             html, body { max-width: 100%; }
             body {
@@ -547,6 +564,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
           onLoad={() => void measureDoc()}
           srcDoc={processedHtml}
           sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          referrerPolicy="no-referrer"
           className="border-0 block"
           style={{
             width: '100%',
