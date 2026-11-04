@@ -21,7 +21,7 @@ import { applyDocumentLang, setLocale, t, useI18n } from './i18n';
 export const App: React.FC = () => {
   useI18n();
   const queryClient = useQueryClient();
-  const { isAuthenticated, isLoading, initAuth, token, logout } = useAuthStore();
+  const { isAuthenticated, isLoading, initAuth, logout } = useAuthStore();
   const view = useMailStore((s) => s.view);
   const composerKey = useMailStore((s) => s.composerKey);
   const activeAccount = useActiveAccount();
@@ -107,7 +107,7 @@ export const App: React.FC = () => {
 
   // 訂閱 SSE 即時新信通知
   useEffect(() => {
-    if (!token || !isAuthenticated) return;
+    if (!isAuthenticated) return;
 
     const disconnect = connectEvents((event) => {
       console.log('[SSE Event]', event);
@@ -125,7 +125,7 @@ export const App: React.FC = () => {
     return () => {
       disconnect();
     };
-  }, [token, isAuthenticated, queryClient]);
+  }, [isAuthenticated, queryClient]);
 
   if (isLoading) {
     return (

@@ -74,12 +74,9 @@ export const mailApi = {
   },
 
   getRawMessage: async (uid: number, folder = 'INBOX', account?: string): Promise<string> => {
-    const token = localStorage.getItem('e2Mail_token') || '';
     const accountQS = account ? `&account=${encodeURIComponent(account)}` : '';
     const url = `/api/mail/messages/${uid}/raw?folder=${encodeURIComponent(folder)}${accountQS}`;
-    const res = await fetch(url, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
+    const res = await fetch(url, { credentials: 'same-origin' });
     if (!res.ok) {
       throw new Error(t('api.rawMailFailed', { status: res.status }));
     }

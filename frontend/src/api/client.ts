@@ -14,12 +14,7 @@ export async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = localStorage.getItem('e2Mail_token');
   const headers = new Headers(options.headers || {});
-
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
 
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
@@ -47,10 +42,10 @@ export async function request<T>(
       !endpoint.startsWith('/2fa/') &&
       !endpoint.startsWith('/auth/logout') &&
       !endpoint.startsWith('/auth/change-password') &&
+      // 啟動時的 session 探測：401 代表未登入，由 initAuth 處理，唔需要再 logout。
+      !endpoint.startsWith('/auth/me') &&
       !window.location.pathname.includes('/login')
     ) {
-      localStorage.removeItem('e2Mail_token');
-      localStorage.removeItem('e2Mail_session');
       window.dispatchEvent(new Event('auth:unauthorized'));
     }
   }

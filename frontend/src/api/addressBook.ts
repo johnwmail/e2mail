@@ -50,17 +50,14 @@ export const contactsApi = {
   },
 
   getAvatarUrl: (id: string): string => {
-    // 直接用 fetch，需附 Authorization header 時由 <img> 無法帶，改用 token query？現階段後端需鑑權，
-    // 暫用 relative path 並靠 cookie/session？e2mail 用 Bearer token 存 localStorage，
-    // 圖片需以 blob fetch。提供 helper 由呼叫方自行 fetch blob。
+    // Session 憑證係 same-origin HttpOnly cookie，<img src> 會自動帶上。
     return `/api/contacts/${encodeURIComponent(id)}/avatar`;
   },
 
   fetchAvatarBlob: async (id: string): Promise<string | null> => {
     try {
-      const token = localStorage.getItem('e2Mail_token');
       const res = await fetch(`/api/contacts/${encodeURIComponent(id)}/avatar`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'same-origin',
       });
       if (!res.ok) return null;
       const blob = await res.blob();
@@ -71,12 +68,11 @@ export const contactsApi = {
   },
 
   uploadAvatar: async (id: string, file: File): Promise<Contact> => {
-    const token = localStorage.getItem('e2Mail_token');
     const form = new FormData();
     form.append('file', file);
     const res = await fetch(`/api/contacts/${encodeURIComponent(id)}/avatar`, {
       method: 'PUT',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'same-origin',
       body: form,
     });
     if (!res.ok) {
@@ -92,12 +88,11 @@ export const contactsApi = {
   },
 
   importContacts: async (file: File, mode: 'skip' | 'overwrite' = 'skip'): Promise<{ saved: number; skipped: string[]; invalid: number }> => {
-    const token = localStorage.getItem('e2Mail_token');
     const form = new FormData();
     form.append('file', file);
     const res = await fetch(`/api/contacts/import?mode=${mode}`, {
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'same-origin',
       body: form,
     });
     if (!res.ok) {
@@ -109,9 +104,8 @@ export const contactsApi = {
   },
 
   exportContacts: async (format: 'csv' | 'vcf' = 'csv'): Promise<void> => {
-    const token = localStorage.getItem('e2Mail_token');
     const res = await fetch(`/api/contacts/export?format=${format}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'same-origin',
     });
     if (!res.ok) throw new Error(`export failed: ${res.status}`);
     const blob = await res.blob();

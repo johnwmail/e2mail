@@ -11,7 +11,6 @@ export interface LoginResult {
 }
 
 interface AuthState {
-  token: string | null;
   session: Session | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -22,24 +21,20 @@ interface AuthState {
   initAuth: () => Promise<void>;
 }
 
+// Session 憑證只存在 HttpOnly cookie（由 backend 設定），前端唔再將 token／session
+// 寫入 localStorage —— 避免 XSS 可以直接偷走可長期重用的 session ID。
 export const useAuthStore = create<AuthState>((set) => {
   const applyLogin = (res: LoginResponse) => {
-    localStorage.setItem('e2Mail_token', res.token!);
-    localStorage.setItem('e2Mail_session', JSON.stringify(res.session));
     set({
-      token: res.token,
-      session: res.session,
+      session: res.session ?? null,
       isAuthenticated: true,
       isLoading: false,
     });
   };
 
   return {
-    token: localStorage.getItem('e2Mail_token'),
-    session: localStorage.getItem('e2Mail_session')
-      ? JSON.parse(localStorage.getItem('e2Mail_session')!)
-      : null,
-    isAuthenticated: !!localStorage.getItem('e2Mail_token'),
+    session: null,
+    isAuthenticated: false,
     isLoading: true,
 
     login: async (req: LoginRequest) => {
@@ -67,12 +62,9 @@ export const useAuthStore = create<AuthState>((set) => {
       } catch {
         // 忽略登出網路錯誤
       }
-      localStorage.removeItem('e2Mail_token');
-      localStorage.removeItem('e2Mail_session');
       // logout 同時清除 in-memory PGP key（唔留 localStorage），下次登入重新自 server fetch
       pgpService.clearKey();
       set({
-        token: null,
         session: null,
         isAuthenticated: false,
         isLoading: false,
@@ -80,26 +72,16 @@ export const useAuthStore = create<AuthState>((set) => {
     },
 
     initAuth: async () => {
-      const token = localStorage.getItem('e2Mail_token');
-      if (!token) {
-        set({ isLoading: false, isAuthenticated: false });
-        return;
-      }
-
+      // Cookie 會隨 same-origin request 自動送出；每次啟動向 server 確認會話。
       try {
         const session = await authApi.getMe();
-        localStorage.setItem('e2Mail_session', JSON.stringify(session));
         set({
-          token,
           session,
           isAuthenticated: true,
           isLoading: false,
         });
       } catch {
-        localStorage.removeItem('e2Mail_token');
-        localStorage.removeItem('e2Mail_session');
         set({
-          token: null,
           session: null,
           isAuthenticated: false,
           isLoading: false,

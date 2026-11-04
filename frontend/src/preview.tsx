@@ -120,10 +120,7 @@ window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   });
 }) as typeof window.fetch;
 
-localStorage.setItem('e2Mail_token', 'preview-token');
-localStorage.setItem('e2Mail_session', JSON.stringify(session));
-
-useAuthStore.setState({ token: 'preview-token', session, isAuthenticated: true, isLoading: false });
+useAuthStore.setState({ session, isAuthenticated: true, isLoading: false });
 useMailStore.setState({ view: 'settings', settingsSection: 'security', activeAccountId: accounts[0].id });
 
 applyDocumentLang();
