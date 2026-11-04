@@ -161,6 +161,64 @@ describe('LoginForm', () => {
     delete (window as any).PublicKeyCredential;
   });
 
+  it('does not keep the previous domain after the email is cleared', async () => {
+    render(<LoginForm />);
+    const emailInput = screen.getByPlaceholderText('user@example.com');
+    expect(emailInput).toHaveAttribute('autocomplete', 'off');
+
+    fireEvent.change(emailInput, { target: { value: 'abc@test.com' } });
+    fireEvent.change(emailInput, { target: { value: '' } });
+    expect((emailInput as HTMLInputElement).value).toBe('');
+
+    fireEvent.change(emailInput, { target: { value: 'bob' } });
+    // 清空後唔應該再用上一個 domain 自動補完
+    expect(screen.queryByText(/bob@test\.com/)).not.toBeInTheDocument();
+  });
+
+  it('restores server defaults after clearing a custom domain', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        json: async () => ({
+          success: true,
+          data: {
+            defaults: {
+              imapHost: 'mail.example.com',
+              imapPort: 993,
+              smtpHost: 'smtp.example.com',
+              smtpPort: 587,
+              allowInsecureTls: false,
+            },
+          },
+        }),
+      }),
+    );
+
+    render(<LoginForm />);
+    const emailInput = screen.getByPlaceholderText('user@example.com');
+
+    fireEvent.change(emailInput, { target: { value: 'abc@test.com' } });
+    fireEvent.change(emailInput, { target: { value: '' } });
+    fireEvent.change(emailInput, { target: { value: 'bob' } });
+
+    expect((await screen.findAllByText(/bob@mail\.example\.com/)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/bob@test\.com/)).not.toBeInTheDocument();
+  });
+
+  it('does not sign in with a stale domain after clearing the email', async () => {
+    render(<LoginForm />);
+    const emailInput = screen.getByPlaceholderText('user@example.com');
+
+    fireEvent.change(emailInput, { target: { value: 'abc@test.com' } });
+    fireEvent.change(emailInput, { target: { value: '' } });
+    fireEvent.change(emailInput, { target: { value: 'bob' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByText(/Could not detect the mail server/)).toBeInTheDocument();
+    expect(mocks.login).not.toHaveBeenCalled();
+  });
+
   it('does not offer passkey login when the method is unavailable', async () => {
     (window as any).PublicKeyCredential = {};
     mocks.login.mockResolvedValue({ requires2fa: true, challenge: 'ch-1', methods: ['totp'] });
