@@ -13,8 +13,7 @@ describe('request', () => {
     localStorage.clear();
   });
 
-  it('attaches bearer token and JSON content-type', async () => {
-    localStorage.setItem('e2Mail_token', 'token-123');
+  it('uses the same-origin cookie and JSON content-type', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ success: true, data: { ok: true } }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -23,8 +22,9 @@ describe('request', () => {
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/auth/me');
+    expect(init.credentials).toBe('same-origin');
     const headers = new Headers(init.headers);
-    expect(headers.get('Authorization')).toBe('Bearer token-123');
+    expect(headers.has('Authorization')).toBe(false);
     expect(headers.get('Content-Type')).toBe('application/json');
   });
 
@@ -50,34 +50,37 @@ describe('request', () => {
   });
 
   describe('401 handling', () => {
-    it('clears session and dispatches auth:unauthorized for non-2fa endpoints', async () => {
-      localStorage.setItem('e2Mail_token', 'tok');
+    it('dispatches auth:unauthorized for protected endpoints', async () => {
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ success: false, error: 'expired' }, 401)));
 
-      await expect(request('/auth/me')).rejects.toThrow(ApiError);
+      await expect(request('/accounts')).rejects.toThrow(ApiError);
 
-      expect(localStorage.getItem('e2Mail_token')).toBeNull();
       expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'auth:unauthorized' }));
     });
 
-    it('does NOT clear session for /2fa/ endpoints (business error)', async () => {
-      localStorage.setItem('e2Mail_token', 'tok');
+    it('does NOT dispatch for /auth/me startup probe', async () => {
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ success: false, error: 'unauthorized' }, 401)));
+
+      await expect(request('/auth/me')).rejects.toThrow(ApiError);
+      expect(dispatchSpy).not.toHaveBeenCalled();
+    });
+
+    it('does NOT dispatch for /2fa/ endpoints (business error)', async () => {
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ success: false, error: 'wrong code' }, 401)));
 
       await expect(request('/2fa/enable')).rejects.toThrow(ApiError);
-
-      expect(localStorage.getItem('e2Mail_token')).toBe('tok');
       expect(dispatchSpy).not.toHaveBeenCalled();
     });
 
-    it('does NOT clear session for logout endpoint', async () => {
-      localStorage.setItem('e2Mail_token', 'tok');
+    it('does NOT dispatch for logout endpoint', async () => {
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ success: false, error: 'x' }, 401)));
 
       await expect(request('/auth/logout', { method: 'POST' })).rejects.toThrow(ApiError);
-      expect(localStorage.getItem('e2Mail_token')).toBe('tok');
+      expect(dispatchSpy).not.toHaveBeenCalled();
     });
 
     it('does NOT dispatch unauthorized when already on login page', async () => {
@@ -85,17 +88,15 @@ describe('request', () => {
         value: { ...window.location, pathname: '/login' },
         writable: true,
       });
-      localStorage.setItem('e2Mail_token', 'tok');
       const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ success: false, error: 'x' }, 401)));
 
-      await expect(request('/auth/me')).rejects.toThrow(ApiError);
+      await expect(request('/accounts')).rejects.toThrow(ApiError);
       expect(dispatchSpy).not.toHaveBeenCalled();
     });
   });
 
   it('does not override explicit Authorization header', async () => {
-    localStorage.setItem('e2Mail_token', 'tok');
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ success: true, data: {} }));
     vi.stubGlobal('fetch', fetchMock);
 

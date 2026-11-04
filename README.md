@@ -241,6 +241,12 @@ Chromium; see the header of the script).
   password. Losing that password permanently locks all stored account secrets.
 - Sessions hold only the in-memory DEK (AES-GCM encrypted); setting
   `SESSION_SECRET` is recommended for multi-instance deployments.
+- The session ID lives only in the HttpOnly, SameSite=Lax `e2Mail_session`
+  cookie. The frontend never writes the token or session payload to
+  `localStorage`; on startup it re-validates the cookie via `/api/auth/me`.
+- HTML mail renders inside a sandboxed iframe with its own restrictive CSP.
+  Remote images, media, and fonts stay blocked until the user allows them —
+  including SVG `<image>`, `<video poster>`, and inline CSS `url()` vectors.
 - TLS is mandatory by default (`allowInsecureTls = false`). Only enable
   self-signed certs via env when targeting a test environment.
 - Requests hit the Go server directly (no nginx/proxy in front), so large PGP

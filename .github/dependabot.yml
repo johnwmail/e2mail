@@ -1,28 +1,49 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
+# To get started with Dependabot version updates, see:
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
 version: 2
 updates:
   # Enable version updates for npm (frontend)
   - package-ecosystem: "npm"
-    # Look for `package.json` and `package-lock.json` in `frontend/`
     directory: "/frontend"
-    # Check the npm registry for updates every day (weekdays)
     schedule:
       interval: "daily"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+      semver-major-days: 14
+      semver-minor-days: 3
+      semver-patch-days: 1
+    groups:
+      frontend-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # Enable version updates for Go modules (backend)
   - package-ecosystem: "gomod"
-    # Look for `go.mod` in `backend/`
     directory: "/backend"
-    # Check for updates once a week
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 5
+      semver-major-days: 14
+      semver-minor-days: 5
+      semver-patch-days: 2
+    groups:
+      backend-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # Enable version updates for GitHub Actions workflows
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 5
+    groups:
+      github-actions-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

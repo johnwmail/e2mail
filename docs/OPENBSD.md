@@ -37,8 +37,31 @@ CGO_ENABLED=0 GOOS=openbsd GOARCH=arm64 go build -o /dev/null ./cmd/server   # O
    (or Caddy/nginx). WebAuthn and `Secure` cookies require an `https://` origin.
 3. **Go version.** OpenBSD support needs a current Go toolchain (the repo uses
    Go 1.26). If `ports` lags, use the official `go1.26.openbsd-amd64` tarball.
-4. **No official OpenBSD build is published** yet — you build it yourself
-   (locally or via the CI workflow added on this branch).
+4. **Official OpenBSD builds are published** on every `v*` GitHub release as
+   `e2mail-openbsd-amd64`, together with `SHA256SUMS.txt` and a build-provenance
+   attestation. You can still build it yourself (below) if you prefer.
+
+## Download the official OpenBSD binary
+
+```sh
+VERSION=v0.6.8   # replace with the latest tag from https://github.com/johnwmail/e2mail/releases
+BASE="https://github.com/johnwmail/e2mail/releases/download/${VERSION}"
+
+curl -fLO "${BASE}/e2mail-openbsd-amd64"
+curl -fLO "${BASE}/SHA256SUMS.txt"
+
+# OpenBSD: sha256 -r prints "hash file"; compare it with the matching line above.
+sha256 -r e2mail-openbsd-amd64
+grep 'e2mail-openbsd-amd64' SHA256SUMS.txt
+
+# Optional: verify the GitHub build-provenance attestation
+gh attestation verify e2mail-openbsd-amd64 --repo johnwmail/e2mail
+
+chmod 0755 e2mail-openbsd-amd64
+```
+
+The binary is built by the `release` workflow on GitHub-hosted runners from the
+tagged commit, with `CGO_ENABLED=0` and the frontend already embedded.
 
 ## Build
 
@@ -248,7 +271,8 @@ temporarily for troubleshooting; do not use it as the normal configuration.
 - `.github/workflows/release.yml` — on **`v*` tags**: builds the static,
   frontend-embedded binary for `linux/amd64`, `linux/arm64` and `openbsd/amd64`
   (frontend `npm ci && npm run build` → embed → `CGO_ENABLED=0 go build
-  -trimpath`) and attaches them to the GitHub release.
+  -trimpath`), generates `SHA256SUMS.txt`, attests build provenance, and
+  attaches everything to the GitHub release.
 - `.github/workflows/test.yml` — a `cross-build` matrix (`linux/amd64`,
   `linux/arm64`, `openbsd/amd64`, CGO disabled) compile-checks the backend on
   every push/PR to `main`.
