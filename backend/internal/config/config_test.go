@@ -140,3 +140,25 @@ func TestLoadAllowedHosts(t *testing.T) {
 		t.Fatalf("empty ALLOWED_HOSTS should give no hosts, got %#v", got)
 	}
 }
+
+func TestLoadOutboundGuard(t *testing.T) {
+	t.Setenv("ALLOW_PRIVATE_NETWORKS", "")
+	t.Setenv("OUTBOUND_ALLOWED_HOSTS", "")
+	cfg := Load()
+	if cfg.AllowPrivateNetworks {
+		t.Fatal("AllowPrivateNetworks must default to false")
+	}
+	if len(cfg.OutboundAllowedHosts) != 0 {
+		t.Fatalf("OutboundAllowedHosts default = %#v", cfg.OutboundAllowedHosts)
+	}
+
+	t.Setenv("ALLOW_PRIVATE_NETWORKS", "true")
+	t.Setenv("OUTBOUND_ALLOWED_HOSTS", " mail.lan , 192.168.1.10 ")
+	cfg = Load()
+	if !cfg.AllowPrivateNetworks {
+		t.Fatal("ALLOW_PRIVATE_NETWORKS=true was not parsed")
+	}
+	if len(cfg.OutboundAllowedHosts) != 2 || cfg.OutboundAllowedHosts[0] != "mail.lan" || cfg.OutboundAllowedHosts[1] != "192.168.1.10" {
+		t.Fatalf("OutboundAllowedHosts = %#v", cfg.OutboundAllowedHosts)
+	}
+}

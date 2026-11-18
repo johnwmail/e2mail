@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -351,20 +352,59 @@ func (h *MailHandler) DownloadAttachment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	contentType := targetAtt.ContentType
-	if contentType == "" {
-		contentType = "application/octet-stream"
+	writeAttachment(w, targetAtt.ContentType, targetAtt.Filename, targetAtt.Data, targetAtt.IsInline)
+}
+
+// inlineSafeMediaTypes 係可以直接喺 app origin inline render 的類型。
+// HTML / SVG / XML / PDF / JS 等一律強制 attachment：佢哋可以喺同源執行
+// script，或者內嵌主動內容（stored XSS）。
+var inlineSafeMediaTypes = map[string]bool{
+	"image/png":                true,
+	"image/jpeg":               true,
+	"image/gif":                true,
+	"image/webp":               true,
+	"image/bmp":                true,
+	"image/avif":               true,
+	"image/x-icon":             true,
+	"image/vnd.microsoft.icon": true,
+}
+
+// writeAttachment 以安全 header 輸出附件。Content-Type 來自 email（不可信），
+// 所以只保留 media type、丟棄原參數，並且只對白名單圖片開放 inline。
+func writeAttachment(w http.ResponseWriter, contentType, filename string, data []byte, isInline bool) {
+	mediaType := "application/octet-stream"
+	if mt, _, err := mime.ParseMediaType(strings.TrimSpace(contentType)); err == nil && mt != "" {
+		mediaType = strings.ToLower(mt)
 	}
 
-	w.Header().Set("Content-Type", contentType)
-	if targetAtt.IsInline {
-		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", targetAtt.Filename))
-	} else {
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", targetAtt.Filename))
+	filename = strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' || r == 0 {
+			return -1
+		}
+		return r
+	}, filename)
+	if strings.TrimSpace(filename) == "" {
+		filename = "attachment"
 	}
-	w.Header().Set("Content-Length", strconv.Itoa(len(targetAtt.Data)))
+
+	disposition := "attachment"
+	if isInline && inlineSafeMediaTypes[mediaType] {
+		disposition = "inline"
+	}
+	dispositionHeader := mime.FormatMediaType(disposition, map[string]string{"filename": filename})
+	if dispositionHeader == "" {
+		dispositionHeader = disposition
+	}
+
+	w.Header().Set("Content-Type", mediaType)
+	w.Header().Set("Content-Disposition", dispositionHeader)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(targetAtt.Data)
+	_, _ = w.Write(data)
 }
 
 // FlagsRequest 批次修改 Flag 請求

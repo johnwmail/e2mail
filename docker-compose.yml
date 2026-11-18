@@ -31,6 +31,9 @@ services:
       - COOKIE_SECURE=${COOKIE_SECURE:-true}
       # Host allow-list：只回應呢啲 domain（逗號分隔）；留空 = 不限制
       # - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
+      # Outbound SSRF guard：預設拒絕 private/loopback/link-local；LAN mail server 用白名單
+      # - OUTBOUND_ALLOWED_HOSTS=${OUTBOUND_ALLOWED_HOSTS:-}
+      # - ALLOW_PRIVATE_NETWORKS=${ALLOW_PRIVATE_NETWORKS:-false}
       # === Onboarding 強制設定（新帳號首次登入；true=強制要求設 2FA / PGP） ===
       # 可直接喺呢度寫死，或用 .env / shell env 覆蓋（default 都係 true）
       - REQUIRE_2FA=${REQUIRE_2FA:-true}

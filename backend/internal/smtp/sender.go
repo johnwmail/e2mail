@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	netmail "net/mail"
 	netsmtp "net/smtp"
+	"strconv"
 	"strings"
 	"time"
 
 	gomail "github.com/emersion/go-message/mail"
+	"github.com/johnwmail/e2mail/backend/internal/netguard"
 )
 
 // SMTPConfig 發信連線設定
@@ -34,12 +37,18 @@ func smtpTLSConfig(config SMTPConfig) *tls.Config {
 }
 
 // dialSMTPClient 465 implicit TLS；其餘必須 STARTTLS。永不明文 AUTH。
-func dialSMTPClient(config SMTPConfig) (*netsmtp.Client, error) {
-	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+func dialSMTPClient(ctx context.Context, config SMTPConfig) (*netsmtp.Client, error) {
+	addr := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
 	tlsConfig := smtpTLSConfig(config)
 
+	guard := netguard.Default()
+	if err := guard.CheckHost(ctx, config.Host); err != nil {
+		return nil, fmt.Errorf("SMTP host rejected: %w", err)
+	}
+	dialer := guard.DialerFor(config.Host)
+
 	if config.Port == 465 {
-		conn, err := tls.Dial("tcp", addr, tlsConfig)
+		conn, err := tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
 		if err != nil {
 			return nil, fmt.Errorf("SMTP TLS dial failed to %s: %w", addr, err)
 		}
@@ -51,9 +60,14 @@ func dialSMTPClient(config SMTPConfig) (*netsmtp.Client, error) {
 		return client, nil
 	}
 
-	c, err := netsmtp.Dial(addr)
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("SMTP connection failed to %s: %w", addr, err)
+	}
+	c, err := netsmtp.NewClient(conn, config.Host)
+	if err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("SMTP client init failed: %w", err)
 	}
 	ok, _ := c.Extension("STARTTLS")
 	if !ok {
@@ -69,7 +83,7 @@ func dialSMTPClient(config SMTPConfig) (*netsmtp.Client, error) {
 
 // TestSMTPConnection 只測試 SMTP 連線 + 認證（唔發送任何郵件）
 func TestSMTPConnection(ctx context.Context, config SMTPConfig) error {
-	client, err := dialSMTPClient(config)
+	client, err := dialSMTPClient(ctx, config)
 	if err != nil {
 		return err
 	}
@@ -329,7 +343,7 @@ func (s *Sender) Send(ctx context.Context, config SMTPConfig, msg OutgoingMessag
 		return errors.New("no valid recipient addresses specified")
 	}
 
-	client, err := dialSMTPClient(config)
+	client, err := dialSMTPClient(ctx, config)
 	if err != nil {
 		return err
 	}
