@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/johnwmail/e2mail/backend/internal/netguard"
 )
 
 // Config ManageSieve 連線設定
@@ -139,7 +141,12 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	}
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	guard := netguard.Default()
+	if err := guard.CheckHost(ctx, host); err != nil {
+		return nil, fmt.Errorf("sieve host rejected: %w", err)
+	}
+	dialer := guard.DialerFor(host)
+	dialer.Timeout = 10 * time.Second
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("sieve dial failed %s: %w", addr, err)

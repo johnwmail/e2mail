@@ -5,12 +5,15 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/johnwmail/e2mail/backend/internal/netguard"
 	"github.com/johnwmail/e2mail/backend/pkg/charsetutil"
 )
 
@@ -67,13 +70,22 @@ type Client struct {
 
 // NewClient 建立並驗證 IMAP 連線
 func NewClient(config ConnectionConfig) (*Client, error) {
-	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+	addr := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
 	tlsConfig := &tls.Config{
 		ServerName:         config.Host,
 		InsecureSkipVerify: config.AllowInsecureTLS, //nolint:gosec
 	}
+
+	guard := netguard.Default()
+	checkCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := guard.CheckHost(checkCtx, config.Host); err != nil {
+		return nil, fmt.Errorf("IMAP host rejected: %w", err)
+	}
+	dialer := guard.DialerFor(config.Host)
+
 	dialOptions := func() *imapclient.Options {
-		opts := &imapclient.Options{TLSConfig: tlsConfig}
+		opts := &imapclient.Options{TLSConfig: tlsConfig, Dialer: dialer}
 		if config.OnMailboxUpdate != nil {
 			opts.UnilateralDataHandler = &imapclient.UnilateralDataHandler{
 				Mailbox: func(data *imapclient.UnilateralDataMailbox) {

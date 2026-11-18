@@ -20,6 +20,7 @@ import (
 	"github.com/johnwmail/e2mail/backend/internal/config"
 	"github.com/johnwmail/e2mail/backend/internal/imap"
 	ldapint "github.com/johnwmail/e2mail/backend/internal/ldap"
+	"github.com/johnwmail/e2mail/backend/internal/netguard"
 	"github.com/johnwmail/e2mail/backend/internal/session"
 	"github.com/johnwmail/e2mail/backend/internal/smtp"
 	"github.com/johnwmail/e2mail/backend/internal/storage"
@@ -102,6 +103,15 @@ func main() {
 	}
 
 	serverConfig := config.Load()
+
+	// Outbound SSRF guard：用戶提供的 IMAP/SMTP/Sieve host 預設唔准連
+	// private / loopback / link-local（可用 env 白名單或 ALLOW_PRIVATE_NETWORKS 放行）。
+	netguard.SetDefault(netguard.NewPolicy(serverConfig.AllowPrivateNetworks, serverConfig.OutboundAllowedHosts))
+	if serverConfig.AllowPrivateNetworks {
+		log.Printf("⚠️  Outbound SSRF guard disabled (ALLOW_PRIVATE_NETWORKS=true)")
+	} else {
+		log.Printf("🛡️  Outbound SSRF guard enabled (private/loopback IMAP/SMTP/Sieve hosts blocked; allow via OUTBOUND_ALLOWED_HOSTS)")
+	}
 
 	poolManager := imap.NewPoolManager()
 	idleManager := imap.NewIdleManager()

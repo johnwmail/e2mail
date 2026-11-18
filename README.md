@@ -136,6 +136,8 @@ Uncomment in `docker-compose.yml` (or set via your orchestrator) to activate.
 | `SESSION_SECRET`          | (random)| 32-byte AES-GCM key for encrypting the per-session DEK at rest (raw 32 chars / base64 44 chars / hex 64 chars) |
 | `COOKIE_SECURE`           | `true`  | Set `Secure` flag on `e2Mail_session` cookie (set `false` for plain HTTP dev) |
 | `ALLOWED_HOSTS`           | —       | Comma-separated hostnames the server answers to (e.g. `mail.example.com`); other `Host` values get `421`. Empty = no restriction. The reverse proxy must preserve the original `Host` |
+| `ALLOW_PRIVATE_NETWORKS`  | `false` | Allow IMAP/SMTP/Sieve to dial private, loopback and link-local addresses. Keep `false` on shared/public instances (SSRF guard); enable only for a LAN mail server |
+| `OUTBOUND_ALLOWED_HOSTS`  | —       | Comma-separated exact hostnames/IPs that bypass the SSRF guard (e.g. `mail.lan,192.168.1.10`) |
 | `DEFAULT_IMAP_HOST`       | —       | Pre-fill IMAP host for users with custom domains        |
 | `DEFAULT_IMAP_PORT`       | `993`   | Pre-fill IMAP port                                      |
 | `DEFAULT_SMTP_HOST`       | —       | Pre-fill SMTP host                                      |
@@ -247,6 +249,13 @@ Chromium; see the header of the script).
 - HTML mail renders inside a sandboxed iframe with its own restrictive CSP.
   Remote images, media, and fonts stay blocked until the user allows them —
   including SVG `<image>`, `<video poster>`, and inline CSS `url()` vectors.
+- Outbound IMAP/SMTP/Sieve connections reject private, loopback and
+  link-local addresses by default (SSRF guard). Use `OUTBOUND_ALLOWED_HOSTS`
+  for a specific LAN mail server, or `ALLOW_PRIVATE_NETWORKS=true` to disable
+  the guard entirely.
+- Attachments with active content (HTML, SVG, XML, PDF, JavaScript, …) are
+  always sent as `Content-Disposition: attachment` with `nosniff` and a
+  sandboxing CSP; only common raster image types may render inline.
 - TLS is mandatory by default (`allowInsecureTls = false`). Only enable
   self-signed certs via env when targeting a test environment.
 - Requests hit the Go server directly (no nginx/proxy in front), so large PGP

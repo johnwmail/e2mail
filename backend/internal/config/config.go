@@ -28,6 +28,11 @@ type ServerConfig struct {
 	// AllowedHosts 只回應呢啲 Host（忽略大小寫同 port）；空 = 不限制。
 	// 由 ALLOWED_HOSTS 環境變數載入（逗號分隔）。
 	AllowedHosts []string
+	// AllowPrivateNetworks 允許 IMAP/SMTP/Sieve 連接私有/loopback 位址
+	// （預設 false，防止 SSRF；自架內網 mail server 才需要開啟）。
+	AllowPrivateNetworks bool
+	// OutboundAllowedHosts 白名單，繞過私有位址檢查（逗號分隔，hostname 或 IP）。
+	OutboundAllowedHosts []string
 }
 
 // DBBackupSchedule SQLite 自動備份週期（DB_BACKUP）。
@@ -143,6 +148,12 @@ func Load() *ServerConfig {
 	}
 	if v := os.Getenv("ALLOWED_HOSTS"); v != "" {
 		cfg.AllowedHosts = splitCSV(v)
+	}
+	if v := os.Getenv("ALLOW_PRIVATE_NETWORKS"); v != "" {
+		cfg.AllowPrivateNetworks = parseBool(v)
+	}
+	if v := os.Getenv("OUTBOUND_ALLOWED_HOSTS"); v != "" {
+		cfg.OutboundAllowedHosts = splitCSV(v)
 	}
 
 	cfg.LDAP = loadLDAP()
