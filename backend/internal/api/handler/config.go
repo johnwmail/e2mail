@@ -20,10 +20,11 @@ func NewServerConfigHandler(cfg *config.ServerConfig) *ServerConfigHandler {
 // Get 取得伺服器預設 IMAP / SMTP 設定同 onboarding require flags（公開端點）
 func (h *ServerConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
-		"require2fa":  h.cfg.Require2FA,
-		"requirePgp":  h.cfg.RequirePGP,
-		"ldapEnabled": h.cfg != nil && h.cfg.LDAP.Ready(),
-		"defaults":    nil,
+		"require2fa":   h.cfg.Require2FA,
+		"requirePgp":   h.cfg.RequirePGP,
+		"ldapEnabled":  h.cfg != nil && h.cfg.LDAP.Ready(),
+		"fixedServers": h.cfg != nil && h.cfg.HasFixedServers(),
+		"defaults":     nil,
 	}
 	if h.cfg != nil && h.cfg.HasDefaults() {
 		resp["defaults"] = map[string]any{

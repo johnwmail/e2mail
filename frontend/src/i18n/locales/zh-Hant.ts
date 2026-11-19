@@ -66,6 +66,7 @@ export const zhHant = {
     signingIn: '正在登入...',
     advancedShow: '進階伺服器設定',
     advancedHide: '隱藏進階伺服器設定',
+    serverFixed: '伺服器設定由管理員固定（{imap} / {smtp}）',
     imapServer: 'IMAP 伺服器 (收信)',
     smtpServer: 'SMTP 伺服器 (發信)',
     allowInsecure: '允許自簽/未驗證的 TLS 憑證',

@@ -201,6 +201,21 @@ type Verify2FARequest struct {
 	Code      string `json:"code"`
 }
 
+// applyFixedServers 當部署同時設定了 DEFAULT_IMAP_HOST 與 DEFAULT_SMTP_HOST 時，
+// 強制使用該組 server，忽略 client 傳來的 host/port/TLS 值。呢個係登入頁
+// 「server 由管理員固定」的 server-side 防線（前端隱藏 advanced 只係 UX）。
+func (h *AuthHandler) applyFixedServers(req *LoginRequest) {
+	if h.cfg == nil || !h.cfg.HasFixedServers() {
+		return
+	}
+	req.IMAPHost = h.cfg.DefaultIMAPHost
+	req.IMAPPort = h.cfg.DefaultIMAPPort
+	req.SMTPHost = h.cfg.DefaultSMTPHost
+	req.SMTPPort = h.cfg.DefaultSMTPPort
+	req.IMAPAllowInsecureTLS = h.cfg.DefaultAllowInsecureTLS
+	req.SMTPAllowInsecureTLS = h.cfg.DefaultAllowInsecureTLS
+}
+
 // Login 處理使用者登入並驗證 IMAP 連線
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
@@ -208,6 +223,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		respondBodyParseError(w, err, "invalid request body format")
 		return
 	}
+
+	h.applyFixedServers(&req)
 
 	if req.Email == "" || req.Password == "" || req.IMAPHost == "" || req.SMTPHost == "" {
 		response.BadRequest(w, "email, password, imapHost, and smtpHost are required")

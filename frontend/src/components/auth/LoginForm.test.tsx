@@ -219,6 +219,48 @@ describe('LoginForm', () => {
     expect(mocks.login).not.toHaveBeenCalled();
   });
 
+  it('locks the login server when the administrator fixed it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        json: async () => ({
+          success: true,
+          data: {
+            fixedServers: true,
+            defaults: {
+              imapHost: 'mail.example.com',
+              imapPort: 993,
+              smtpHost: 'smtp.example.com',
+              smtpPort: 587,
+              allowInsecureTls: false,
+            },
+          },
+        }),
+      }),
+    );
+    mocks.login.mockResolvedValue(null);
+
+    render(<LoginForm />);
+    expect(await screen.findByText(/managed by the administrator/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Advanced server settings/i })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('user@example.com'), { target: { value: 'abc@gmail.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await waitFor(() => {
+      expect(mocks.login).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'abc@gmail.com',
+          imapHost: 'mail.example.com',
+          imapPort: 993,
+          smtpHost: 'smtp.example.com',
+          smtpPort: 587,
+        }),
+      );
+    });
+  });
+
   it('does not offer passkey login when the method is unavailable', async () => {
     (window as any).PublicKeyCredential = {};
     mocks.login.mockResolvedValue({ requires2fa: true, challenge: 'ch-1', methods: ['totp'] });

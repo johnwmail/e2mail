@@ -138,11 +138,11 @@ Uncomment in `docker-compose.yml` (or set via your orchestrator) to activate.
 | `ALLOWED_HOSTS`           | —       | Comma-separated hostnames the server answers to (e.g. `mail.example.com`); other `Host` values get `421`. Empty = no restriction. The reverse proxy must preserve the original `Host` |
 | `ALLOW_PRIVATE_NETWORKS`  | `false` | Allow IMAP/SMTP/Sieve to dial private, loopback and link-local addresses. Keep `false` on shared/public instances (SSRF guard); enable only for a LAN mail server |
 | `OUTBOUND_ALLOWED_HOSTS`  | —       | Comma-separated exact hostnames/IPs that bypass the SSRF guard (e.g. `mail.lan,192.168.1.10`) |
-| `DEFAULT_IMAP_HOST`       | —       | Pre-fill IMAP host for users with custom domains        |
-| `DEFAULT_IMAP_PORT`       | `993`   | Pre-fill IMAP port                                      |
-| `DEFAULT_SMTP_HOST`       | —       | Pre-fill SMTP host                                      |
-| `DEFAULT_SMTP_PORT`       | `587`   | Pre-fill SMTP port                                      |
-| `DEFAULT_ALLOW_INSECURE_TLS` | `false` | Pre-fill "allow self-signed" checkbox (off by default) |
+| `DEFAULT_IMAP_HOST`       | —       | Fixed IMAP host used by the login form. Setting both `DEFAULT_IMAP_HOST` and `DEFAULT_SMTP_HOST` locks the login server (users cannot override it) |
+| `DEFAULT_IMAP_PORT`       | `993`   | Fixed IMAP port                                         |
+| `DEFAULT_SMTP_HOST`       | —       | Fixed SMTP host used by the login form                  |
+| `DEFAULT_SMTP_PORT`       | `587`   | Fixed SMTP port                                         |
+| `DEFAULT_ALLOW_INSECURE_TLS` | `false` | Fixed "allow self-signed" policy (off by default) |
 | `REQUIRE_2FA`             | `true`  | Enforce 2FA onboarding for new logins                   |
 | `REQUIRE_PGP`             | `true`  | Enforce PGP key setup onboarding for new logins         |
 | `DB_BACKUP`               | `DISABLE` | Auto-backup SQLite to `$DATA_DIR/backups/` (`DISABLE` / `DAILY` / `WEEKLY` / `MONTHLY`; see [`docs/BACKUP.md`](docs/BACKUP.md)) |

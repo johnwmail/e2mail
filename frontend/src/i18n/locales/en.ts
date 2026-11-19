@@ -66,6 +66,7 @@ export const en = {
     signingIn: 'Signing in…',
     advancedShow: 'Advanced server settings',
     advancedHide: 'Hide advanced server settings',
+    serverFixed: 'Server settings are managed by the administrator ({imap} / {smtp})',
     imapServer: 'IMAP server (incoming)',
     smtpServer: 'SMTP server (outgoing)',
     allowInsecure: 'Allow self-signed / unverified TLS certificates',
