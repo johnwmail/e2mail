@@ -141,6 +141,30 @@ func TestLoadAllowedHosts(t *testing.T) {
 	}
 }
 
+func TestHasFixedServers(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  ServerConfig
+		want bool
+	}{
+		{"none", ServerConfig{}, false},
+		{"imap only", ServerConfig{DefaultIMAPHost: "imap.example.com"}, false},
+		{"smtp only", ServerConfig{DefaultSMTPHost: "smtp.example.com"}, false},
+		{"both", ServerConfig{DefaultIMAPHost: "imap.example.com", DefaultSMTPHost: "smtp.example.com"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.HasFixedServers(); got != tc.want {
+				t.Fatalf("HasFixedServers() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	var nilCfg *ServerConfig
+	if nilCfg.HasFixedServers() {
+		t.Fatal("nil config must not report fixed servers")
+	}
+}
+
 func TestLoadOutboundGuard(t *testing.T) {
 	t.Setenv("ALLOW_PRIVATE_NETWORKS", "")
 	t.Setenv("OUTBOUND_ALLOWED_HOSTS", "")

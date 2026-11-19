@@ -51,6 +51,7 @@ export const LoginForm: React.FC = () => {
   const [smtpPort, setSmtpPort] = useState(587);
   const [allowInsecureTls, setAllowInsecureTls] = useState(false); // 預設不允許自簽憑證，僅由使用者明確勾選開啟
   const [serverDefaults, setServerDefaults] = useState<ServerDefaults | null>(null);
+  const [fixedServers, setFixedServers] = useState(false);
 
   const [detectedDomain, setDetectedDomain] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -65,6 +66,7 @@ export const LoginForm: React.FC = () => {
         if (data?.success && data?.data?.defaults) {
           const d = data.data.defaults as ServerDefaults;
           setServerDefaults(d);
+          setFixedServers(data.data.fixedServers === true);
           if (d.imapHost) setImapHost(d.imapHost);
           if (d.imapPort) setImapPort(d.imapPort);
           if (d.smtpHost) setSmtpHost(d.smtpHost);
@@ -87,6 +89,11 @@ export const LoginForm: React.FC = () => {
   // 輸入 Email 自動解析並填入伺服器配置
   const handleEmailChange = (val: string) => {
     setEmail(val);
+    if (fixedServers) {
+      // 管理員已固定 server：唔好再按 email domain 自動改 IMAP/SMTP。
+      setDetectedDomain(null);
+      return;
+    }
     const atIndex = val.lastIndexOf('@');
     const domain =
       atIndex > 0 && atIndex < val.length - 1
@@ -431,7 +438,15 @@ export const LoginForm: React.FC = () => {
             </div>
           </div>
 
-          {/* 預設隱藏的進階設定（可折疊） */}
+          {/* 管理員固定 server 時隱藏 advanced；否則顯示可折疊設定 */}
+          {fixedServers ? (
+            <p className="pt-1 text-[11px] text-slate-500 leading-relaxed">
+              {t('login.serverFixed', {
+                imap: `${serverDefaults?.imapHost || imapHost}:${serverDefaults?.imapPort ?? imapPort}`,
+                smtp: `${serverDefaults?.smtpHost || smtpHost}:${serverDefaults?.smtpPort ?? smtpPort}`,
+              })}
+            </p>
+          ) : (
           <div className="pt-1">
             <button
               type="button"
@@ -506,6 +521,7 @@ export const LoginForm: React.FC = () => {
               </div>
             )}
           </div>
+          )}
 
           {/* 登入按鈕 */}
           <button

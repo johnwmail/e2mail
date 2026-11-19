@@ -252,6 +252,12 @@ func (c *ServerConfig) HasDefaults() bool {
 	return c.DefaultIMAPHost != "" || c.DefaultSMTPHost != ""
 }
 
+// HasFixedServers 回報登入 server 係咪由部署固定。只有 IMAP 同 SMTP host
+// 都已設定時才會鎖定；否則沿用「預填但可改」行為。
+func (c *ServerConfig) HasFixedServers() bool {
+	return c != nil && c.DefaultIMAPHost != "" && c.DefaultSMTPHost != ""
+}
+
 func parseBool(s string) bool {
 	switch s {
 	case "1", "true", "TRUE", "True", "yes", "YES", "on", "ON":
