@@ -375,14 +375,14 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       return `<div style="color: #64748b; font-style: italic;">${t('emailFrame.emptyBody')}</div>`;
     }
 
-    // 替換 cid: 圖片為後端暫時下載 URL
-    attachments.forEach((att) => {
-      if (att.contentId || att.id) {
-        const targetId = att.contentId || att.id;
-        const inlineUrl = mailApi.getAttachmentUrl(uid, targetId, folder);
-        const cidRegex = new RegExp(`cid:${targetId}`, 'gi');
-        content = content.replace(cidRegex, inlineUrl);
-      }
+    // 替換 cid: 圖片為後端暫時下載 URL。
+    // 必須匹配完整 cid token，否則 `cc_hk_blank` 會錯誤匹配 `cc_hk_blank1` 前綴。
+    content = content.replace(/cid:([^\s"'<>]+)/gi, (match, cid: string) => {
+      const wanted = cid.toLowerCase();
+      const att =
+        attachments.find((a) => a.contentId?.toLowerCase() === wanted) ??
+        attachments.find((a) => a.filename?.toLowerCase() === wanted);
+      return att ? mailApi.getAttachmentUrl(uid, att.id, folder) : match;
     });
 
     // 部分 HTML mail（例如 SC eStatement）用相對路徑引用 inline 圖片：

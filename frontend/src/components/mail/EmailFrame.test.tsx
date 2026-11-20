@@ -165,6 +165,29 @@ describe('EmailFrame', () => {
     expect(doc).toContain('alt="logo"');
   });
 
+  it('maps cid images with prefix-overlapping Content-IDs', () => {
+    const attachments: AttachmentInfo[] = [
+      { id: '1', filename: 'inline_1', contentType: 'image/gif', size: 1, contentId: 'cc_hk_blank', isInline: true },
+      { id: '2', filename: 'inline_2', contentType: 'image/gif', size: 1, contentId: 'cc_hk_blank1', isInline: true },
+      { id: '3', filename: 'inline_3', contentType: 'image/gif', size: 1, contentId: 'cc_hk_blank2', isInline: true },
+      { id: '4', filename: 'inline_4', contentType: 'image/gif', size: 1, contentId: 'logo-CN_03', isInline: true },
+    ];
+    renderFrame({
+      attachments,
+      htmlBody:
+        '<img src="cid:cc_hk_blank">' +
+        '<img src="cid:cc_hk_blank1">' +
+        '<img src="cid:cc_hk_blank2">' +
+        '<img src="cid:logo-CN_03">',
+    });
+
+    const doc = getFrame().srcdoc;
+    for (const id of ['1', '2', '3', '4']) {
+      expect(doc).toContain(`id=${id}&amp;folder=INBOX`);
+    }
+    expect(doc).not.toContain('cid:');
+  });
+
   it('auto-allows remote images for trusted senders', () => {
     renderFrame({
       htmlBody: '<img src="https://cdn.example/logo.png">',
