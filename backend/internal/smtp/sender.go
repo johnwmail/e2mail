@@ -45,7 +45,7 @@ func dialSMTPClient(ctx context.Context, config SMTPConfig) (*netsmtp.Client, er
 	if err := guard.CheckHost(ctx, config.Host); err != nil {
 		return nil, fmt.Errorf("SMTP host rejected: %w", err)
 	}
-	dialer := guard.DialerFor(config.Host)
+	dialer := guard.DialerFor()
 
 	if config.Port == 465 {
 		conn, err := tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)

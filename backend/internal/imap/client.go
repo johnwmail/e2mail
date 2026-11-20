@@ -82,7 +82,7 @@ func NewClient(config ConnectionConfig) (*Client, error) {
 	if err := guard.CheckHost(checkCtx, config.Host); err != nil {
 		return nil, fmt.Errorf("IMAP host rejected: %w", err)
 	}
-	dialer := guard.DialerFor(config.Host)
+	dialer := guard.DialerFor()
 
 	dialOptions := func() *imapclient.Options {
 		opts := &imapclient.Options{TLSConfig: tlsConfig, Dialer: dialer}

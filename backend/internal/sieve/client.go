@@ -145,7 +145,7 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	if err := guard.CheckHost(ctx, host); err != nil {
 		return nil, fmt.Errorf("sieve host rejected: %w", err)
 	}
-	dialer := guard.DialerFor(host)
+	dialer := guard.DialerFor()
 	dialer.Timeout = 10 * time.Second
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {

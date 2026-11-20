@@ -2,6 +2,7 @@ package config
 
 import (
 	"log"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -31,11 +32,6 @@ type ServerConfig struct {
 	// AllowedHosts 只回應呢啲 Host（忽略大小寫同 port）；空 = 不限制。
 	// 由 ALLOWED_HOSTS 環境變數載入（逗號分隔）。
 	AllowedHosts []string
-	// AllowPrivateNetworks 允許 IMAP/SMTP/Sieve 連接私有/loopback 位址
-	// （預設 false，防止 SSRF；自架內網 mail server 才需要開啟）。
-	AllowPrivateNetworks bool
-	// OutboundAllowedHosts 白名單，繞過私有位址檢查（逗號分隔，hostname 或 IP）。
-	OutboundAllowedHosts []string
 	// LoginAllowedDomains 只允許呢啲 email domain 登入（逗號分隔；空 = 不限制）。
 	// 主要配合固定 server 使用，避免用戶用其他 domain 的 email 登入同一部 IMAP。
 	LoginAllowedDomains []string
@@ -130,6 +126,18 @@ func Load() *ServerConfig {
 			log.Printf("⚠️  Invalid MAIL_MODE=%q (want locked or prefill), using auto", v)
 		}
 	}
+
+	// 固定 server 模式（locked）而且冇明確 MAIL_ALLOWED_DOMAINS 時，自動用
+	// MAIL_SERVER 作為允許的 email domain。適合 server host = email domain；
+	// 若 server 係 mail.example.com 而 email 係 @example.com，請明確設定
+	// MAIL_ALLOWED_DOMAINS=example.com。
+	if len(cfg.LoginAllowedDomains) == 0 && mailServer != "" && cfg.HasFixedServers() {
+		if net.ParseIP(strings.Trim(mailServer, "[]")) == nil {
+			if d := normalizeDomain(mailServer); d != "" {
+				cfg.LoginAllowedDomains = []string{d}
+			}
+		}
+	}
 	if v := os.Getenv("SIEVE_DEBUG"); v != "" {
 		cfg.SieveDebug = parseBool(v)
 	}
@@ -152,10 +160,6 @@ func Load() *ServerConfig {
 	}
 	if v := os.Getenv("ALLOWED_HOSTS"); v != "" {
 		cfg.AllowedHosts = splitCSV(v)
-	}
-	cfg.AllowPrivateNetworks = envBool("MAIL_ALLOW_PRIVATE_NETWORKS", false)
-	if v := envString("MAIL_OUTBOUND_ALLOWED_HOSTS"); v != "" {
-		cfg.OutboundAllowedHosts = splitCSV(v)
 	}
 	if v := envString("MAIL_ALLOWED_DOMAINS"); v != "" {
 		for _, domain := range splitCSV(v) {

@@ -10,12 +10,16 @@ e2Mail can run in two modes:
 All mail settings now use the `MAIL_*` names. The old `DEFAULT_*`,
 `LOGIN_ALLOWED_DOMAINS`, `OUTBOUND_ALLOWED_HOSTS` and
 `ALLOW_PRIVATE_NETWORKS` names were removed and are **not** read anymore.
+Private, loopback and LAN mail hosts are always blocked; there is no env
+override.
+
+`MAIL_ALLOWED_DOMAINS` is optional: in locked mode it defaults to the
+`MAIL_SERVER` value, so the simplest deployment only needs `MAIL_SERVER`.
 
 ## Simplest setup
 
 ```env
 MAIL_SERVER=wonghome.net
-MAIL_ALLOWED_DOMAINS=wonghome.net
 ```
 
 This means:
@@ -25,7 +29,7 @@ This means:
 | IMAP | `wonghome.net:993`, implicit TLS |
 | SMTP | `wonghome.net:587`, STARTTLS |
 | Login server | **locked** (users cannot override it) |
-| Allowed email domains | `wonghome.net` only |
+| Allowed email domains | `wonghome.net` only (auto-derived from `MAIL_SERVER`) |
 | Self-signed TLS | not allowed |
 | Sieve | disabled unless configured |
 
@@ -34,8 +38,8 @@ rejected before any IMAP connection is attempted.
 
 ## How `MAIL_SERVER` works
 
-`MAIL_SERVER` is a **hostname**, not an email address and not a domain
-allow-list:
+`MAIL_SERVER` is normally your **mail domain** (the part after `@`). It also
+acts as the default IMAP/SMTP hostname:
 
 ```env
 MAIL_SERVER=wonghome.net
@@ -47,6 +51,17 @@ is equivalent to:
 MAIL_IMAP_HOST=wonghome.net
 MAIL_SMTP_HOST=wonghome.net
 ```
+
+If the real server host is a subdomain such as `mail.wonghome.net`, keep
+`MAIL_SERVER` as the email domain and override the operational host/port:
+
+```env
+MAIL_SERVER=wonghome.net
+MAIL_IMAP_HOST=mail.wonghome.net
+MAIL_SMTP_HOST=mail.wonghome.net
+```
+
+Users never see these host/port values; they only enter email + password.
 
 If IMAP and SMTP use different hosts, override them individually:
 
@@ -70,13 +85,11 @@ MAIL_SMTP_HOST=smtp.wonghome.net
 | `MAIL_SMTP_HOST` | — | SMTP host (overrides `MAIL_SERVER`) |
 | `MAIL_SMTP_PORT` | `587` | SMTP port |
 | `MAIL_ALLOW_INSECURE_TLS` | `false` | Allow self-signed / unverified IMAP/SMTP certificates |
-| `MAIL_ALLOWED_DOMAINS` | — | Comma-separated email domains allowed to sign in. Empty = any domain |
+| `MAIL_ALLOWED_DOMAINS` | auto | Comma-separated email domains allowed to sign in. Auto = `MAIL_SERVER` when locked; empty otherwise |
 | `MAIL_SIEVE_HOST` | — | Optional ManageSieve host |
 | `MAIL_SIEVE_PORT` | `4190` | ManageSieve port |
 | `MAIL_SIEVE_USE_TLS` | `true` | Use TLS for ManageSieve |
 | `MAIL_SIEVE_ALLOW_INSECURE_TLS` | `false` | Allow self-signed ManageSieve certificates |
-| `MAIL_ALLOW_PRIVATE_NETWORKS` | `false` | Allow IMAP/SMTP/Sieve to dial private, loopback and link-local addresses. Keep `false` on shared/public instances |
-| `MAIL_OUTBOUND_ALLOWED_HOSTS` | — | Comma-separated exact hosts/IPs that bypass the private-network guard |
 
 `ALLOWED_HOSTS` is unrelated to mail: it is the **HTTP Host allow-list** used
 by the web server/reverse proxy.
@@ -103,8 +116,19 @@ In `locked` mode:
 
 ## Allowed email domains
 
+In locked mode, `MAIL_ALLOWED_DOMAINS` defaults to `MAIL_SERVER`:
+
 ```env
-MAIL_ALLOWED_DOMAINS=wonghome.net,example.com
+MAIL_SERVER=wonghome.net
+# allowed: abc@wonghome.net
+# rejected before IMAP: abc@not-wonghome.net
+```
+
+If the server host differs from the email domain, set it explicitly:
+
+```env
+MAIL_SERVER=mail.wonghome.net
+MAIL_ALLOWED_DOMAINS=wonghome.net
 ```
 
 - Domains are case-insensitive; a leading `@` and a trailing `.` are ignored.
@@ -112,23 +136,14 @@ MAIL_ALLOWED_DOMAINS=wonghome.net,example.com
   reaches the mail server.
 - With exactly one allowed domain, typing only `bob` autofills
   `bob@wonghome.net`. With multiple domains, users must enter the full email.
-- Empty = no restriction (the IMAP server decides).
+- With `MAIL_MODE=prefill`, no domain is auto-derived; set
+  `MAIL_ALLOWED_DOMAINS` if you still want a restriction.
 
-## LAN mail servers and the SSRF guard
+## Private / LAN mail servers
 
-e2Mail rejects outbound connections to private, loopback, CGNAT, link-local
-and cloud-metadata addresses by default. If your mail server really is on the
-LAN, use an explicit allow-list:
-
-```env
-MAIL_OUTBOUND_ALLOWED_HOSTS=mail.lan,192.168.1.10
-```
-
-Only disable the guard entirely for a single-user, fully trusted network:
-
-```env
-MAIL_ALLOW_PRIVATE_NETWORKS=true
-```
+e2Mail always rejects outbound connections to private, loopback, CGNAT,
+link-local and cloud-metadata addresses. This cannot be disabled by env.
+Use a public hostname (or a public reverse proxy) for the mail server.
 
 ## Docker Compose example
 
@@ -142,7 +157,6 @@ services:
 
 ```env
 MAIL_SERVER=wonghome.net
-MAIL_ALLOWED_DOMAINS=wonghome.net
 COOKIE_SECURE=true
 ALLOWED_HOSTS=mail.wonghome.net
 ```
@@ -157,8 +171,9 @@ rc_start() {
 		SESSION_SECRET=REPLACE_ME \
 		COOKIE_SECURE=true \
 		ALLOWED_HOSTS=mail.example.com \
-		MAIL_SERVER=mail.example.com \
-		MAIL_ALLOWED_DOMAINS=example.com \
+		MAIL_SERVER=example.com \
+		MAIL_IMAP_HOST=mail.example.com \
+		MAIL_SMTP_HOST=mail.example.com \
 		REQUIRE_2FA=true \
 		REQUIRE_PGP=true \
 		DB_BACKUP=WEEKLY \
@@ -177,8 +192,8 @@ Legacy names were removed. Translate them before upgrading:
 | `DEFAULT_ALLOW_INSECURE_TLS` | `MAIL_ALLOW_INSECURE_TLS` |
 | `DEFAULT_SIEVE_HOST` / `PORT` / `USE_TLS` / `ALLOW_INSECURE_TLS` | `MAIL_SIEVE_HOST` / `PORT` / `USE_TLS` / `ALLOW_INSECURE_TLS` |
 | `LOGIN_ALLOWED_DOMAINS` | `MAIL_ALLOWED_DOMAINS` |
-| `OUTBOUND_ALLOWED_HOSTS` | `MAIL_OUTBOUND_ALLOWED_HOSTS` |
-| `ALLOW_PRIVATE_NETWORKS` | `MAIL_ALLOW_PRIVATE_NETWORKS` |
+| `OUTBOUND_ALLOWED_HOSTS` | Removed — private/LAN hosts are not supported |
+| `ALLOW_PRIVATE_NETWORKS` | Removed — private/LAN hosts are not supported |
 
 If both old and new names are present, only the new names take effect.
 
@@ -187,7 +202,7 @@ If both old and new names are present, only the new names take effect.
 | Symptom | Likely cause |
 |---|---|
 | Login says “email domain is not allowed” | Address not in `MAIL_ALLOWED_DOMAINS` |
-| Login says “IMAP host rejected … private/loopback” | Server is on the LAN; add it to `MAIL_OUTBOUND_ALLOWED_HOSTS` |
+| Login says “IMAP host rejected … private/loopback” | Server is on the LAN; use a public mail hostname |
 | Login says “could not detect the mail server” | No fixed server and no advanced host entered |
 | Users cannot edit the server | `MAIL_MODE` is `locked`; use `prefill` |
 | Advanced settings are hidden unexpectedly | Both hosts are set, so auto-lock is active; set `MAIL_MODE=prefill` |

@@ -160,6 +160,15 @@ func TestLoadMailServerSimpleMode(t *testing.T) {
 	if !cfg.HasFixedServers() {
 		t.Fatal("MAIL_SERVER should lock the login server by default")
 	}
+	if len(cfg.LoginAllowedDomains) != 1 || cfg.LoginAllowedDomains[0] != "wonghome.net" {
+		t.Fatalf("auto allowed domain = %#v", cfg.LoginAllowedDomains)
+	}
+	if cfg.LoginDomainAllowed("abc@not-wonghome.net") {
+		t.Fatal("auto-derived domain must reject a different email domain")
+	}
+	if !cfg.LoginDomainAllowed("abc@wonghome.net") {
+		t.Fatal("auto-derived domain must allow the matching email domain")
+	}
 
 	t.Setenv("MAIL_IMAP_HOST", "imap.wonghome.net")
 	cfg = Load()
@@ -172,6 +181,34 @@ func TestLoadMailServerSimpleMode(t *testing.T) {
 	if cfg.HasFixedServers() {
 		t.Fatal("MAIL_MODE=prefill must not lock the login server")
 	}
+	if len(cfg.LoginAllowedDomains) != 0 {
+		t.Fatalf("prefill mode should not auto-derive a domain: %#v", cfg.LoginAllowedDomains)
+	}
+}
+
+func TestMailServerDomainWithOperationalHostOverride(t *testing.T) {
+	for _, key := range []string{
+		"MAIL_SERVER", "MAIL_IMAP_HOST", "MAIL_SMTP_HOST", "MAIL_MODE", "MAIL_ALLOWED_DOMAINS",
+	} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("MAIL_SERVER", "example.com")
+	t.Setenv("MAIL_IMAP_HOST", "mail.example.com")
+	t.Setenv("MAIL_SMTP_HOST", "smtp.example.com")
+
+	cfg := Load()
+	if cfg.DefaultIMAPHost != "mail.example.com" || cfg.DefaultSMTPHost != "smtp.example.com" {
+		t.Fatalf("operational host override failed: %q / %q", cfg.DefaultIMAPHost, cfg.DefaultSMTPHost)
+	}
+	if len(cfg.LoginAllowedDomains) != 1 || cfg.LoginAllowedDomains[0] != "example.com" {
+		t.Fatalf("allowed domain = %#v, want example.com", cfg.LoginAllowedDomains)
+	}
+	if !cfg.LoginDomainAllowed("abc@example.com") {
+		t.Fatal("@example.com should be allowed")
+	}
+	if cfg.LoginDomainAllowed("abc@mail.example.com") {
+		t.Fatal("the operational subdomain must not become the login domain")
+	}
 }
 
 func TestLegacyMailEnvIgnored(t *testing.T) {
@@ -179,7 +216,6 @@ func TestLegacyMailEnvIgnored(t *testing.T) {
 		"MAIL_SERVER", "MAIL_IMAP_HOST", "MAIL_SMTP_HOST", "MAIL_IMAP_PORT", "MAIL_SMTP_PORT",
 		"MAIL_ALLOW_INSECURE_TLS", "MAIL_SIEVE_HOST", "MAIL_SIEVE_PORT", "MAIL_SIEVE_USE_TLS",
 		"MAIL_SIEVE_ALLOW_INSECURE_TLS", "MAIL_MODE", "MAIL_ALLOWED_DOMAINS",
-		"MAIL_ALLOW_PRIVATE_NETWORKS", "MAIL_OUTBOUND_ALLOWED_HOSTS",
 	} {
 		t.Setenv(key, "")
 	}
@@ -193,8 +229,6 @@ func TestLegacyMailEnvIgnored(t *testing.T) {
 	t.Setenv("DEFAULT_SIEVE_USE_TLS", "false")
 	t.Setenv("DEFAULT_SIEVE_ALLOW_INSECURE_TLS", "true")
 	t.Setenv("LOGIN_ALLOWED_DOMAINS", "legacy.example")
-	t.Setenv("OUTBOUND_ALLOWED_HOSTS", "mail.lan")
-	t.Setenv("ALLOW_PRIVATE_NETWORKS", "true")
 
 	cfg := Load()
 	if cfg.DefaultIMAPHost != "" || cfg.DefaultSMTPHost != "" || cfg.DefaultSieveHost != "" {
@@ -206,8 +240,8 @@ func TestLegacyMailEnvIgnored(t *testing.T) {
 	if cfg.DefaultAllowInsecureTLS || cfg.DefaultSieveAllowInsecureTLS || !cfg.DefaultSieveUseTLS {
 		t.Fatal("legacy TLS flags must be ignored")
 	}
-	if len(cfg.LoginAllowedDomains) != 0 || len(cfg.OutboundAllowedHosts) != 0 || cfg.AllowPrivateNetworks {
-		t.Fatalf("legacy security env must be ignored: %#v", cfg)
+	if len(cfg.LoginAllowedDomains) != 0 {
+		t.Fatalf("legacy domain env must be ignored: %#v", cfg)
 	}
 }
 
@@ -245,6 +279,9 @@ func TestMailEnvAdvancedOverrides(t *testing.T) {
 	}
 	if cfg.HasFixedServers() {
 		t.Fatal("MAIL_MODE=prefill must not lock the login server")
+	}
+	if len(cfg.LoginAllowedDomains) != 0 {
+		t.Fatalf("prefill mode should not auto-derive a domain: %#v", cfg.LoginAllowedDomains)
 	}
 
 	t.Setenv("MAIL_MODE", "bogus")
@@ -308,27 +345,5 @@ func TestLoginAllowedDomains(t *testing.T) {
 	var nilCfg *ServerConfig
 	if !nilCfg.LoginDomainAllowed("any@example.org") {
 		t.Fatal("nil config must allow any domain")
-	}
-}
-
-func TestLoadOutboundGuard(t *testing.T) {
-	t.Setenv("MAIL_ALLOW_PRIVATE_NETWORKS", "")
-	t.Setenv("MAIL_OUTBOUND_ALLOWED_HOSTS", "")
-	cfg := Load()
-	if cfg.AllowPrivateNetworks {
-		t.Fatal("AllowPrivateNetworks must default to false")
-	}
-	if len(cfg.OutboundAllowedHosts) != 0 {
-		t.Fatalf("OutboundAllowedHosts default = %#v", cfg.OutboundAllowedHosts)
-	}
-
-	t.Setenv("MAIL_ALLOW_PRIVATE_NETWORKS", "true")
-	t.Setenv("MAIL_OUTBOUND_ALLOWED_HOSTS", " mail.lan , 192.168.1.10 ")
-	cfg = Load()
-	if !cfg.AllowPrivateNetworks {
-		t.Fatal("MAIL_ALLOW_PRIVATE_NETWORKS=true was not parsed")
-	}
-	if len(cfg.OutboundAllowedHosts) != 2 || cfg.OutboundAllowedHosts[0] != "mail.lan" || cfg.OutboundAllowedHosts[1] != "192.168.1.10" {
-		t.Fatalf("OutboundAllowedHosts = %#v", cfg.OutboundAllowedHosts)
 	}
 }

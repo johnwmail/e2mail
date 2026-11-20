@@ -9,7 +9,7 @@ import (
 )
 
 func TestIsBlocked(t *testing.T) {
-	p := NewPolicy(false, nil)
+	p := NewPolicy(false)
 	blocked := []string{
 		"0.0.0.0", "10.0.0.1", "100.64.0.1", "127.0.0.1", "169.254.169.254",
 		"172.16.0.1", "192.0.0.1", "192.168.1.1", "198.18.0.1", "224.0.0.1",
@@ -28,19 +28,15 @@ func TestIsBlocked(t *testing.T) {
 		}
 	}
 
-	allowAll := NewPolicy(true, nil)
-	if allowAll.isBlocked(net.ParseIP("127.0.0.1")) {
-		t.Error("allowPrivate policy should not block loopback")
-	}
 }
 
 func TestCheckHostIP(t *testing.T) {
 	ctx := context.Background()
-	p := NewPolicy(false, nil)
+	p := NewPolicy(false)
 
 	if err := p.CheckHost(ctx, "127.0.0.1"); err == nil {
 		t.Fatal("CheckHost(127.0.0.1) should fail")
-	} else if !strings.Contains(err.Error(), "MAIL_ALLOW_PRIVATE_NETWORKS") {
+	} else if !strings.Contains(err.Error(), "not allowed") {
 		t.Fatalf("error should explain the override: %v", err)
 	}
 	if err := p.CheckHost(ctx, "8.8.8.8"); err != nil {
@@ -51,23 +47,8 @@ func TestCheckHostIP(t *testing.T) {
 	}
 }
 
-func TestAllowListBypassesPrivateCheck(t *testing.T) {
-	ctx := context.Background()
-	p := NewPolicy(false, []string{"LOCALHOST.", "[127.0.0.1]"})
-
-	if err := p.CheckHost(ctx, "localhost"); err != nil {
-		t.Fatalf("allow-listed localhost should pass: %v", err)
-	}
-	if err := p.CheckHost(ctx, "127.0.0.1"); err != nil {
-		t.Fatalf("allow-listed 127.0.0.1 should pass: %v", err)
-	}
-	if err := p.CheckHost(ctx, "127.0.0.2"); err == nil {
-		t.Fatal("non-allow-listed loopback should fail")
-	}
-}
-
 func TestControlRejectsPrivateAddress(t *testing.T) {
-	p := NewPolicy(false, nil)
+	p := NewPolicy(false)
 	if err := p.control("tcp", "127.0.0.1:993", nil); err == nil {
 		t.Fatal("control should reject loopback")
 	}
@@ -76,7 +57,7 @@ func TestControlRejectsPrivateAddress(t *testing.T) {
 	}
 }
 
-func TestDialerBlocksPrivateAndAllowsAllowListed(t *testing.T) {
+func TestDialerBlocksPrivateUnlessTestBypass(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -92,15 +73,15 @@ func TestDialerBlocksPrivateAndAllowsAllowListed(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	blockedDialer := NewPolicy(false, nil).DialerFor("127.0.0.1")
+	blockedDialer := NewPolicy(false).DialerFor()
 	if _, err := blockedDialer.DialContext(ctx, "tcp", ln.Addr().String()); err == nil {
 		t.Fatal("private dial should be blocked")
 	}
 
-	allowedDialer := NewPolicy(false, []string{"127.0.0.1"}).DialerFor("127.0.0.1")
+	allowedDialer := NewPolicy(true).DialerFor()
 	conn, err := allowedDialer.DialContext(ctx, "tcp", ln.Addr().String())
 	if err != nil {
-		t.Fatalf("allow-listed dial failed: %v", err)
+		t.Fatalf("test-bypass dial failed: %v", err)
 	}
 	_ = conn.Close()
 }
