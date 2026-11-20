@@ -10,7 +10,7 @@ import (
 func TestNewClientRejectsPrivateHostByDefault(t *testing.T) {
 	previous := netguard.Default()
 	t.Cleanup(func() { netguard.SetDefault(previous) })
-	netguard.SetDefault(netguard.NewPolicy(false))
+	netguard.SetDefault(netguard.NewPolicy(false, nil))
 
 	_, err := NewClient(ConnectionConfig{
 		Host:     "127.0.0.1",

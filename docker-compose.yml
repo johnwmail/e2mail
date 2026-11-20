@@ -33,7 +33,7 @@ services:
       # - HTTP_ALLOWED_HOSTS=${HTTP_ALLOWED_HOSTS:-}
       # 登入 email domain 白名單（可選；locked 模式預設用 MAIL_SERVER）
       # - MAIL_ALLOWED_DOMAINS=${MAIL_ALLOWED_DOMAINS:-}
-      # Outbound SSRF guard：private / loopback / LAN 永遠封鎖，冇 env 可關閉
+      # Outbound SSRF guard：用戶輸入的 host 封鎖 private/LAN；MAIL_* 設定的 host 自動信任
       # === Onboarding 強制設定（新帳號首次登入；true=強制要求設 2FA / PGP） ===
       # 可直接喺呢度寫死，或用 .env / shell env 覆蓋（default 都係 true）
       - REQUIRE_2FA=${REQUIRE_2FA:-true}

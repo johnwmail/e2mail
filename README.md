@@ -267,8 +267,9 @@ Chromium; see the header of the script).
   Remote images, media, and fonts stay blocked until the user allows them —
   including SVG `<image>`, `<video poster>`, and inline CSS `url()` vectors.
 - Outbound IMAP/SMTP/Sieve connections reject private, loopback and
-  link-local addresses; there is no env override, so the mail server must be
-  reachable via a public hostname.
+  link-local addresses for user-entered hosts. Administrator-configured
+  `MAIL_*` hosts are trusted, so a LAN mail server works without an extra
+  allow-list.
 - Attachments with active content (HTML, SVG, XML, PDF, JavaScript, …) are
   always sent as `Content-Disposition: attachment` with `nosniff` and a
   sandboxing CSP; only common raster image types may render inline.
