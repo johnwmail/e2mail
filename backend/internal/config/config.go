@@ -127,17 +127,6 @@ func Load() *ServerConfig {
 		}
 	}
 
-	// 固定 server 模式（locked）而且冇明確 MAIL_ALLOWED_DOMAINS 時，自動用
-	// MAIL_SERVER 作為允許的 email domain。適合 server host = email domain；
-	// 若 server 係 mail.example.com 而 email 係 @example.com，請明確設定
-	// MAIL_ALLOWED_DOMAINS=example.com。
-	if len(cfg.LoginAllowedDomains) == 0 && mailServer != "" && cfg.HasFixedServers() {
-		if net.ParseIP(strings.Trim(mailServer, "[]")) == nil {
-			if d := normalizeDomain(mailServer); d != "" {
-				cfg.LoginAllowedDomains = []string{d}
-			}
-		}
-	}
 	if v := os.Getenv("SIEVE_DEBUG"); v != "" {
 		cfg.SieveDebug = parseBool(v)
 	}
@@ -165,6 +154,17 @@ func Load() *ServerConfig {
 		for _, domain := range splitCSV(v) {
 			if d := normalizeDomain(domain); d != "" {
 				cfg.LoginAllowedDomains = append(cfg.LoginAllowedDomains, d)
+			}
+		}
+	}
+
+	// 固定 server 模式（locked）而且冇明確 MAIL_ALLOWED_DOMAINS 時，自動用
+	// MAIL_SERVER 作為允許的 email domain。必須在讀取 MAIL_ALLOWED_DOMAINS
+	// 之後執行，否則會先自動加一個、再 append 明確值，變成重複 domain。
+	if len(cfg.LoginAllowedDomains) == 0 && mailServer != "" && cfg.HasFixedServers() {
+		if net.ParseIP(strings.Trim(mailServer, "[]")) == nil {
+			if d := normalizeDomain(mailServer); d != "" {
+				cfg.LoginAllowedDomains = []string{d}
 			}
 		}
 	}

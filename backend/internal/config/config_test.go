@@ -291,6 +291,21 @@ func TestMailEnvAdvancedOverrides(t *testing.T) {
 	}
 }
 
+func TestExplicitAllowedDomainNotDuplicatedByServer(t *testing.T) {
+	for _, key := range []string{
+		"MAIL_SERVER", "MAIL_IMAP_HOST", "MAIL_SMTP_HOST", "MAIL_MODE", "MAIL_ALLOWED_DOMAINS",
+	} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("MAIL_SERVER", "wonghome.net")
+	t.Setenv("MAIL_ALLOWED_DOMAINS", "wonghome.net")
+
+	cfg := Load()
+	if len(cfg.LoginAllowedDomains) != 1 || cfg.LoginAllowedDomains[0] != "wonghome.net" {
+		t.Fatalf("allowed domains = %#v, want exactly [wonghome.net]", cfg.LoginAllowedDomains)
+	}
+}
+
 func TestHasFixedServers(t *testing.T) {
 	cases := []struct {
 		name string
