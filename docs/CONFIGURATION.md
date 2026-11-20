@@ -19,21 +19,21 @@ override.
 ## Simplest setup
 
 ```env
-MAIL_SERVER=wonghome.net
+MAIL_SERVER=example.com
 ```
 
 This means:
 
 | Setting | Value |
 |---|---|
-| IMAP | `wonghome.net:993`, implicit TLS |
-| SMTP | `wonghome.net:587`, STARTTLS |
+| IMAP | `example.com:993`, implicit TLS |
+| SMTP | `example.com:587`, STARTTLS |
 | Login server | **locked** (users cannot override it) |
-| Allowed email domains | `wonghome.net` only (auto-derived from `MAIL_SERVER`) |
+| Allowed email domains | `example.com` only (auto-derived from `MAIL_SERVER`) |
 | Self-signed TLS | not allowed |
 | Sieve | disabled unless configured |
 
-Users type `abc@wonghome.net` and their password. `abc@not-wonghome.net` is
+Users type `abc@example.com` and their password. `abc@not-example.com` is
 rejected before any IMAP connection is attempted.
 
 ## How `MAIL_SERVER` works
@@ -42,23 +42,23 @@ rejected before any IMAP connection is attempted.
 acts as the default IMAP/SMTP hostname:
 
 ```env
-MAIL_SERVER=wonghome.net
+MAIL_SERVER=example.com
 ```
 
 is equivalent to:
 
 ```env
-MAIL_IMAP_HOST=wonghome.net
-MAIL_SMTP_HOST=wonghome.net
+MAIL_IMAP_HOST=example.com
+MAIL_SMTP_HOST=example.com
 ```
 
-If the real server host is a subdomain such as `mail.wonghome.net`, keep
+If the real server host is a subdomain such as `mail.example.com`, keep
 `MAIL_SERVER` as the email domain and override the operational host/port:
 
 ```env
-MAIL_SERVER=wonghome.net
-MAIL_IMAP_HOST=mail.wonghome.net
-MAIL_SMTP_HOST=mail.wonghome.net
+MAIL_SERVER=example.com
+MAIL_IMAP_HOST=mail.example.com
+MAIL_SMTP_HOST=mail.example.com
 ```
 
 Users never see these host/port values; they only enter email + password.
@@ -66,9 +66,9 @@ Users never see these host/port values; they only enter email + password.
 If IMAP and SMTP use different hosts, override them individually:
 
 ```env
-MAIL_SERVER=wonghome.net
-MAIL_IMAP_HOST=imap.wonghome.net
-MAIL_SMTP_HOST=smtp.wonghome.net
+MAIL_SERVER=example.com
+MAIL_IMAP_HOST=imap.example.com
+MAIL_SMTP_HOST=smtp.example.com
 ```
 
 `MAIL_SERVER` is only used to fill an empty `MAIL_IMAP_HOST` /
@@ -98,10 +98,10 @@ by the web server/reverse proxy.
 
 ```env
 # Locked (default when MAIL_SERVER or both hosts are set)
-MAIL_SERVER=wonghome.net
+MAIL_SERVER=example.com
 
 # Pre-filled but users may change the server in advanced settings
-MAIL_SERVER=wonghome.net
+MAIL_SERVER=example.com
 MAIL_MODE=prefill
 ```
 
@@ -119,23 +119,23 @@ In `locked` mode:
 In locked mode, `MAIL_ALLOWED_DOMAINS` defaults to `MAIL_SERVER`:
 
 ```env
-MAIL_SERVER=wonghome.net
-# allowed: abc@wonghome.net
-# rejected before IMAP: abc@not-wonghome.net
+MAIL_SERVER=example.com
+# allowed: abc@example.com
+# rejected before IMAP: abc@not-example.com
 ```
 
 If the server host differs from the email domain, set it explicitly:
 
 ```env
-MAIL_SERVER=mail.wonghome.net
-MAIL_ALLOWED_DOMAINS=wonghome.net
+MAIL_SERVER=mail.example.com
+MAIL_ALLOWED_DOMAINS=example.com
 ```
 
 - Domains are case-insensitive; a leading `@` and a trailing `.` are ignored.
 - The check runs **before** IMAP authentication. A rejected address never
   reaches the mail server.
 - With exactly one allowed domain, typing only `bob` autofills
-  `bob@wonghome.net`. With multiple domains, users must enter the full email.
+  `bob@example.com`. With multiple domains, users must enter the full email.
 - With `MAIL_MODE=prefill`, no domain is auto-derived; set
   `MAIL_ALLOWED_DOMAINS` if you still want a restriction.
 
@@ -156,9 +156,9 @@ services:
 `.env`:
 
 ```env
-MAIL_SERVER=wonghome.net
+MAIL_SERVER=example.com
 COOKIE_SECURE=true
-ALLOWED_HOSTS=mail.wonghome.net
+ALLOWED_HOSTS=mail.example.com
 ```
 
 ## OpenBSD `rc.d` example

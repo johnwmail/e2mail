@@ -149,9 +149,9 @@ func TestLoadMailServerSimpleMode(t *testing.T) {
 		t.Setenv(key, "")
 	}
 
-	t.Setenv("MAIL_SERVER", "wonghome.net")
+	t.Setenv("MAIL_SERVER", "example.com")
 	cfg := Load()
-	if cfg.DefaultIMAPHost != "wonghome.net" || cfg.DefaultSMTPHost != "wonghome.net" {
+	if cfg.DefaultIMAPHost != "example.com" || cfg.DefaultSMTPHost != "example.com" {
 		t.Fatalf("MAIL_SERVER should fill both hosts: %q / %q", cfg.DefaultIMAPHost, cfg.DefaultSMTPHost)
 	}
 	if cfg.DefaultIMAPPort != 993 || cfg.DefaultSMTPPort != 587 {
@@ -160,19 +160,19 @@ func TestLoadMailServerSimpleMode(t *testing.T) {
 	if !cfg.HasFixedServers() {
 		t.Fatal("MAIL_SERVER should lock the login server by default")
 	}
-	if len(cfg.LoginAllowedDomains) != 1 || cfg.LoginAllowedDomains[0] != "wonghome.net" {
+	if len(cfg.LoginAllowedDomains) != 1 || cfg.LoginAllowedDomains[0] != "example.com" {
 		t.Fatalf("auto allowed domain = %#v", cfg.LoginAllowedDomains)
 	}
-	if cfg.LoginDomainAllowed("abc@not-wonghome.net") {
+	if cfg.LoginDomainAllowed("abc@not-example.com") {
 		t.Fatal("auto-derived domain must reject a different email domain")
 	}
-	if !cfg.LoginDomainAllowed("abc@wonghome.net") {
+	if !cfg.LoginDomainAllowed("abc@example.com") {
 		t.Fatal("auto-derived domain must allow the matching email domain")
 	}
 
-	t.Setenv("MAIL_IMAP_HOST", "imap.wonghome.net")
+	t.Setenv("MAIL_IMAP_HOST", "imap.example.com")
 	cfg = Load()
-	if cfg.DefaultIMAPHost != "imap.wonghome.net" || cfg.DefaultSMTPHost != "wonghome.net" {
+	if cfg.DefaultIMAPHost != "imap.example.com" || cfg.DefaultSMTPHost != "example.com" {
 		t.Fatalf("MAIL_IMAP_HOST override failed: %q / %q", cfg.DefaultIMAPHost, cfg.DefaultSMTPHost)
 	}
 
@@ -318,20 +318,20 @@ func TestHasFixedServers(t *testing.T) {
 }
 
 func TestLoginAllowedDomains(t *testing.T) {
-	t.Setenv("MAIL_ALLOWED_DOMAINS", " WONGHOME.NET , @example.com. ")
+	t.Setenv("MAIL_ALLOWED_DOMAINS", " EXAMPLE.COM , @example.com. ")
 	cfg := Load()
 	if len(cfg.LoginAllowedDomains) != 2 ||
-		cfg.LoginAllowedDomains[0] != "wonghome.net" ||
+		cfg.LoginAllowedDomains[0] != "example.com" ||
 		cfg.LoginAllowedDomains[1] != "example.com" {
 		t.Fatalf("LoginAllowedDomains = %#v", cfg.LoginAllowedDomains)
 	}
 
-	for _, email := range []string{"abc@wonghome.net", "ABC@WONGHOME.NET", "x@example.com"} {
+	for _, email := range []string{"abc@example.com", "ABC@EXAMPLE.COM", "x@example.com"} {
 		if !cfg.LoginDomainAllowed(email) {
 			t.Errorf("LoginDomainAllowed(%q) = false, want true", email)
 		}
 	}
-	for _, email := range []string{"abc@not-wonghome.net", "abc", "", "abc@"} {
+	for _, email := range []string{"abc@not-example.com", "abc", "", "abc@"} {
 		if cfg.LoginDomainAllowed(email) {
 			t.Errorf("LoginDomainAllowed(%q) = true, want false", email)
 		}
