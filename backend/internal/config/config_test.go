@@ -141,6 +141,58 @@ func TestLoadAllowedHosts(t *testing.T) {
 	}
 }
 
+func TestLoadMailServerSimpleMode(t *testing.T) {
+	for _, key := range []string{
+		"MAIL_SERVER", "MAIL_IMAP_HOST", "MAIL_SMTP_HOST", "MAIL_IMAP_PORT", "MAIL_SMTP_PORT",
+		"MAIL_ALLOW_INSECURE_TLS", "MAIL_MODE",
+		"DEFAULT_IMAP_HOST", "DEFAULT_IMAP_PORT", "DEFAULT_SMTP_HOST", "DEFAULT_SMTP_PORT",
+		"DEFAULT_ALLOW_INSECURE_TLS",
+	} {
+		t.Setenv(key, "")
+	}
+
+	t.Setenv("MAIL_SERVER", "wonghome.net")
+	cfg := Load()
+	if cfg.DefaultIMAPHost != "wonghome.net" || cfg.DefaultSMTPHost != "wonghome.net" {
+		t.Fatalf("MAIL_SERVER should fill both hosts: %q / %q", cfg.DefaultIMAPHost, cfg.DefaultSMTPHost)
+	}
+	if cfg.DefaultIMAPPort != 993 || cfg.DefaultSMTPPort != 587 {
+		t.Fatalf("unexpected default ports: %d / %d", cfg.DefaultIMAPPort, cfg.DefaultSMTPPort)
+	}
+	if !cfg.HasFixedServers() {
+		t.Fatal("MAIL_SERVER should lock the login server by default")
+	}
+
+	t.Setenv("MAIL_IMAP_HOST", "imap.wonghome.net")
+	cfg = Load()
+	if cfg.DefaultIMAPHost != "imap.wonghome.net" || cfg.DefaultSMTPHost != "wonghome.net" {
+		t.Fatalf("MAIL_IMAP_HOST override failed: %q / %q", cfg.DefaultIMAPHost, cfg.DefaultSMTPHost)
+	}
+
+	t.Setenv("MAIL_MODE", "prefill")
+	cfg = Load()
+	if cfg.HasFixedServers() {
+		t.Fatal("MAIL_MODE=prefill must not lock the login server")
+	}
+}
+
+func TestLoadLegacyDefaultHostsStillLock(t *testing.T) {
+	t.Setenv("MAIL_SERVER", "")
+	t.Setenv("MAIL_IMAP_HOST", "")
+	t.Setenv("MAIL_SMTP_HOST", "")
+	t.Setenv("MAIL_MODE", "")
+	t.Setenv("DEFAULT_IMAP_HOST", "imap.legacy.example")
+	t.Setenv("DEFAULT_SMTP_HOST", "smtp.legacy.example")
+
+	cfg := Load()
+	if cfg.DefaultIMAPHost != "imap.legacy.example" || cfg.DefaultSMTPHost != "smtp.legacy.example" {
+		t.Fatalf("legacy DEFAULT_* fallback failed: %q / %q", cfg.DefaultIMAPHost, cfg.DefaultSMTPHost)
+	}
+	if !cfg.HasFixedServers() {
+		t.Fatal("both legacy DEFAULT_* hosts should still lock (backward compatibility)")
+	}
+}
+
 func TestHasFixedServers(t *testing.T) {
 	cases := []struct {
 		name string
@@ -151,6 +203,8 @@ func TestHasFixedServers(t *testing.T) {
 		{"imap only", ServerConfig{DefaultIMAPHost: "imap.example.com"}, false},
 		{"smtp only", ServerConfig{DefaultSMTPHost: "smtp.example.com"}, false},
 		{"both", ServerConfig{DefaultIMAPHost: "imap.example.com", DefaultSMTPHost: "smtp.example.com"}, true},
+		{"both prefill", ServerConfig{DefaultIMAPHost: "imap.example.com", DefaultSMTPHost: "smtp.example.com", MailMode: "prefill"}, false},
+		{"both locked", ServerConfig{DefaultIMAPHost: "imap.example.com", DefaultSMTPHost: "smtp.example.com", MailMode: "locked"}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -165,7 +219,41 @@ func TestHasFixedServers(t *testing.T) {
 	}
 }
 
+func TestLoginAllowedDomains(t *testing.T) {
+	t.Setenv("MAIL_ALLOWED_DOMAINS", " WONGHOME.NET , @example.com. ")
+	t.Setenv("LOGIN_ALLOWED_DOMAINS", "")
+	cfg := Load()
+	if len(cfg.LoginAllowedDomains) != 2 ||
+		cfg.LoginAllowedDomains[0] != "wonghome.net" ||
+		cfg.LoginAllowedDomains[1] != "example.com" {
+		t.Fatalf("LoginAllowedDomains = %#v", cfg.LoginAllowedDomains)
+	}
+
+	for _, email := range []string{"abc@wonghome.net", "ABC@WONGHOME.NET", "x@example.com"} {
+		if !cfg.LoginDomainAllowed(email) {
+			t.Errorf("LoginDomainAllowed(%q) = false, want true", email)
+		}
+	}
+	for _, email := range []string{"abc@not-wonghome.net", "abc", "", "abc@"} {
+		if cfg.LoginDomainAllowed(email) {
+			t.Errorf("LoginDomainAllowed(%q) = true, want false", email)
+		}
+	}
+
+	t.Setenv("MAIL_ALLOWED_DOMAINS", "")
+	if !Load().LoginDomainAllowed("any@example.org") {
+		t.Fatal("empty allow-list must allow any domain")
+	}
+
+	var nilCfg *ServerConfig
+	if !nilCfg.LoginDomainAllowed("any@example.org") {
+		t.Fatal("nil config must allow any domain")
+	}
+}
+
 func TestLoadOutboundGuard(t *testing.T) {
+	t.Setenv("MAIL_ALLOW_PRIVATE_NETWORKS", "")
+	t.Setenv("MAIL_OUTBOUND_ALLOWED_HOSTS", "")
 	t.Setenv("ALLOW_PRIVATE_NETWORKS", "")
 	t.Setenv("OUTBOUND_ALLOWED_HOSTS", "")
 	cfg := Load()
@@ -176,11 +264,11 @@ func TestLoadOutboundGuard(t *testing.T) {
 		t.Fatalf("OutboundAllowedHosts default = %#v", cfg.OutboundAllowedHosts)
 	}
 
-	t.Setenv("ALLOW_PRIVATE_NETWORKS", "true")
-	t.Setenv("OUTBOUND_ALLOWED_HOSTS", " mail.lan , 192.168.1.10 ")
+	t.Setenv("MAIL_ALLOW_PRIVATE_NETWORKS", "true")
+	t.Setenv("MAIL_OUTBOUND_ALLOWED_HOSTS", " mail.lan , 192.168.1.10 ")
 	cfg = Load()
 	if !cfg.AllowPrivateNetworks {
-		t.Fatal("ALLOW_PRIVATE_NETWORKS=true was not parsed")
+		t.Fatal("MAIL_ALLOW_PRIVATE_NETWORKS=true was not parsed")
 	}
 	if len(cfg.OutboundAllowedHosts) != 2 || cfg.OutboundAllowedHosts[0] != "mail.lan" || cfg.OutboundAllowedHosts[1] != "192.168.1.10" {
 		t.Fatalf("OutboundAllowedHosts = %#v", cfg.OutboundAllowedHosts)

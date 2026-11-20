@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/johnwmail/e2mail/backend/internal/config"
@@ -47,6 +48,29 @@ func TestApplyFixedServersNoopWhenOnlyOneHostConfigured(t *testing.T) {
 
 	if req.IMAPHost != "custom.example" || req.SMTPHost != "smtp.example" {
 		t.Fatalf("incomplete defaults must not lock the form: %#v", req)
+	}
+}
+
+func TestLoginRejectsDisallowedEmailDomainBeforeIMAP(t *testing.T) {
+	h := newTestAuthHandler(t)
+	h.cfg = &config.ServerConfig{LoginAllowedDomains: []string{"wonghome.net"}}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{
+		"email":"abc@not-wonghome.net",
+		"password":"pw",
+		"imapHost":"127.0.0.1",
+		"imapPort":1,
+		"smtpHost":"127.0.0.1",
+		"smtpPort":1
+	}`))
+	rec := httptest.NewRecorder()
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "domain is not allowed") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
 }
 

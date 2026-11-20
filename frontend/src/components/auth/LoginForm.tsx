@@ -52,6 +52,7 @@ export const LoginForm: React.FC = () => {
   const [allowInsecureTls, setAllowInsecureTls] = useState(false); // 預設不允許自簽憑證，僅由使用者明確勾選開啟
   const [serverDefaults, setServerDefaults] = useState<ServerDefaults | null>(null);
   const [fixedServers, setFixedServers] = useState(false);
+  const [loginAllowedDomains, setLoginAllowedDomains] = useState<string[]>([]);
 
   const [detectedDomain, setDetectedDomain] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -63,16 +64,21 @@ export const LoginForm: React.FC = () => {
     fetch('/api/server-config')
       .then((r) => r.json())
       .then((data) => {
-        if (data?.success && data?.data?.defaults) {
-          const d = data.data.defaults as ServerDefaults;
-          setServerDefaults(d);
-          setFixedServers(data.data.fixedServers === true);
-          if (d.imapHost) setImapHost(d.imapHost);
-          if (d.imapPort) setImapPort(d.imapPort);
-          if (d.smtpHost) setSmtpHost(d.smtpHost);
-          if (d.smtpPort) setSmtpPort(d.smtpPort);
-          if (typeof d.allowInsecureTls === 'boolean') setAllowInsecureTls(d.allowInsecureTls);
-        }
+        if (!data?.success || !data?.data) return;
+        setFixedServers(data.data.fixedServers === true);
+        setLoginAllowedDomains(
+          Array.isArray(data.data.loginAllowedDomains)
+            ? data.data.loginAllowedDomains.filter((domain: unknown): domain is string => typeof domain === 'string')
+            : [],
+        );
+        const d = data.data.defaults as ServerDefaults | undefined;
+        if (!d) return;
+        setServerDefaults(d);
+        if (d.imapHost) setImapHost(d.imapHost);
+        if (d.imapPort) setImapPort(d.imapPort);
+        if (d.smtpHost) setSmtpHost(d.smtpHost);
+        if (d.smtpPort) setSmtpPort(d.smtpPort);
+        if (typeof d.allowInsecureTls === 'boolean') setAllowInsecureTls(d.allowInsecureTls);
       })
       .catch(() => {});
   }, []);
@@ -127,13 +133,20 @@ export const LoginForm: React.FC = () => {
     setDetectedDomain(domain);
   };
 
-  // 當 email 只填 user part，且 IMAP server host 已確定 → 顯示補全後嘅完整地址（一律用 imap server）
+  // 若只有一個允許 domain，優先用它補完；多個 domain 時要求用戶輸入完整 email。
+  const autofillDomain =
+    loginAllowedDomains.length === 1
+      ? loginAllowedDomains[0]
+      : loginAllowedDomains.length === 0
+        ? imapHost || ''
+        : '';
+
+  // 當 email 只填 user part，且 domain 已確定 → 顯示補全後嘅完整地址
   const autofillHint = (() => {
     const v = email.trim();
     if (!v || v.includes('@')) return '';
-    const domain = imapHost || '';
-    if (!domain) return '';
-    return `${v}@${domain}`;
+    if (!autofillDomain) return '';
+    return `${v}@${autofillDomain}`;
   })();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -162,11 +175,16 @@ export const LoginForm: React.FC = () => {
       return;
     }
 
-    // 若 email 只輸入 user part（無 @domain），自動以伺服器 host 補全 domain
+    // 若 email 只輸入 user part（無 @domain），用允許 domain 或伺服器 host 補全
     const atIdx = email.lastIndexOf('@');
     let finalEmail = email.trim();
     if (atIdx <= 0) {
-      finalEmail = `${email.trim()}@${finalImapHost}`;
+      const domain = autofillDomain || (loginAllowedDomains.length === 0 ? finalImapHost : '');
+      if (!domain) {
+        setError(t('login.needFullEmail'));
+        return;
+      }
+      finalEmail = `${email.trim()}@${domain}`;
     }
 
     setLoading(true);
@@ -438,15 +456,8 @@ export const LoginForm: React.FC = () => {
             </div>
           </div>
 
-          {/* 管理員固定 server 時隱藏 advanced；否則顯示可折疊設定 */}
-          {fixedServers ? (
-            <p className="pt-1 text-[11px] text-slate-500 leading-relaxed">
-              {t('login.serverFixed', {
-                imap: `${serverDefaults?.imapHost || imapHost}:${serverDefaults?.imapPort ?? imapPort}`,
-                smtp: `${serverDefaults?.smtpHost || smtpHost}:${serverDefaults?.smtpPort ?? smtpPort}`,
-              })}
-            </p>
-          ) : (
+          {/* 管理員固定 server 時隱藏 advanced */}
+          {!fixedServers && (
           <div className="pt-1">
             <button
               type="button"

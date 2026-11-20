@@ -231,6 +231,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.cfg.LoginDomainAllowed(req.Email) {
+		response.BadRequest(w, "email domain is not allowed on this server")
+		return
+	}
+
 	if h.loginBlocked(w, r, req.Email) {
 		return
 	}
