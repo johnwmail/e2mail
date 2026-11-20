@@ -145,8 +145,6 @@ func TestLoadMailServerSimpleMode(t *testing.T) {
 	for _, key := range []string{
 		"MAIL_SERVER", "MAIL_IMAP_HOST", "MAIL_SMTP_HOST", "MAIL_IMAP_PORT", "MAIL_SMTP_PORT",
 		"MAIL_ALLOW_INSECURE_TLS", "MAIL_MODE",
-		"DEFAULT_IMAP_HOST", "DEFAULT_IMAP_PORT", "DEFAULT_SMTP_HOST", "DEFAULT_SMTP_PORT",
-		"DEFAULT_ALLOW_INSECURE_TLS",
 	} {
 		t.Setenv(key, "")
 	}
@@ -173,23 +171,6 @@ func TestLoadMailServerSimpleMode(t *testing.T) {
 	cfg = Load()
 	if cfg.HasFixedServers() {
 		t.Fatal("MAIL_MODE=prefill must not lock the login server")
-	}
-}
-
-func TestLoadLegacyDefaultHostsStillLock(t *testing.T) {
-	t.Setenv("MAIL_SERVER", "")
-	t.Setenv("MAIL_IMAP_HOST", "")
-	t.Setenv("MAIL_SMTP_HOST", "")
-	t.Setenv("MAIL_MODE", "")
-	t.Setenv("DEFAULT_IMAP_HOST", "imap.legacy.example")
-	t.Setenv("DEFAULT_SMTP_HOST", "smtp.legacy.example")
-
-	cfg := Load()
-	if cfg.DefaultIMAPHost != "imap.legacy.example" || cfg.DefaultSMTPHost != "smtp.legacy.example" {
-		t.Fatalf("legacy DEFAULT_* fallback failed: %q / %q", cfg.DefaultIMAPHost, cfg.DefaultSMTPHost)
-	}
-	if !cfg.HasFixedServers() {
-		t.Fatal("both legacy DEFAULT_* hosts should still lock (backward compatibility)")
 	}
 }
 
@@ -221,7 +202,6 @@ func TestHasFixedServers(t *testing.T) {
 
 func TestLoginAllowedDomains(t *testing.T) {
 	t.Setenv("MAIL_ALLOWED_DOMAINS", " WONGHOME.NET , @example.com. ")
-	t.Setenv("LOGIN_ALLOWED_DOMAINS", "")
 	cfg := Load()
 	if len(cfg.LoginAllowedDomains) != 2 ||
 		cfg.LoginAllowedDomains[0] != "wonghome.net" ||
@@ -254,8 +234,6 @@ func TestLoginAllowedDomains(t *testing.T) {
 func TestLoadOutboundGuard(t *testing.T) {
 	t.Setenv("MAIL_ALLOW_PRIVATE_NETWORKS", "")
 	t.Setenv("MAIL_OUTBOUND_ALLOWED_HOSTS", "")
-	t.Setenv("ALLOW_PRIVATE_NETWORKS", "")
-	t.Setenv("OUTBOUND_ALLOWED_HOSTS", "")
 	cfg := Load()
 	if cfg.AllowPrivateNetworks {
 		t.Fatal("AllowPrivateNetworks must default to false")

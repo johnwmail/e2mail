@@ -201,7 +201,7 @@ type Verify2FARequest struct {
 	Code      string `json:"code"`
 }
 
-// applyFixedServers 當部署同時設定了 DEFAULT_IMAP_HOST 與 DEFAULT_SMTP_HOST 時，
+// applyFixedServers 當部署同時設定了 MAIL_IMAP_HOST/MAIL_SMTP_HOST（或 MAIL_SERVER）時，
 // 強制使用該組 server，忽略 client 傳來的 host/port/TLS 值。呢個係登入頁
 // 「server 由管理員固定」的 server-side 防線（前端隱藏 advanced 只係 UX）。
 func (h *AuthHandler) applyFixedServers(req *LoginRequest) {

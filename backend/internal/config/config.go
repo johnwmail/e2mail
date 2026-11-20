@@ -99,11 +99,11 @@ func Load() *ServerConfig {
 		RequirePGP:                   true,
 		DBBackup:                     DBBackupDisable,
 	}
-	// === Mail server（新 MAIL_* 名稱；舊 DEFAULT_* 仍支援但會 deprecate） ===
+	// === Mail server ===
 	// 最簡單：MAIL_SERVER=host → IMAP/SMTP 共用同一 host，預設 locked。
 	mailServer := strings.TrimSpace(os.Getenv("MAIL_SERVER"))
-	imapHost := envString("MAIL_IMAP_HOST", "DEFAULT_IMAP_HOST")
-	smtpHost := envString("MAIL_SMTP_HOST", "DEFAULT_SMTP_HOST")
+	imapHost := envString("MAIL_IMAP_HOST")
+	smtpHost := envString("MAIL_SMTP_HOST")
 	if mailServer != "" {
 		if imapHost == "" {
 			imapHost = mailServer
@@ -114,13 +114,13 @@ func Load() *ServerConfig {
 	}
 	cfg.DefaultIMAPHost = imapHost
 	cfg.DefaultSMTPHost = smtpHost
-	cfg.DefaultIMAPPort = envPort("MAIL_IMAP_PORT", "DEFAULT_IMAP_PORT", 993)
-	cfg.DefaultSMTPPort = envPort("MAIL_SMTP_PORT", "DEFAULT_SMTP_PORT", 587)
-	cfg.DefaultAllowInsecureTLS = envBool("MAIL_ALLOW_INSECURE_TLS", "DEFAULT_ALLOW_INSECURE_TLS", false)
-	cfg.DefaultSieveHost = envString("MAIL_SIEVE_HOST", "DEFAULT_SIEVE_HOST")
-	cfg.DefaultSievePort = envPort("MAIL_SIEVE_PORT", "DEFAULT_SIEVE_PORT", 4190)
-	cfg.DefaultSieveUseTLS = envBool("MAIL_SIEVE_USE_TLS", "DEFAULT_SIEVE_USE_TLS", true)
-	cfg.DefaultSieveAllowInsecureTLS = envBool("MAIL_SIEVE_ALLOW_INSECURE_TLS", "DEFAULT_SIEVE_ALLOW_INSECURE_TLS", false)
+	cfg.DefaultIMAPPort = envPort("MAIL_IMAP_PORT", 993)
+	cfg.DefaultSMTPPort = envPort("MAIL_SMTP_PORT", 587)
+	cfg.DefaultAllowInsecureTLS = envBool("MAIL_ALLOW_INSECURE_TLS", false)
+	cfg.DefaultSieveHost = envString("MAIL_SIEVE_HOST")
+	cfg.DefaultSievePort = envPort("MAIL_SIEVE_PORT", 4190)
+	cfg.DefaultSieveUseTLS = envBool("MAIL_SIEVE_USE_TLS", true)
+	cfg.DefaultSieveAllowInsecureTLS = envBool("MAIL_SIEVE_ALLOW_INSECURE_TLS", false)
 
 	if v := strings.TrimSpace(os.Getenv("MAIL_MODE")); v != "" {
 		switch strings.ToLower(v) {
@@ -153,11 +153,11 @@ func Load() *ServerConfig {
 	if v := os.Getenv("ALLOWED_HOSTS"); v != "" {
 		cfg.AllowedHosts = splitCSV(v)
 	}
-	cfg.AllowPrivateNetworks = envBool("MAIL_ALLOW_PRIVATE_NETWORKS", "ALLOW_PRIVATE_NETWORKS", false)
-	if v := envString("MAIL_OUTBOUND_ALLOWED_HOSTS", "OUTBOUND_ALLOWED_HOSTS"); v != "" {
+	cfg.AllowPrivateNetworks = envBool("MAIL_ALLOW_PRIVATE_NETWORKS", false)
+	if v := envString("MAIL_OUTBOUND_ALLOWED_HOSTS"); v != "" {
 		cfg.OutboundAllowedHosts = splitCSV(v)
 	}
-	if v := envString("MAIL_ALLOWED_DOMAINS", "LOGIN_ALLOWED_DOMAINS"); v != "" {
+	if v := envString("MAIL_ALLOWED_DOMAINS"); v != "" {
 		for _, domain := range splitCSV(v) {
 			if d := normalizeDomain(domain); d != "" {
 				cfg.LoginAllowedDomains = append(cfg.LoginAllowedDomains, d)
@@ -275,7 +275,7 @@ func (c *ServerConfig) HasBothMailHosts() bool {
 	return c != nil && c.DefaultIMAPHost != "" && c.DefaultSMTPHost != ""
 }
 
-// LoginDomainAllowed 回報 email 的 domain 是否在 LOGIN_ALLOWED_DOMAINS 內。
+// LoginDomainAllowed 回報 email 的 domain 是否在 MAIL_ALLOWED_DOMAINS 內。
 // 空 allow-list = 不限制；email 冇 @ 或 domain 空白 = 不允許（當 allow-list 非空）。
 func (c *ServerConfig) LoginDomainAllowed(email string) bool {
 	if c == nil || len(c.LoginAllowedDomains) == 0 {
@@ -302,42 +302,25 @@ func normalizeDomain(domain string) string {
 	return domain
 }
 
-func envString(primary, legacy string) string {
-	if v := strings.TrimSpace(os.Getenv(primary)); v != "" {
-		return v
-	}
-	if v := strings.TrimSpace(os.Getenv(legacy)); v != "" {
-		log.Printf("⚠️  %s is deprecated; use %s", legacy, primary)
-		return v
-	}
-	return ""
+func envString(key string) string {
+	return strings.TrimSpace(os.Getenv(key))
 }
 
-func envBool(primary, legacy string, def bool) bool {
-	if v := strings.TrimSpace(os.Getenv(primary)); v != "" {
-		return parseBool(v)
-	}
-	if v := strings.TrimSpace(os.Getenv(legacy)); v != "" {
-		log.Printf("⚠️  %s is deprecated; use %s", legacy, primary)
+func envBool(key string, def bool) bool {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return parseBool(v)
 	}
 	return def
 }
 
-func envPort(primary, legacy string, def int) int {
-	raw := strings.TrimSpace(os.Getenv(primary))
-	if raw == "" {
-		if v := strings.TrimSpace(os.Getenv(legacy)); v != "" {
-			log.Printf("⚠️  %s is deprecated; use %s", legacy, primary)
-			raw = v
-		}
-	}
+func envPort(key string, def int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
 		return def
 	}
 	port, err := strconv.Atoi(raw)
 	if err != nil || port <= 0 {
-		log.Printf("⚠️  Invalid %s=%q, using %d", primary, raw, def)
+		log.Printf("⚠️  Invalid %s=%q, using %d", key, raw, def)
 		return def
 	}
 	return port

@@ -40,7 +40,7 @@ func TestCheckHostIP(t *testing.T) {
 
 	if err := p.CheckHost(ctx, "127.0.0.1"); err == nil {
 		t.Fatal("CheckHost(127.0.0.1) should fail")
-	} else if !strings.Contains(err.Error(), "ALLOW_PRIVATE_NETWORKS") {
+	} else if !strings.Contains(err.Error(), "MAIL_ALLOW_PRIVATE_NETWORKS") {
 		t.Fatalf("error should explain the override: %v", err)
 	}
 	if err := p.CheckHost(ctx, "8.8.8.8"); err != nil {

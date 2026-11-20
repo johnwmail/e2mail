@@ -157,11 +157,6 @@ Uncomment in `docker-compose.yml` (or set via your orchestrator) to activate.
 The public endpoint `GET /api/server-config` exposes the defaults so the login
 page can pre-populate the advanced settings panel.
 
-Legacy names (`DEFAULT_IMAP_HOST/PORT`, `DEFAULT_SMTP_HOST/PORT`,
-`DEFAULT_ALLOW_INSECURE_TLS`, `DEFAULT_SIEVE_*`, `LOGIN_ALLOWED_DOMAINS`,
-`OUTBOUND_ALLOWED_HOSTS`, `ALLOW_PRIVATE_NETWORKS`) are still read as deprecated
-fallbacks; prefer the `MAIL_*` names above.
-
 ## Version metadata
 
 `Version`, `BuildTime` and `CommitHash` are baked in at image build time and

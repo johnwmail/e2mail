@@ -159,7 +159,7 @@ func (p *Policy) isBlocked(ip net.IP) bool {
 func blockedError(host string) error {
 	return fmt.Errorf(
 		"outbound connection to %q is blocked (private/loopback/link-local address); "+
-			"set ALLOW_PRIVATE_NETWORKS=true or add the host to OUTBOUND_ALLOWED_HOSTS",
+			"set MAIL_ALLOW_PRIVATE_NETWORKS=true or add the host to MAIL_OUTBOUND_ALLOWED_HOSTS",
 		host,
 	)
 }
