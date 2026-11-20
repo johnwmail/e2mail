@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"time"
 
@@ -214,7 +215,11 @@ func handleInlinePart(msg *ParsedMessage, h *gomail.InlineHeader, part *gomail.P
 		msg.HTMLBody = utf8Body
 	} else {
 		// Non-text inline content (e.g. PGP/MIME application/octet-stream with Content-Disposition: inline)
-		// 保留為附件，令 handlePgpMime 可以抽取 PGP 訊息
+		// 保留為附件，令 handlePgpMime 可以抽取 PGP 訊息。
+		// 0-byte inline part 通常係版面 spacer，冇任何渲染價值，直接丟棄。
+		if len(bodyBytes) == 0 {
+			return
+		}
 		var filename string
 		if _, dispParams, _ := h.ContentDisposition(); dispParams != nil {
 			filename = dispParams["filename"]
@@ -229,6 +234,13 @@ func handleInlinePart(msg *ParsedMessage, h *gomail.InlineHeader, part *gomail.P
 		}
 		if filename == "" {
 			filename = params["name"]
+		}
+		if filename == "" {
+			// eStatement 類 HTML mail 常用 Content-Location（例如 logo-CN_03.gif）
+			// 而唔係 filename；用 basename 做可讀名稱，唔好再叫 inline_N。
+			if loc := strings.TrimSpace(h.Get("Content-Location")); loc != "" {
+				filename = path.Base(loc)
+			}
 		}
 		if filename == "" {
 			filename = fmt.Sprintf("inline_%d", len(msg.Attachments)+1)
