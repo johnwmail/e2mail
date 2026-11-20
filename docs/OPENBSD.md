@@ -144,7 +144,7 @@ rc_start() {
 		SESSION_TTL_HOURS=24 \
 		SESSION_SECRET=REPLACE_ME \
 		COOKIE_SECURE=true \
-		ALLOWED_HOSTS=mail.example.com \
+		HTTP_ALLOWED_HOSTS=mail.example.com \
 		MAIL_SERVER=example.com \
 		MAIL_IMAP_HOST=mail.example.com \
 		MAIL_SMTP_HOST=mail.example.com \
@@ -159,7 +159,7 @@ rc_cmd $1
 
 - `rc_exec` is the documented hook. Do **not** reference the old global
   `${rcexec}` — it no longer exists in current `rc.subr` and makes start fail.
-- Set `ALLOWED_HOSTS` to the public hostname (or comma-separated hostnames) served
+- Set `HTTP_ALLOWED_HOSTS` to the public hostname (or comma-separated hostnames) served
   by relayd. The `http protocol` below leaves the incoming `Host` header intact,
   so relayd forwards it to e2Mail by default; do not add a rule that rewrites or
   removes `Host`.
@@ -207,9 +207,9 @@ relay "e2mail" {
 ```
 
 The incoming `Host` header is forwarded unchanged unless a protocol rule changes
-or removes it. No special `Host` rule is needed here. Set `ALLOWED_HOSTS` in the
+or removes it. No special `Host` rule is needed here. Set `HTTP_ALLOWED_HOSTS` in the
 e2Mail service environment to the public hostname (for example,
-`ALLOWED_HOSTS=mail.example.com`) so requests for other hostnames receive `421`.
+`HTTP_ALLOWED_HOSTS=mail.example.com`) so requests for other hostnames receive `421`.
 The relayd protocol defaults to blocking requests and only passes the exact
 `Host: mail.example.com` match above; other hostnames are blocked before they
 reach e2Mail.

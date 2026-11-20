@@ -149,7 +149,7 @@ table from the removed `DEFAULT_*` names.
 | `SESSION_TTL_HOURS`       | `24`    | Idle session expiry (hours, cookie `Expires`/`MaxAge` 同步) |
 | `SESSION_SECRET`          | (random)| 32-byte AES-GCM key for encrypting the per-session DEK at rest (raw 32 chars / base64 44 chars / hex 64 chars) |
 | `COOKIE_SECURE`           | `true`  | Set `Secure` flag on `e2Mail_session` cookie (set `false` for plain HTTP dev) |
-| `ALLOWED_HOSTS`           | —       | Comma-separated hostnames the server answers to (e.g. `mail.example.com`); other `Host` values get `421`. Empty = no restriction. The reverse proxy must preserve the original `Host` |
+| `HTTP_ALLOWED_HOSTS`           | —       | Comma-separated hostnames the server answers to (e.g. `mail.example.com`); other `Host` values get `421`. Empty = no restriction. The reverse proxy must preserve the original `Host` |
 | `MAIL_SERVER`             | —       | Mail domain (e.g. `example.com`); also the default IMAP/SMTP host. Locked login server by default |
 | `MAIL_MODE`               | auto    | `locked` = users cannot change the login server; `prefill` = pre-filled but editable. Auto = locked when both hosts are set |
 | `MAIL_IMAP_HOST`          | —       | Operational IMAP host override (e.g. `mail.example.com`) |

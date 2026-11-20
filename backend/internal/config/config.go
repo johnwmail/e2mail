@@ -30,7 +30,7 @@ type ServerConfig struct {
 	LDAP                         *LDAPConfig
 	WebAuthn                     *WebAuthnConfig
 	// AllowedHosts 只回應呢啲 Host（忽略大小寫同 port）；空 = 不限制。
-	// 由 ALLOWED_HOSTS 環境變數載入（逗號分隔）。
+	// 由 HTTP_ALLOWED_HOSTS 環境變數載入（逗號分隔）。
 	AllowedHosts []string
 	// LoginAllowedDomains 只允許呢啲 email domain 登入（逗號分隔；空 = 不限制）。
 	// 主要配合固定 server 使用，避免用戶用其他 domain 的 email 登入同一部 IMAP。
@@ -158,7 +158,7 @@ func Load() *ServerConfig {
 			cfg.DBBackup = DBBackupDisable
 		}
 	}
-	if v := os.Getenv("ALLOWED_HOSTS"); v != "" {
+	if v := os.Getenv("HTTP_ALLOWED_HOSTS"); v != "" {
 		cfg.AllowedHosts = splitCSV(v)
 	}
 	if v := envString("MAIL_ALLOWED_DOMAINS"); v != "" {
