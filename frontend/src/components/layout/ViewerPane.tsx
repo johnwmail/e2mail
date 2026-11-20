@@ -25,6 +25,7 @@ import { EmailFrame } from '../mail/EmailFrame';
 import { MessageListResult, MessageSummary } from '../../types/api';
 import { UserPlus, Check } from 'lucide-react';
 import { useI18n } from '../../i18n';
+import { downloadableAttachments } from '../../utils/attachments';
 
 export const ViewerPane: React.FC = () => {
   const { t } = useI18n();
@@ -373,6 +374,8 @@ export const ViewerPane: React.FC = () => {
     });
   };
 
+  const visibleAttachments = downloadableAttachments(message.attachments);
+
   return (
     <main className="flex-1 bg-white dark:bg-slate-900 flex flex-col h-full overflow-hidden w-full min-w-0 max-w-full">
       {/* 頂部操作工具列 (Desktop 顯示) */}
@@ -577,10 +580,10 @@ export const ViewerPane: React.FC = () => {
           </div>
         </div>
 
-        {/* 附件下載列 */}
-        {message.attachments && message.attachments.length > 0 && (
+        {/* 附件下載列（只列真正的檔案附件；inline cid 圖片交由 EmailFrame 渲染） */}
+        {visibleAttachments.length > 0 && (
           <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
-            {message.attachments.map((att) => (
+            {visibleAttachments.map((att) => (
               <a
                 key={att.id}
                 href={mailApi.getAttachmentUrl(message.uid, att.id, detailFolder)}
