@@ -91,7 +91,7 @@ MAIL_SMTP_HOST=smtp.example.com
 | `MAIL_SIEVE_USE_TLS` | `true` | Use TLS for ManageSieve |
 | `MAIL_SIEVE_ALLOW_INSECURE_TLS` | `false` | Allow self-signed ManageSieve certificates |
 
-`ALLOWED_HOSTS` is unrelated to mail: it is the **HTTP Host allow-list** used
+`HTTP_ALLOWED_HOSTS` is unrelated to mail: it is the **HTTP Host allow-list** used
 by the web server/reverse proxy.
 
 ## Locked vs prefill
@@ -158,7 +158,7 @@ services:
 ```env
 MAIL_SERVER=example.com
 COOKIE_SECURE=true
-ALLOWED_HOSTS=mail.example.com
+HTTP_ALLOWED_HOSTS=mail.example.com
 ```
 
 ## OpenBSD `rc.d` example
@@ -170,7 +170,7 @@ rc_start() {
 		DATA_DIR=/var/e2mail \
 		SESSION_SECRET=REPLACE_ME \
 		COOKIE_SECURE=true \
-		ALLOWED_HOSTS=mail.example.com \
+		HTTP_ALLOWED_HOSTS=mail.example.com \
 		MAIL_SERVER=example.com \
 		MAIL_IMAP_HOST=mail.example.com \
 		MAIL_SMTP_HOST=mail.example.com \
