@@ -150,11 +150,11 @@ table from the removed `DEFAULT_*` names.
 | `SESSION_SECRET`          | (random)| 32-byte AES-GCM key for encrypting the per-session DEK at rest (raw 32 chars / base64 44 chars / hex 64 chars) |
 | `COOKIE_SECURE`           | `true`  | Set `Secure` flag on `e2Mail_session` cookie (set `false` for plain HTTP dev) |
 | `ALLOWED_HOSTS`           | —       | Comma-separated hostnames the server answers to (e.g. `mail.example.com`); other `Host` values get `421`. Empty = no restriction. The reverse proxy must preserve the original `Host` |
-| `MAIL_SERVER`             | —       | Mail domain (e.g. `wonghome.net`); also the default IMAP/SMTP host. Locked login server by default |
+| `MAIL_SERVER`             | —       | Mail domain (e.g. `example.com`); also the default IMAP/SMTP host. Locked login server by default |
 | `MAIL_MODE`               | auto    | `locked` = users cannot change the login server; `prefill` = pre-filled but editable. Auto = locked when both hosts are set |
-| `MAIL_IMAP_HOST`          | —       | Operational IMAP host override (e.g. `mail.wonghome.net`) |
+| `MAIL_IMAP_HOST`          | —       | Operational IMAP host override (e.g. `mail.example.com`) |
 | `MAIL_IMAP_PORT`          | `993`   | IMAP port                                               |
-| `MAIL_SMTP_HOST`          | —       | Operational SMTP host override (e.g. `mail.wonghome.net`) |
+| `MAIL_SMTP_HOST`          | —       | Operational SMTP host override (e.g. `mail.example.com`) |
 | `MAIL_SMTP_PORT`          | `587`   | SMTP port                                               |
 | `MAIL_ALLOW_INSECURE_TLS` | `false` | Allow self-signed / unverified TLS for IMAP/SMTP       |
 | `MAIL_ALLOWED_DOMAINS`    | auto    | Comma-separated email domains allowed to sign in. Auto = `MAIL_SERVER` when locked; empty otherwise |
