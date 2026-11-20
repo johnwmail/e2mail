@@ -9,6 +9,6 @@ import (
 
 func TestMain(m *testing.M) {
 	// Several handler tests point IMAP/SMTP at 127.0.0.1.
-	netguard.SetDefault(netguard.NewPolicy(true, nil))
+	netguard.SetDefault(netguard.NewPolicy(true))
 	os.Exit(m.Run())
 }

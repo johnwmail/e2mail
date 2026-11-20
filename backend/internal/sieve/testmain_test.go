@@ -9,6 +9,6 @@ import (
 
 func TestMain(m *testing.M) {
 	// Tests use fake Dovecot servers on 127.0.0.1.
-	netguard.SetDefault(netguard.NewPolicy(true, nil))
+	netguard.SetDefault(netguard.NewPolicy(true))
 	os.Exit(m.Run())
 }

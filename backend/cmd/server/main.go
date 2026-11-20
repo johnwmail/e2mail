@@ -104,14 +104,10 @@ func main() {
 
 	serverConfig := config.Load()
 
-	// Outbound SSRF guard：用戶提供的 IMAP/SMTP/Sieve host 預設唔准連
-	// private / loopback / link-local（可用 MAIL_OUTBOUND_ALLOWED_HOSTS 或 MAIL_ALLOW_PRIVATE_NETWORKS 放行）。
-	netguard.SetDefault(netguard.NewPolicy(serverConfig.AllowPrivateNetworks, serverConfig.OutboundAllowedHosts))
-	if serverConfig.AllowPrivateNetworks {
-		log.Printf("⚠️  Outbound SSRF guard disabled (MAIL_ALLOW_PRIVATE_NETWORKS=true)")
-	} else {
-		log.Printf("🛡️  Outbound SSRF guard enabled (private/loopback IMAP/SMTP/Sieve hosts blocked; allow via MAIL_OUTBOUND_ALLOWED_HOSTS)")
-	}
+	// Outbound SSRF guard：用戶提供的 IMAP/SMTP/Sieve host 一律唔准連
+	// private / loopback / link-local；冇 env 可以關閉。
+	netguard.SetDefault(netguard.NewPolicy(false))
+	log.Printf("🛡️  Outbound SSRF guard enabled (private/loopback IMAP/SMTP/Sieve hosts are blocked)")
 
 	poolManager := imap.NewPoolManager()
 	idleManager := imap.NewIdleManager()

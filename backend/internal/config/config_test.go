@@ -160,6 +160,15 @@ func TestLoadMailServerSimpleMode(t *testing.T) {
 	if !cfg.HasFixedServers() {
 		t.Fatal("MAIL_SERVER should lock the login server by default")
 	}
+	if len(cfg.LoginAllowedDomains) != 1 || cfg.LoginAllowedDomains[0] != "wonghome.net" {
+		t.Fatalf("auto allowed domain = %#v", cfg.LoginAllowedDomains)
+	}
+	if cfg.LoginDomainAllowed("abc@not-wonghome.net") {
+		t.Fatal("auto-derived domain must reject a different email domain")
+	}
+	if !cfg.LoginDomainAllowed("abc@wonghome.net") {
+		t.Fatal("auto-derived domain must allow the matching email domain")
+	}
 
 	t.Setenv("MAIL_IMAP_HOST", "imap.wonghome.net")
 	cfg = Load()
@@ -171,6 +180,114 @@ func TestLoadMailServerSimpleMode(t *testing.T) {
 	cfg = Load()
 	if cfg.HasFixedServers() {
 		t.Fatal("MAIL_MODE=prefill must not lock the login server")
+	}
+	if len(cfg.LoginAllowedDomains) != 0 {
+		t.Fatalf("prefill mode should not auto-derive a domain: %#v", cfg.LoginAllowedDomains)
+	}
+}
+
+func TestMailServerDomainWithOperationalHostOverride(t *testing.T) {
+	for _, key := range []string{
+		"MAIL_SERVER", "MAIL_IMAP_HOST", "MAIL_SMTP_HOST", "MAIL_MODE", "MAIL_ALLOWED_DOMAINS",
+	} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("MAIL_SERVER", "example.com")
+	t.Setenv("MAIL_IMAP_HOST", "mail.example.com")
+	t.Setenv("MAIL_SMTP_HOST", "smtp.example.com")
+
+	cfg := Load()
+	if cfg.DefaultIMAPHost != "mail.example.com" || cfg.DefaultSMTPHost != "smtp.example.com" {
+		t.Fatalf("operational host override failed: %q / %q", cfg.DefaultIMAPHost, cfg.DefaultSMTPHost)
+	}
+	if len(cfg.LoginAllowedDomains) != 1 || cfg.LoginAllowedDomains[0] != "example.com" {
+		t.Fatalf("allowed domain = %#v, want example.com", cfg.LoginAllowedDomains)
+	}
+	if !cfg.LoginDomainAllowed("abc@example.com") {
+		t.Fatal("@example.com should be allowed")
+	}
+	if cfg.LoginDomainAllowed("abc@mail.example.com") {
+		t.Fatal("the operational subdomain must not become the login domain")
+	}
+}
+
+func TestLegacyMailEnvIgnored(t *testing.T) {
+	for _, key := range []string{
+		"MAIL_SERVER", "MAIL_IMAP_HOST", "MAIL_SMTP_HOST", "MAIL_IMAP_PORT", "MAIL_SMTP_PORT",
+		"MAIL_ALLOW_INSECURE_TLS", "MAIL_SIEVE_HOST", "MAIL_SIEVE_PORT", "MAIL_SIEVE_USE_TLS",
+		"MAIL_SIEVE_ALLOW_INSECURE_TLS", "MAIL_MODE", "MAIL_ALLOWED_DOMAINS",
+	} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("DEFAULT_IMAP_HOST", "legacy-imap.example")
+	t.Setenv("DEFAULT_IMAP_PORT", "1993")
+	t.Setenv("DEFAULT_SMTP_HOST", "legacy-smtp.example")
+	t.Setenv("DEFAULT_SMTP_PORT", "1587")
+	t.Setenv("DEFAULT_ALLOW_INSECURE_TLS", "true")
+	t.Setenv("DEFAULT_SIEVE_HOST", "legacy-sieve.example")
+	t.Setenv("DEFAULT_SIEVE_PORT", "14190")
+	t.Setenv("DEFAULT_SIEVE_USE_TLS", "false")
+	t.Setenv("DEFAULT_SIEVE_ALLOW_INSECURE_TLS", "true")
+	t.Setenv("LOGIN_ALLOWED_DOMAINS", "legacy.example")
+
+	cfg := Load()
+	if cfg.DefaultIMAPHost != "" || cfg.DefaultSMTPHost != "" || cfg.DefaultSieveHost != "" {
+		t.Fatalf("legacy hosts must be ignored: %#v", cfg)
+	}
+	if cfg.DefaultIMAPPort != 993 || cfg.DefaultSMTPPort != 587 || cfg.DefaultSievePort != 4190 {
+		t.Fatalf("legacy ports must be ignored: %d/%d/%d", cfg.DefaultIMAPPort, cfg.DefaultSMTPPort, cfg.DefaultSievePort)
+	}
+	if cfg.DefaultAllowInsecureTLS || cfg.DefaultSieveAllowInsecureTLS || !cfg.DefaultSieveUseTLS {
+		t.Fatal("legacy TLS flags must be ignored")
+	}
+	if len(cfg.LoginAllowedDomains) != 0 {
+		t.Fatalf("legacy domain env must be ignored: %#v", cfg)
+	}
+}
+
+func TestMailEnvAdvancedOverrides(t *testing.T) {
+	for _, key := range []string{
+		"MAIL_SERVER", "MAIL_IMAP_HOST", "MAIL_SMTP_HOST", "MAIL_IMAP_PORT", "MAIL_SMTP_PORT",
+		"MAIL_ALLOW_INSECURE_TLS", "MAIL_SIEVE_HOST", "MAIL_SIEVE_PORT", "MAIL_SIEVE_USE_TLS",
+		"MAIL_SIEVE_ALLOW_INSECURE_TLS", "MAIL_MODE",
+	} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("MAIL_SERVER", "mail.example.com")
+	t.Setenv("MAIL_IMAP_PORT", "1993")
+	t.Setenv("MAIL_SMTP_PORT", "1587")
+	t.Setenv("MAIL_ALLOW_INSECURE_TLS", "true")
+	t.Setenv("MAIL_SIEVE_HOST", "sieve.example.com")
+	t.Setenv("MAIL_SIEVE_PORT", "14190")
+	t.Setenv("MAIL_SIEVE_USE_TLS", "false")
+	t.Setenv("MAIL_SIEVE_ALLOW_INSECURE_TLS", "true")
+	t.Setenv("MAIL_MODE", "prefill")
+
+	cfg := Load()
+	if cfg.DefaultIMAPHost != "mail.example.com" || cfg.DefaultSMTPHost != "mail.example.com" {
+		t.Fatalf("MAIL_SERVER hosts = %q / %q", cfg.DefaultIMAPHost, cfg.DefaultSMTPHost)
+	}
+	if cfg.DefaultIMAPPort != 1993 || cfg.DefaultSMTPPort != 1587 {
+		t.Fatalf("ports = %d / %d", cfg.DefaultIMAPPort, cfg.DefaultSMTPPort)
+	}
+	if !cfg.DefaultAllowInsecureTLS {
+		t.Fatal("MAIL_ALLOW_INSECURE_TLS not parsed")
+	}
+	if cfg.DefaultSieveHost != "sieve.example.com" || cfg.DefaultSievePort != 14190 ||
+		cfg.DefaultSieveUseTLS || !cfg.DefaultSieveAllowInsecureTLS {
+		t.Fatalf("Sieve config = %#v", cfg)
+	}
+	if cfg.HasFixedServers() {
+		t.Fatal("MAIL_MODE=prefill must not lock the login server")
+	}
+	if len(cfg.LoginAllowedDomains) != 0 {
+		t.Fatalf("prefill mode should not auto-derive a domain: %#v", cfg.LoginAllowedDomains)
+	}
+
+	t.Setenv("MAIL_MODE", "bogus")
+	cfg = Load()
+	if !cfg.HasFixedServers() {
+		t.Fatal("invalid MAIL_MODE should fall back to auto (locked with both hosts)")
 	}
 }
 
@@ -228,27 +345,5 @@ func TestLoginAllowedDomains(t *testing.T) {
 	var nilCfg *ServerConfig
 	if !nilCfg.LoginDomainAllowed("any@example.org") {
 		t.Fatal("nil config must allow any domain")
-	}
-}
-
-func TestLoadOutboundGuard(t *testing.T) {
-	t.Setenv("MAIL_ALLOW_PRIVATE_NETWORKS", "")
-	t.Setenv("MAIL_OUTBOUND_ALLOWED_HOSTS", "")
-	cfg := Load()
-	if cfg.AllowPrivateNetworks {
-		t.Fatal("AllowPrivateNetworks must default to false")
-	}
-	if len(cfg.OutboundAllowedHosts) != 0 {
-		t.Fatalf("OutboundAllowedHosts default = %#v", cfg.OutboundAllowedHosts)
-	}
-
-	t.Setenv("MAIL_ALLOW_PRIVATE_NETWORKS", "true")
-	t.Setenv("MAIL_OUTBOUND_ALLOWED_HOSTS", " mail.lan , 192.168.1.10 ")
-	cfg = Load()
-	if !cfg.AllowPrivateNetworks {
-		t.Fatal("MAIL_ALLOW_PRIVATE_NETWORKS=true was not parsed")
-	}
-	if len(cfg.OutboundAllowedHosts) != 2 || cfg.OutboundAllowedHosts[0] != "mail.lan" || cfg.OutboundAllowedHosts[1] != "192.168.1.10" {
-		t.Fatalf("OutboundAllowedHosts = %#v", cfg.OutboundAllowedHosts)
 	}
 }

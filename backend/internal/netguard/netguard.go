@@ -18,8 +18,7 @@ import (
 
 const dialTimeout = 30 * time.Second
 
-// blockedPrefixes are never dialled unless the host is explicitly allow-listed
-// or AllowPrivateNetworks is enabled.
+// blockedPrefixes are never dialled unless the host is explicitly allow-listed.
 var blockedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"),
 	netip.MustParsePrefix("10.0.0.0/8"),
@@ -39,29 +38,22 @@ var blockedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("ff00::/8"),
 }
 
-// Policy controls which outbound hosts are allowed.
+// Policy controls outbound destination checks. allowPrivate is only used by
+// tests that run fake mail servers on loopback; production always passes false.
 type Policy struct {
 	allowPrivate bool
-	allowedHosts map[string]struct{}
 }
 
-// NewPolicy builds a policy. When allowPrivate is false, private/loopback/
-// link-local destinations are rejected. allowedHosts is an exact-match
-// allow-list (hostname or IP, case-insensitive) that bypasses the IP check.
-func NewPolicy(allowPrivate bool, allowedHosts []string) *Policy {
-	p := &Policy{allowPrivate: allowPrivate, allowedHosts: make(map[string]struct{}, len(allowedHosts))}
-	for _, h := range allowedHosts {
-		if h = normalizeHost(h); h != "" {
-			p.allowedHosts[h] = struct{}{}
-		}
-	}
-	return p
+// NewPolicy builds a policy. Private/loopback/link-local destinations are
+// rejected unless allowPrivate is true (tests only).
+func NewPolicy(allowPrivate bool) *Policy {
+	return &Policy{allowPrivate: allowPrivate}
 }
 
 var defaultPolicy atomic.Pointer[Policy]
 
 func init() {
-	defaultPolicy.Store(NewPolicy(false, nil))
+	defaultPolicy.Store(NewPolicy(false))
 }
 
 // Default returns the process-wide policy. main() configures it from env.
@@ -82,10 +74,6 @@ func (p *Policy) CheckHost(ctx context.Context, host string) error {
 	if host == "" {
 		return errors.New("outbound host is empty")
 	}
-	if _, ok := p.allowedHosts[host]; ok {
-		return nil
-	}
-
 	if ip := net.ParseIP(host); ip != nil {
 		if p.isBlocked(ip) {
 			return blockedError(host)
@@ -111,13 +99,9 @@ func (p *Policy) CheckHost(ctx context.Context, host string) error {
 // DialerFor returns a dialer for host. Non-allow-listed hosts get a Control
 // hook that re-checks the address actually being connected to, which closes
 // the DNS-rebinding window between CheckHost and the real dial.
-func (p *Policy) DialerFor(host string) *net.Dialer {
-	host = normalizeHost(host)
+func (p *Policy) DialerFor() *net.Dialer {
 	d := &net.Dialer{Timeout: dialTimeout}
 	if p.allowPrivate {
-		return d
-	}
-	if _, ok := p.allowedHosts[host]; ok {
 		return d
 	}
 	d.Control = p.control
@@ -158,8 +142,7 @@ func (p *Policy) isBlocked(ip net.IP) bool {
 
 func blockedError(host string) error {
 	return fmt.Errorf(
-		"outbound connection to %q is blocked (private/loopback/link-local address); "+
-			"set MAIL_ALLOW_PRIVATE_NETWORKS=true or add the host to MAIL_OUTBOUND_ALLOWED_HOSTS",
+		"outbound connection to %q is blocked (private/loopback/link-local addresses are not allowed)",
 		host,
 	)
 }
