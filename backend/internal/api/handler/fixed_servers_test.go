@@ -76,10 +76,11 @@ func TestLoginRejectsDisallowedEmailDomainBeforeIMAP(t *testing.T) {
 
 func TestServerConfigReportsFixedServers(t *testing.T) {
 	h := NewServerConfigHandler(&config.ServerConfig{
-		DefaultIMAPHost: "imap.example.com",
-		DefaultIMAPPort: 993,
-		DefaultSMTPHost: "smtp.example.com",
-		DefaultSMTPPort: 587,
+		DefaultIMAPHost:     "imap.example.com",
+		DefaultIMAPPort:     993,
+		DefaultSMTPHost:     "smtp.example.com",
+		DefaultSMTPPort:     587,
+		LoginAllowedDomains: []string{"example.com"},
 	})
 	rec := httptest.NewRecorder()
 	h.Get(rec, httptest.NewRequest(http.MethodGet, "/api/server-config", nil))
@@ -87,7 +88,8 @@ func TestServerConfigReportsFixedServers(t *testing.T) {
 	var body struct {
 		Success bool `json:"success"`
 		Data    struct {
-			FixedServers bool `json:"fixedServers"`
+			FixedServers        bool     `json:"fixedServers"`
+			LoginAllowedDomains []string `json:"loginAllowedDomains"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -95,5 +97,8 @@ func TestServerConfigReportsFixedServers(t *testing.T) {
 	}
 	if !body.Success || !body.Data.FixedServers {
 		t.Fatalf("fixedServers missing: %s", rec.Body.String())
+	}
+	if len(body.Data.LoginAllowedDomains) != 1 || body.Data.LoginAllowedDomains[0] != "example.com" {
+		t.Fatalf("loginAllowedDomains = %#v", body.Data.LoginAllowedDomains)
 	}
 }

@@ -305,6 +305,40 @@ describe('LoginForm', () => {
     });
   });
 
+  it('requires a full email when multiple login domains are allowed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        json: async () => ({
+          success: true,
+          data: {
+            fixedServers: true,
+            loginAllowedDomains: ['a.example', 'b.example'],
+            defaults: {
+              imapHost: 'mail.example.com',
+              imapPort: 993,
+              smtpHost: 'smtp.example.com',
+              smtpPort: 587,
+              allowInsecureTls: false,
+            },
+          },
+        }),
+      }),
+    );
+
+    render(<LoginForm />);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Advanced server settings/i })).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('user@example.com'), { target: { value: 'bob' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByText(/multiple email domains/)).toBeInTheDocument();
+    expect(mocks.login).not.toHaveBeenCalled();
+  });
+
   it('does not offer passkey login when the method is unavailable', async () => {
     (window as any).PublicKeyCredential = {};
     mocks.login.mockResolvedValue({ requires2fa: true, challenge: 'ch-1', methods: ['totp'] });

@@ -174,6 +174,86 @@ func TestLoadMailServerSimpleMode(t *testing.T) {
 	}
 }
 
+func TestLegacyMailEnvIgnored(t *testing.T) {
+	for _, key := range []string{
+		"MAIL_SERVER", "MAIL_IMAP_HOST", "MAIL_SMTP_HOST", "MAIL_IMAP_PORT", "MAIL_SMTP_PORT",
+		"MAIL_ALLOW_INSECURE_TLS", "MAIL_SIEVE_HOST", "MAIL_SIEVE_PORT", "MAIL_SIEVE_USE_TLS",
+		"MAIL_SIEVE_ALLOW_INSECURE_TLS", "MAIL_MODE", "MAIL_ALLOWED_DOMAINS",
+		"MAIL_ALLOW_PRIVATE_NETWORKS", "MAIL_OUTBOUND_ALLOWED_HOSTS",
+	} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("DEFAULT_IMAP_HOST", "legacy-imap.example")
+	t.Setenv("DEFAULT_IMAP_PORT", "1993")
+	t.Setenv("DEFAULT_SMTP_HOST", "legacy-smtp.example")
+	t.Setenv("DEFAULT_SMTP_PORT", "1587")
+	t.Setenv("DEFAULT_ALLOW_INSECURE_TLS", "true")
+	t.Setenv("DEFAULT_SIEVE_HOST", "legacy-sieve.example")
+	t.Setenv("DEFAULT_SIEVE_PORT", "14190")
+	t.Setenv("DEFAULT_SIEVE_USE_TLS", "false")
+	t.Setenv("DEFAULT_SIEVE_ALLOW_INSECURE_TLS", "true")
+	t.Setenv("LOGIN_ALLOWED_DOMAINS", "legacy.example")
+	t.Setenv("OUTBOUND_ALLOWED_HOSTS", "mail.lan")
+	t.Setenv("ALLOW_PRIVATE_NETWORKS", "true")
+
+	cfg := Load()
+	if cfg.DefaultIMAPHost != "" || cfg.DefaultSMTPHost != "" || cfg.DefaultSieveHost != "" {
+		t.Fatalf("legacy hosts must be ignored: %#v", cfg)
+	}
+	if cfg.DefaultIMAPPort != 993 || cfg.DefaultSMTPPort != 587 || cfg.DefaultSievePort != 4190 {
+		t.Fatalf("legacy ports must be ignored: %d/%d/%d", cfg.DefaultIMAPPort, cfg.DefaultSMTPPort, cfg.DefaultSievePort)
+	}
+	if cfg.DefaultAllowInsecureTLS || cfg.DefaultSieveAllowInsecureTLS || !cfg.DefaultSieveUseTLS {
+		t.Fatal("legacy TLS flags must be ignored")
+	}
+	if len(cfg.LoginAllowedDomains) != 0 || len(cfg.OutboundAllowedHosts) != 0 || cfg.AllowPrivateNetworks {
+		t.Fatalf("legacy security env must be ignored: %#v", cfg)
+	}
+}
+
+func TestMailEnvAdvancedOverrides(t *testing.T) {
+	for _, key := range []string{
+		"MAIL_SERVER", "MAIL_IMAP_HOST", "MAIL_SMTP_HOST", "MAIL_IMAP_PORT", "MAIL_SMTP_PORT",
+		"MAIL_ALLOW_INSECURE_TLS", "MAIL_SIEVE_HOST", "MAIL_SIEVE_PORT", "MAIL_SIEVE_USE_TLS",
+		"MAIL_SIEVE_ALLOW_INSECURE_TLS", "MAIL_MODE",
+	} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("MAIL_SERVER", "mail.example.com")
+	t.Setenv("MAIL_IMAP_PORT", "1993")
+	t.Setenv("MAIL_SMTP_PORT", "1587")
+	t.Setenv("MAIL_ALLOW_INSECURE_TLS", "true")
+	t.Setenv("MAIL_SIEVE_HOST", "sieve.example.com")
+	t.Setenv("MAIL_SIEVE_PORT", "14190")
+	t.Setenv("MAIL_SIEVE_USE_TLS", "false")
+	t.Setenv("MAIL_SIEVE_ALLOW_INSECURE_TLS", "true")
+	t.Setenv("MAIL_MODE", "prefill")
+
+	cfg := Load()
+	if cfg.DefaultIMAPHost != "mail.example.com" || cfg.DefaultSMTPHost != "mail.example.com" {
+		t.Fatalf("MAIL_SERVER hosts = %q / %q", cfg.DefaultIMAPHost, cfg.DefaultSMTPHost)
+	}
+	if cfg.DefaultIMAPPort != 1993 || cfg.DefaultSMTPPort != 1587 {
+		t.Fatalf("ports = %d / %d", cfg.DefaultIMAPPort, cfg.DefaultSMTPPort)
+	}
+	if !cfg.DefaultAllowInsecureTLS {
+		t.Fatal("MAIL_ALLOW_INSECURE_TLS not parsed")
+	}
+	if cfg.DefaultSieveHost != "sieve.example.com" || cfg.DefaultSievePort != 14190 ||
+		cfg.DefaultSieveUseTLS || !cfg.DefaultSieveAllowInsecureTLS {
+		t.Fatalf("Sieve config = %#v", cfg)
+	}
+	if cfg.HasFixedServers() {
+		t.Fatal("MAIL_MODE=prefill must not lock the login server")
+	}
+
+	t.Setenv("MAIL_MODE", "bogus")
+	cfg = Load()
+	if !cfg.HasFixedServers() {
+		t.Fatal("invalid MAIL_MODE should fall back to auto (locked with both hosts)")
+	}
+}
+
 func TestHasFixedServers(t *testing.T) {
 	cases := []struct {
 		name string

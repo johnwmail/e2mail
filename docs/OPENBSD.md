@@ -145,6 +145,8 @@ rc_start() {
 		SESSION_SECRET=REPLACE_ME \
 		COOKIE_SECURE=true \
 		ALLOWED_HOSTS=mail.example.com \
+		MAIL_SERVER=mail.example.com \
+		MAIL_ALLOWED_DOMAINS=example.com \
 		REQUIRE_2FA=true \
 		REQUIRE_PGP=true \
 		DB_BACKUP=WEEKLY \
