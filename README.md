@@ -136,13 +136,17 @@ Uncomment in `docker-compose.yml` (or set via your orchestrator) to activate.
 | `SESSION_SECRET`          | (random)| 32-byte AES-GCM key for encrypting the per-session DEK at rest (raw 32 chars / base64 44 chars / hex 64 chars) |
 | `COOKIE_SECURE`           | `true`  | Set `Secure` flag on `e2Mail_session` cookie (set `false` for plain HTTP dev) |
 | `ALLOWED_HOSTS`           | —       | Comma-separated hostnames the server answers to (e.g. `mail.example.com`); other `Host` values get `421`. Empty = no restriction. The reverse proxy must preserve the original `Host` |
-| `ALLOW_PRIVATE_NETWORKS`  | `false` | Allow IMAP/SMTP/Sieve to dial private, loopback and link-local addresses. Keep `false` on shared/public instances (SSRF guard); enable only for a LAN mail server |
-| `OUTBOUND_ALLOWED_HOSTS`  | —       | Comma-separated exact hostnames/IPs that bypass the SSRF guard (e.g. `mail.lan,192.168.1.10`) |
-| `DEFAULT_IMAP_HOST`       | —       | Fixed IMAP host used by the login form. Setting both `DEFAULT_IMAP_HOST` and `DEFAULT_SMTP_HOST` locks the login server (users cannot override it) |
-| `DEFAULT_IMAP_PORT`       | `993`   | Fixed IMAP port                                         |
-| `DEFAULT_SMTP_HOST`       | —       | Fixed SMTP host used by the login form                  |
-| `DEFAULT_SMTP_PORT`       | `587`   | Fixed SMTP port                                         |
-| `DEFAULT_ALLOW_INSECURE_TLS` | `false` | Fixed "allow self-signed" policy (off by default) |
+| `MAIL_SERVER`             | —       | Common IMAP/SMTP host (e.g. `wonghome.net`). Fills both hosts and locks the login server by default |
+| `MAIL_MODE`               | auto    | `locked` = users cannot change the login server; `prefill` = pre-filled but editable. Auto = locked when both hosts are set |
+| `MAIL_IMAP_HOST`          | —       | IMAP host when it differs from `MAIL_SERVER`           |
+| `MAIL_IMAP_PORT`          | `993`   | IMAP port                                               |
+| `MAIL_SMTP_HOST`          | —       | SMTP host when it differs from `MAIL_SERVER`           |
+| `MAIL_SMTP_PORT`          | `587`   | SMTP port                                               |
+| `MAIL_ALLOW_INSECURE_TLS` | `false` | Allow self-signed / unverified TLS for IMAP/SMTP       |
+| `MAIL_ALLOWED_DOMAINS`    | —       | Comma-separated email domains allowed to sign in (e.g. `wonghome.net,example.com`). Empty = any domain |
+| `MAIL_ALLOW_PRIVATE_NETWORKS` | `false` | Allow IMAP/SMTP/Sieve to dial private/loopback/link-local addresses (SSRF guard off) |
+| `MAIL_OUTBOUND_ALLOWED_HOSTS` | —    | Comma-separated exact hostnames/IPs that bypass the SSRF guard (e.g. `mail.lan,192.168.1.10`) |
+| `MAIL_SIEVE_HOST` / `MAIL_SIEVE_PORT` / `MAIL_SIEVE_USE_TLS` / `MAIL_SIEVE_ALLOW_INSECURE_TLS` | — / `4190` / `true` / `false` | Optional Sieve defaults |
 | `REQUIRE_2FA`             | `true`  | Enforce 2FA onboarding for new logins                   |
 | `REQUIRE_PGP`             | `true`  | Enforce PGP key setup onboarding for new logins         |
 | `DB_BACKUP`               | `DISABLE` | Auto-backup SQLite to `$DATA_DIR/backups/` (`DISABLE` / `DAILY` / `WEEKLY` / `MONTHLY`; see [`docs/BACKUP.md`](docs/BACKUP.md)) |
@@ -250,8 +254,8 @@ Chromium; see the header of the script).
   Remote images, media, and fonts stay blocked until the user allows them —
   including SVG `<image>`, `<video poster>`, and inline CSS `url()` vectors.
 - Outbound IMAP/SMTP/Sieve connections reject private, loopback and
-  link-local addresses by default (SSRF guard). Use `OUTBOUND_ALLOWED_HOSTS`
-  for a specific LAN mail server, or `ALLOW_PRIVATE_NETWORKS=true` to disable
+  link-local addresses by default (SSRF guard). Use `MAIL_OUTBOUND_ALLOWED_HOSTS`
+  for a specific LAN mail server, or `MAIL_ALLOW_PRIVATE_NETWORKS=true` to disable
   the guard entirely.
 - Attachments with active content (HTML, SVG, XML, PDF, JavaScript, …) are
   always sent as `Content-Disposition: attachment` with `nosniff` and a

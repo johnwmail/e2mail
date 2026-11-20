@@ -92,9 +92,10 @@ type ServerConfig struct {
 `Load()` 讀環境：
 
 ```
-DEFAULT_SIEVE_HOST   (預設 ""，空則跟 IMAPHost)
-DEFAULT_SIEVE_PORT   (預設 4190)
-DEFAULT_SIEVE_ALLOW_INSECURE_TLS (預設 false)
+MAIL_SIEVE_HOST   (預設 ""，空則跟 IMAPHost)
+MAIL_SIEVE_PORT   (預設 4190)
+MAIL_SIEVE_USE_TLS (預設 true)
+MAIL_SIEVE_ALLOW_INSECURE_TLS (預設 false)
 ```
 
 補 `.env.example`, `docker-compose.yml` 模板，`GET /api/server-config` 一併暴露給前端預填。

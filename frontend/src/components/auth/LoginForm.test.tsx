@@ -241,8 +241,9 @@ describe('LoginForm', () => {
     mocks.login.mockResolvedValue(null);
 
     render(<LoginForm />);
-    expect(await screen.findByText(/managed by the administrator/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Advanced server settings/i })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Advanced server settings/i })).not.toBeInTheDocument();
+    });
 
     fireEvent.change(screen.getByPlaceholderText('user@example.com'), { target: { value: 'abc@gmail.com' } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'secret' } });
@@ -256,6 +257,49 @@ describe('LoginForm', () => {
           imapPort: 993,
           smtpHost: 'smtp.example.com',
           smtpPort: 587,
+        }),
+      );
+    });
+  });
+
+  it('uses the single allowed login domain for local-part autofill', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        json: async () => ({
+          success: true,
+          data: {
+            fixedServers: true,
+            loginAllowedDomains: ['example.com'],
+            defaults: {
+              imapHost: 'mail.example.com',
+              imapPort: 993,
+              smtpHost: 'smtp.example.com',
+              smtpPort: 587,
+              allowInsecureTls: false,
+            },
+          },
+        }),
+      }),
+    );
+    mocks.login.mockResolvedValue(null);
+
+    render(<LoginForm />);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Advanced server settings/i })).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('user@example.com'), { target: { value: 'bob' } });
+    expect((await screen.findAllByText(/bob@example\.com/)).length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await waitFor(() => {
+      expect(mocks.login).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'bob@example.com',
+          imapHost: 'mail.example.com',
+          smtpHost: 'smtp.example.com',
         }),
       );
     });

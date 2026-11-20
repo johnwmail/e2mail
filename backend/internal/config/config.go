@@ -9,6 +9,9 @@ import (
 
 // ServerConfig 由環境變數載入的伺服器預設值，作為登入頁面之預填與強制預設
 type ServerConfig struct {
+	// MailMode 控制登入 server 是否鎖定："locked" / "prefill"；空 = 自動
+	// （IMAP + SMTP host 同時設定時鎖定）。
+	MailMode                     string
 	DefaultIMAPHost              string
 	DefaultIMAPPort              int
 	DefaultSMTPHost              string
@@ -33,6 +36,9 @@ type ServerConfig struct {
 	AllowPrivateNetworks bool
 	// OutboundAllowedHosts 白名單，繞過私有位址檢查（逗號分隔，hostname 或 IP）。
 	OutboundAllowedHosts []string
+	// LoginAllowedDomains 只允許呢啲 email domain 登入（逗號分隔；空 = 不限制）。
+	// 主要配合固定 server 使用，避免用戶用其他 domain 的 email 登入同一部 IMAP。
+	LoginAllowedDomains []string
 }
 
 // DBBackupSchedule SQLite 自動備份週期（DB_BACKUP）。
@@ -93,38 +99,36 @@ func Load() *ServerConfig {
 		RequirePGP:                   true,
 		DBBackup:                     DBBackupDisable,
 	}
-	if v := os.Getenv("DEFAULT_IMAP_HOST"); v != "" {
-		cfg.DefaultIMAPHost = v
-	}
-	if v := os.Getenv("DEFAULT_IMAP_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil && port > 0 {
-			cfg.DefaultIMAPPort = port
+	// === Mail server ===
+	// 最簡單：MAIL_SERVER=host → IMAP/SMTP 共用同一 host，預設 locked。
+	mailServer := strings.TrimSpace(os.Getenv("MAIL_SERVER"))
+	imapHost := envString("MAIL_IMAP_HOST")
+	smtpHost := envString("MAIL_SMTP_HOST")
+	if mailServer != "" {
+		if imapHost == "" {
+			imapHost = mailServer
+		}
+		if smtpHost == "" {
+			smtpHost = mailServer
 		}
 	}
-	if v := os.Getenv("DEFAULT_SMTP_HOST"); v != "" {
-		cfg.DefaultSMTPHost = v
-	}
-	if v := os.Getenv("DEFAULT_SMTP_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil && port > 0 {
-			cfg.DefaultSMTPPort = port
+	cfg.DefaultIMAPHost = imapHost
+	cfg.DefaultSMTPHost = smtpHost
+	cfg.DefaultIMAPPort = envPort("MAIL_IMAP_PORT", 993)
+	cfg.DefaultSMTPPort = envPort("MAIL_SMTP_PORT", 587)
+	cfg.DefaultAllowInsecureTLS = envBool("MAIL_ALLOW_INSECURE_TLS", false)
+	cfg.DefaultSieveHost = envString("MAIL_SIEVE_HOST")
+	cfg.DefaultSievePort = envPort("MAIL_SIEVE_PORT", 4190)
+	cfg.DefaultSieveUseTLS = envBool("MAIL_SIEVE_USE_TLS", true)
+	cfg.DefaultSieveAllowInsecureTLS = envBool("MAIL_SIEVE_ALLOW_INSECURE_TLS", false)
+
+	if v := strings.TrimSpace(os.Getenv("MAIL_MODE")); v != "" {
+		switch strings.ToLower(v) {
+		case "locked", "prefill":
+			cfg.MailMode = strings.ToLower(v)
+		default:
+			log.Printf("⚠️  Invalid MAIL_MODE=%q (want locked or prefill), using auto", v)
 		}
-	}
-	if v := os.Getenv("DEFAULT_ALLOW_INSECURE_TLS"); v != "" {
-		cfg.DefaultAllowInsecureTLS = parseBool(v)
-	}
-	if v := os.Getenv("DEFAULT_SIEVE_HOST"); v != "" {
-		cfg.DefaultSieveHost = v
-	}
-	if v := os.Getenv("DEFAULT_SIEVE_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil && port > 0 {
-			cfg.DefaultSievePort = port
-		}
-	}
-	if v := os.Getenv("DEFAULT_SIEVE_USE_TLS"); v != "" {
-		cfg.DefaultSieveUseTLS = parseBool(v)
-	}
-	if v := os.Getenv("DEFAULT_SIEVE_ALLOW_INSECURE_TLS"); v != "" {
-		cfg.DefaultSieveAllowInsecureTLS = parseBool(v)
 	}
 	if v := os.Getenv("SIEVE_DEBUG"); v != "" {
 		cfg.SieveDebug = parseBool(v)
@@ -149,11 +153,16 @@ func Load() *ServerConfig {
 	if v := os.Getenv("ALLOWED_HOSTS"); v != "" {
 		cfg.AllowedHosts = splitCSV(v)
 	}
-	if v := os.Getenv("ALLOW_PRIVATE_NETWORKS"); v != "" {
-		cfg.AllowPrivateNetworks = parseBool(v)
-	}
-	if v := os.Getenv("OUTBOUND_ALLOWED_HOSTS"); v != "" {
+	cfg.AllowPrivateNetworks = envBool("MAIL_ALLOW_PRIVATE_NETWORKS", false)
+	if v := envString("MAIL_OUTBOUND_ALLOWED_HOSTS"); v != "" {
 		cfg.OutboundAllowedHosts = splitCSV(v)
+	}
+	if v := envString("MAIL_ALLOWED_DOMAINS"); v != "" {
+		for _, domain := range splitCSV(v) {
+			if d := normalizeDomain(domain); d != "" {
+				cfg.LoginAllowedDomains = append(cfg.LoginAllowedDomains, d)
+			}
+		}
 	}
 
 	cfg.LDAP = loadLDAP()
@@ -255,7 +264,66 @@ func (c *ServerConfig) HasDefaults() bool {
 // HasFixedServers 回報登入 server 係咪由部署固定。只有 IMAP 同 SMTP host
 // 都已設定時才會鎖定；否則沿用「預填但可改」行為。
 func (c *ServerConfig) HasFixedServers() bool {
+	if c == nil || !c.HasBothMailHosts() {
+		return false
+	}
+	return strings.ToLower(strings.TrimSpace(c.MailMode)) != "prefill"
+}
+
+// HasBothMailHosts 回報 IMAP 同 SMTP host 是否都已設定。
+func (c *ServerConfig) HasBothMailHosts() bool {
 	return c != nil && c.DefaultIMAPHost != "" && c.DefaultSMTPHost != ""
+}
+
+// LoginDomainAllowed 回報 email 的 domain 是否在 MAIL_ALLOWED_DOMAINS 內。
+// 空 allow-list = 不限制；email 冇 @ 或 domain 空白 = 不允許（當 allow-list 非空）。
+func (c *ServerConfig) LoginDomainAllowed(email string) bool {
+	if c == nil || len(c.LoginAllowedDomains) == 0 {
+		return true
+	}
+	email = strings.TrimSpace(email)
+	at := strings.LastIndex(email, "@")
+	if at <= 0 || at == len(email)-1 {
+		return false
+	}
+	domain := normalizeDomain(email[at+1:])
+	for _, allowed := range c.LoginAllowedDomains {
+		if domain == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	domain = strings.TrimPrefix(domain, "@")
+	domain = strings.TrimSuffix(domain, ".")
+	return domain
+}
+
+func envString(key string) string {
+	return strings.TrimSpace(os.Getenv(key))
+}
+
+func envBool(key string, def bool) bool {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return parseBool(v)
+	}
+	return def
+}
+
+func envPort(key string, def int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	port, err := strconv.Atoi(raw)
+	if err != nil || port <= 0 {
+		log.Printf("⚠️  Invalid %s=%q, using %d", key, raw, def)
+		return def
+	}
+	return port
 }
 
 func parseBool(s string) bool {
