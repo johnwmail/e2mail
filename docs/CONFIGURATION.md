@@ -135,8 +135,9 @@ MAIL_ALLOWED_DOMAINS=example.com
 - Domains are case-insensitive; a leading `@` and a trailing `.` are ignored.
 - The check runs **before** IMAP authentication. A rejected address never
   reaches the mail server.
-- With exactly one allowed domain, typing only `bob` autofills
-  `bob@example.com`. With multiple domains, users must enter the full email.
+- With allowed domains, typing only `bob` autofills the domain matching
+  `MAIL_SERVER` (or the first allowed domain). Users can still type a full
+  address such as `bob@other.example` to override it.
 - With `MAIL_MODE=prefill`, no domain is auto-derived; set
   `MAIL_ALLOWED_DOMAINS` if you still want a restriction.
 

@@ -305,7 +305,7 @@ describe('LoginForm', () => {
     });
   });
 
-  it('requires a full email when multiple login domains are allowed', async () => {
+  it('autofills the preferred domain when multiple login domains are allowed', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -315,9 +315,9 @@ describe('LoginForm', () => {
             fixedServers: true,
             loginAllowedDomains: ['a.example', 'b.example'],
             defaults: {
-              imapHost: 'mail.example.com',
+              imapHost: 'mail.b.example',
               imapPort: 993,
-              smtpHost: 'smtp.example.com',
+              smtpHost: 'smtp.b.example',
               smtpPort: 587,
               allowInsecureTls: false,
             },
@@ -325,6 +325,7 @@ describe('LoginForm', () => {
         }),
       }),
     );
+    mocks.login.mockResolvedValue(null);
 
     render(<LoginForm />);
     await waitFor(() => {
@@ -332,11 +333,15 @@ describe('LoginForm', () => {
     });
 
     fireEvent.change(screen.getByPlaceholderText('user@example.com'), { target: { value: 'bob' } });
+    expect((await screen.findAllByText(/bob@b\.example/)).length).toBeGreaterThan(0);
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'secret' } });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    expect(await screen.findByText(/multiple email domains/)).toBeInTheDocument();
-    expect(mocks.login).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mocks.login).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'bob@b.example', imapHost: 'mail.b.example' }),
+      );
+    });
   });
 
   it('does not offer passkey login when the method is unavailable', async () => {

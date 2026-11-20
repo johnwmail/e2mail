@@ -61,7 +61,6 @@ export const en = {
     autofillHint: 'Will sign in as {email} (you can omit the @domain)',
     needEmailPassword: 'Please enter your email and password',
     needServer: 'Could not detect the mail server. Expand advanced settings and enter the hosts.',
-    needFullEmail: 'This server allows multiple email domains. Enter your full email address.',
     loginFailed: 'Sign-in failed. Check your password or expand advanced settings to confirm the hosts.',
     signIn: 'Sign in',
     signingIn: 'Signing in…',

@@ -133,13 +133,16 @@ export const LoginForm: React.FC = () => {
     setDetectedDomain(domain);
   };
 
-  // 若只有一個允許 domain，優先用它補完；多個 domain 時要求用戶輸入完整 email。
+  // 自動補完 domain：優先揀同 mail server host 最匹配的 allowed domain，
+  // 否則用第一個；多 domain 時用戶仍可打完整 user@otherdomain 覆寫。
+  const serverHost = (serverDefaults?.imapHost || imapHost || '').toLowerCase();
+  const preferredAllowedDomain = loginAllowedDomains.find(
+    (domain) => domain === serverHost || serverHost.endsWith(`.${domain}`),
+  );
   const autofillDomain =
-    loginAllowedDomains.length === 1
-      ? loginAllowedDomains[0]
-      : loginAllowedDomains.length === 0
-        ? imapHost || ''
-        : '';
+    loginAllowedDomains.length > 0
+      ? (preferredAllowedDomain ?? loginAllowedDomains[0])
+      : imapHost || '';
 
   // 當 email 只填 user part，且 domain 已確定 → 顯示補全後嘅完整地址
   const autofillHint = (() => {
@@ -179,9 +182,10 @@ export const LoginForm: React.FC = () => {
     const atIdx = email.lastIndexOf('@');
     let finalEmail = email.trim();
     if (atIdx <= 0) {
-      const domain = autofillDomain || (loginAllowedDomains.length === 0 ? finalImapHost : '');
+      const domain = autofillDomain || finalImapHost;
       if (!domain) {
-        setError(t('login.needFullEmail'));
+        setError(t('login.needServer'));
+        setShowAdvanced(true);
         return;
       }
       finalEmail = `${email.trim()}@${domain}`;

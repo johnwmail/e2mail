@@ -61,7 +61,6 @@ export const zhHant = {
     autofillHint: '將以 {email} 登入（可省略 @網域部分）',
     needEmailPassword: '請輸入電子郵件與密碼',
     needServer: '無法自動判斷郵件伺服器，請展開進階設定輸入主機位址',
-    needFullEmail: '此伺服器允許多個 email domain，請輸入完整 email 地址。',
     loginFailed: '登入失敗，請檢查密碼或展開進階設定確認伺服器主機',
     signIn: '登入信箱',
     signingIn: '正在登入...',
