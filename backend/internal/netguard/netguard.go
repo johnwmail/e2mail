@@ -38,22 +38,35 @@ var blockedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("ff00::/8"),
 }
 
-// Policy controls outbound destination checks. allowPrivate is only used by
-// tests that run fake mail servers on loopback; production always passes false.
+// Policy controls outbound destination checks. trustedHosts are
+// administrator-configured mail hosts (MAIL_SERVER / MAIL_IMAP_HOST /
+// MAIL_SMTP_HOST / MAIL_SIEVE_HOST); they may resolve to private addresses.
+// allowPrivate is only used by tests that run fake mail servers on loopback.
 type Policy struct {
 	allowPrivate bool
+	trustedHosts map[string]struct{}
 }
 
-// NewPolicy builds a policy. Private/loopback/link-local destinations are
-// rejected unless allowPrivate is true (tests only).
-func NewPolicy(allowPrivate bool) *Policy {
-	return &Policy{allowPrivate: allowPrivate}
+// NewPolicy builds a policy from trusted administrator-configured hosts.
+// Private/loopback/link-local destinations are rejected unless the host is
+// trusted or allowPrivate is true (tests only).
+func NewPolicy(allowPrivate bool, trustedHosts []string) *Policy {
+	p := &Policy{
+		allowPrivate: allowPrivate,
+		trustedHosts: make(map[string]struct{}, len(trustedHosts)),
+	}
+	for _, h := range trustedHosts {
+		if h = normalizeHost(h); h != "" {
+			p.trustedHosts[h] = struct{}{}
+		}
+	}
+	return p
 }
 
 var defaultPolicy atomic.Pointer[Policy]
 
 func init() {
-	defaultPolicy.Store(NewPolicy(false))
+	defaultPolicy.Store(NewPolicy(false, nil))
 }
 
 // Default returns the process-wide policy. main() configures it from env.
@@ -73,6 +86,9 @@ func (p *Policy) CheckHost(ctx context.Context, host string) error {
 	host = normalizeHost(host)
 	if host == "" {
 		return errors.New("outbound host is empty")
+	}
+	if _, ok := p.trustedHosts[host]; ok {
+		return nil
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		if p.isBlocked(ip) {
@@ -99,9 +115,13 @@ func (p *Policy) CheckHost(ctx context.Context, host string) error {
 // DialerFor returns a dialer for host. Non-allow-listed hosts get a Control
 // hook that re-checks the address actually being connected to, which closes
 // the DNS-rebinding window between CheckHost and the real dial.
-func (p *Policy) DialerFor() *net.Dialer {
+func (p *Policy) DialerFor(host string) *net.Dialer {
+	host = normalizeHost(host)
 	d := &net.Dialer{Timeout: dialTimeout}
 	if p.allowPrivate {
+		return d
+	}
+	if _, ok := p.trustedHosts[host]; ok {
 		return d
 	}
 	d.Control = p.control

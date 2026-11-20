@@ -9,7 +9,7 @@ import (
 )
 
 func TestIsBlocked(t *testing.T) {
-	p := NewPolicy(false)
+	p := NewPolicy(false, nil)
 	blocked := []string{
 		"0.0.0.0", "10.0.0.1", "100.64.0.1", "127.0.0.1", "169.254.169.254",
 		"172.16.0.1", "192.0.0.1", "192.168.1.1", "198.18.0.1", "224.0.0.1",
@@ -32,7 +32,7 @@ func TestIsBlocked(t *testing.T) {
 
 func TestCheckHostIP(t *testing.T) {
 	ctx := context.Background()
-	p := NewPolicy(false)
+	p := NewPolicy(false, nil)
 
 	if err := p.CheckHost(ctx, "127.0.0.1"); err == nil {
 		t.Fatal("CheckHost(127.0.0.1) should fail")
@@ -45,10 +45,15 @@ func TestCheckHostIP(t *testing.T) {
 	if err := p.CheckHost(ctx, ""); err == nil {
 		t.Fatal("CheckHost(empty) should fail")
 	}
+
+	trusted := NewPolicy(false, []string{"127.0.0.1"})
+	if err := trusted.CheckHost(ctx, "127.0.0.1"); err != nil {
+		t.Fatalf("trusted loopback host should pass: %v", err)
+	}
 }
 
 func TestControlRejectsPrivateAddress(t *testing.T) {
-	p := NewPolicy(false)
+	p := NewPolicy(false, nil)
 	if err := p.control("tcp", "127.0.0.1:993", nil); err == nil {
 		t.Fatal("control should reject loopback")
 	}
@@ -57,7 +62,7 @@ func TestControlRejectsPrivateAddress(t *testing.T) {
 	}
 }
 
-func TestDialerBlocksPrivateUnlessTestBypass(t *testing.T) {
+func TestDialerBlocksPrivateUnlessTrusted(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -73,15 +78,15 @@ func TestDialerBlocksPrivateUnlessTestBypass(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	blockedDialer := NewPolicy(false).DialerFor()
+	blockedDialer := NewPolicy(false, nil).DialerFor("127.0.0.1")
 	if _, err := blockedDialer.DialContext(ctx, "tcp", ln.Addr().String()); err == nil {
 		t.Fatal("private dial should be blocked")
 	}
 
-	allowedDialer := NewPolicy(true).DialerFor()
+	allowedDialer := NewPolicy(false, []string{"127.0.0.1"}).DialerFor("127.0.0.1")
 	conn, err := allowedDialer.DialContext(ctx, "tcp", ln.Addr().String())
 	if err != nil {
-		t.Fatalf("test-bypass dial failed: %v", err)
+		t.Fatalf("trusted dial failed: %v", err)
 	}
 	_ = conn.Close()
 }

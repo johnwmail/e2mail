@@ -10,8 +10,9 @@ e2Mail can run in two modes:
 All mail settings now use the `MAIL_*` names. The old `DEFAULT_*`,
 `LOGIN_ALLOWED_DOMAINS`, `OUTBOUND_ALLOWED_HOSTS` and
 `ALLOW_PRIVATE_NETWORKS` names were removed and are **not** read anymore.
-Private, loopback and LAN mail hosts are always blocked; there is no env
-override.
+User-supplied private/loopback/LAN hosts are blocked. Hosts configured by the
+administrator (`MAIL_SERVER` / `MAIL_IMAP_HOST` / `MAIL_SMTP_HOST` /
+`MAIL_SIEVE_HOST`) are trusted, even if they resolve to a private address.
 
 `MAIL_ALLOWED_DOMAINS` is optional: in locked mode it defaults to the
 `MAIL_SERVER` value, so the simplest deployment only needs `MAIL_SERVER`.
@@ -141,9 +142,18 @@ MAIL_ALLOWED_DOMAINS=example.com
 
 ## Private / LAN mail servers
 
-e2Mail always rejects outbound connections to private, loopback, CGNAT,
-link-local and cloud-metadata addresses. This cannot be disabled by env.
-Use a public hostname (or a public reverse proxy) for the mail server.
+e2Mail rejects private, loopback, CGNAT, link-local and cloud-metadata
+addresses for hosts that users can enter (login advanced fields, per-account
+settings). Administrator-configured hosts are trusted:
+
+```env
+MAIL_SERVER=wonghome.net          # trusted even if it resolves to 192.168.x.x
+MAIL_IMAP_HOST=mail.wonghome.net  # trusted
+MAIL_SMTP_HOST=mail.wonghome.net  # trusted
+```
+
+This allows a LAN mail server without any extra allow-list variable. Other
+private hosts remain blocked.
 
 ## Docker Compose example
 
@@ -192,8 +202,8 @@ Legacy names were removed. Translate them before upgrading:
 | `DEFAULT_ALLOW_INSECURE_TLS` | `MAIL_ALLOW_INSECURE_TLS` |
 | `DEFAULT_SIEVE_HOST` / `PORT` / `USE_TLS` / `ALLOW_INSECURE_TLS` | `MAIL_SIEVE_HOST` / `PORT` / `USE_TLS` / `ALLOW_INSECURE_TLS` |
 | `LOGIN_ALLOWED_DOMAINS` | `MAIL_ALLOWED_DOMAINS` |
-| `OUTBOUND_ALLOWED_HOSTS` | Removed — private/LAN hosts are not supported |
-| `ALLOW_PRIVATE_NETWORKS` | Removed — private/LAN hosts are not supported |
+| `OUTBOUND_ALLOWED_HOSTS` | Removed — configured `MAIL_*` hosts are trusted instead |
+| `ALLOW_PRIVATE_NETWORKS` | Removed — no global disable |
 
 If both old and new names are present, only the new names take effect.
 
@@ -202,7 +212,7 @@ If both old and new names are present, only the new names take effect.
 | Symptom | Likely cause |
 |---|---|
 | Login says “email domain is not allowed” | Address not in `MAIL_ALLOWED_DOMAINS` |
-| Login says “IMAP host rejected … private/loopback” | Server is on the LAN; use a public mail hostname |
+| Login says “IMAP host rejected … private/loopback” | Host was user-entered; put it in `MAIL_SERVER` / `MAIL_IMAP_HOST` / `MAIL_SMTP_HOST` or use a public hostname |
 | Login says “could not detect the mail server” | No fixed server and no advanced host entered |
 | Users cannot edit the server | `MAIL_MODE` is `locked`; use `prefill` |
 | Advanced settings are hidden unexpectedly | Both hosts are set, so auto-lock is active; set `MAIL_MODE=prefill` |
