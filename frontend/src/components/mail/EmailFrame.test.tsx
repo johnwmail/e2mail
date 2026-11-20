@@ -130,6 +130,41 @@ describe('EmailFrame', () => {
     expect(allowed).toContain("media-src 'self' data: blob: https:;");
   });
 
+  it('resolves relative and cid-by-filename inline images to attachment URLs', () => {
+    const attachments: AttachmentInfo[] = [
+      {
+        id: '2',
+        filename: 'logo-CN_03.gif',
+        contentType: 'image/gif',
+        size: 10,
+        contentId: 'logo',
+        isInline: true,
+      },
+      {
+        id: '3',
+        filename: 'blank.gif',
+        contentType: 'image/gif',
+        size: 1,
+        isInline: true,
+      },
+    ];
+    renderFrame({
+      attachments,
+      htmlBody:
+        '<img src="logo-CN_03.gif" alt="logo">' +
+        '<img src=blank.gif alt="blank">' +
+        '<img src="cid:blank.gif" alt="cidblank">' +
+        '<img src="missing.gif" alt="missing">',
+    });
+
+    const doc = getFrame().srcdoc;
+    expect(doc).toContain('id=2&amp;folder=INBOX');
+    // blank.gif (relative, unquoted) + cid:blank.gif both map to attachment 3
+    expect(doc.match(/id=3&amp;folder=INBOX/g)?.length).toBe(2);
+    expect(doc).not.toContain('missing.gif');
+    expect(doc).toContain('alt="logo"');
+  });
+
   it('auto-allows remote images for trusted senders', () => {
     renderFrame({
       htmlBody: '<img src="https://cdn.example/logo.png">',

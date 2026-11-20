@@ -385,12 +385,54 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       }
     });
 
-    // 隱藏無可救藥嘅破圖：Word 匯出嘅相對路徑佔位圖（Template_Bilingual...png）或其他相對路徑圖，
-    // 喺 sandbox iframe 內永遠解析失敗 → 顯示破圖。凡 src 唔係 http/https/data/cid/absolute 都好一一移除。
-    content = content.replace(
-      /<img[^>]*\ssrc=["'](?!https?:|data:|cid:|about:|blob:|\/)[^"']+["'][^>]*>/gi,
-      ''
-    );
+    // 部分 HTML mail（例如 SC eStatement）用相對路徑引用 inline 圖片：
+    //   <img src="blank.gif"> / <img src=logo-CN_03.gif>
+    // iframe 內相對路徑會解析成 app origin → 404 破圖。優先用附件
+    // filename / Content-ID 對應返後端附件 URL；對應唔到才移除。
+    const attachmentsByName = new Map<string, AttachmentInfo>();
+    for (const att of attachments) {
+      for (const key of [att.filename, att.contentId]) {
+        if (!key) continue;
+        const lower = key.toLowerCase();
+        attachmentsByName.set(lower, att);
+        const base = lower.split(/[\\/]/).pop();
+        if (base && base !== lower) attachmentsByName.set(base, att);
+      }
+    }
+    const safeInlineImage = /^image\/(?:png|jpe?g|gif|webp|bmp|avif|x-icon|vnd\.microsoft\.icon)$/i;
+    content = content.replace(/<img\b[^>]*>/gi, (tag) => {
+      const srcMatch = tag.match(/\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i);
+      if (!srcMatch) return tag;
+      const rawSrc = (srcMatch[1] ?? srcMatch[2] ?? srcMatch[3] ?? '').trim();
+      if (!rawSrc) return tag;
+
+      // 遠端、data、blob、absolute path 已由其他邏輯處理。
+      if (/^(?:https?:|data:|about:|blob:|\/|#)/i.test(rawSrc)) return tag;
+
+      let decoded = rawSrc;
+      try {
+        decoded = decodeURIComponent(rawSrc);
+      } catch {
+        // keep original
+      }
+      const base = (decoded.split(/[\\/]/).pop() ?? decoded).split(/[?#]/)[0];
+      const candidates = [decoded, base];
+      if (/^cid:/i.test(decoded)) {
+        const cidName = decoded.slice(4);
+        candidates.push(cidName, (cidName.split(/[\\/]/).pop() ?? cidName).split(/[?#]/)[0]);
+      }
+
+      let att: AttachmentInfo | undefined;
+      for (const key of candidates) {
+        att = attachmentsByName.get(key.toLowerCase());
+        if (att) break;
+      }
+      // 只對安全 raster image 做 inline；SVG/HTML/PDF 一律移除（後端亦強制 attachment）。
+      if (!att || !safeInlineImage.test(att.contentType)) return '';
+
+      const url = mailApi.getAttachmentUrl(uid, att.id, folder);
+      return tag.replace(srcMatch[0], ` src="${url}"`);
+    });
 
     // 偵測是否含有任何會自動載入的遠端資源（img / SVG / video / table background / inline CSS）
     const hasExternal = hasRemoteResources(content);

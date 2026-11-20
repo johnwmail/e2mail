@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -139,6 +140,13 @@ func ParseRFC822Message(raw []byte, uid uint32, flags []string) (*ParsedMessage,
 	}
 
 	handlePgpMime(msg, isPgpMime)
+
+	// Inline parts and regular attachments used separate counters, which could
+	// produce duplicate IDs (inline "1" + attachment "1"). Normalise IDs to the
+	// final order so attachment URLs and cid: mappings are unambiguous.
+	for i := range msg.Attachments {
+		msg.Attachments[i].ID = strconv.Itoa(i + 1)
+	}
 
 	return msg, nil
 }
