@@ -5,6 +5,53 @@ import (
 	"testing"
 )
 
+func TestParseRFC822AttachmentIDsAreUnique(t *testing.T) {
+	raw := strings.Join([]string{
+		"From: sender@example.com",
+		"To: rcpt@example.com",
+		"Subject: mixed",
+		"MIME-Version: 1.0",
+		`Content-Type: multipart/mixed; boundary="b"`,
+		"",
+		"--b",
+		"Content-Type: text/html; charset=utf-8",
+		"",
+		"<p>hi</p>",
+		"--b",
+		"Content-Type: image/gif",
+		"Content-ID: <img>",
+		"Content-Disposition: inline",
+		"Content-Transfer-Encoding: base64",
+		"",
+		"R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
+		"--b",
+		"Content-Type: application/pdf",
+		`Content-Disposition: attachment; filename="stmt.pdf"`,
+		"Content-Transfer-Encoding: base64",
+		"",
+		"JVBERi0=",
+		"--b--",
+		"",
+	}, "\r\n")
+
+	msg, err := ParseRFC822Message([]byte(raw), 2, nil)
+	if err != nil {
+		t.Fatalf("ParseRFC822Message: %v", err)
+	}
+	if len(msg.Attachments) != 2 {
+		t.Fatalf("attachments = %d, want 2", len(msg.Attachments))
+	}
+	if msg.Attachments[0].ID == msg.Attachments[1].ID {
+		t.Fatalf("duplicate attachment IDs: %q / %q", msg.Attachments[0].ID, msg.Attachments[1].ID)
+	}
+	if msg.Attachments[0].ID != "1" || msg.Attachments[1].ID != "2" {
+		t.Fatalf("IDs = %q, %q; want 1, 2", msg.Attachments[0].ID, msg.Attachments[1].ID)
+	}
+	if !msg.Attachments[0].IsInline || msg.Attachments[1].IsInline {
+		t.Errorf("inline flags = %v / %v", msg.Attachments[0].IsInline, msg.Attachments[1].IsInline)
+	}
+}
+
 func TestParseRFC822InlinePartsUseContentLocationAndDropEmptySpacers(t *testing.T) {
 	raw := strings.Join([]string{
 		"From: sender@example.com",
