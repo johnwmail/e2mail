@@ -10,6 +10,7 @@ export interface AttachmentInfo {
   size: number;
   contentId?: string;
   isInline: boolean;
+  inlineData?: string;
 }
 
 export interface MessageSummary {

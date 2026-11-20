@@ -188,6 +188,28 @@ describe('EmailFrame', () => {
     expect(doc).not.toContain('cid:');
   });
 
+  it('uses inlineData for cid images when present', () => {
+    const attachments: AttachmentInfo[] = [
+      {
+        id: '1',
+        filename: 'inline_1',
+        contentType: 'image/gif',
+        size: 1,
+        contentId: 'cc_hk_blank',
+        isInline: true,
+        inlineData: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',
+      },
+    ];
+    renderFrame({
+      attachments,
+      htmlBody: '<img src="cid:cc_hk_blank">',
+    });
+
+    expect(getFrame().srcdoc).toContain(
+      'src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="',
+    );
+  });
+
   it('auto-allows remote images for trusted senders', () => {
     renderFrame({
       htmlBody: '<img src="https://cdn.example/logo.png">',
