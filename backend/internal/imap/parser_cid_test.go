@@ -49,4 +49,7 @@ func TestParseRFC822CIDWithoutAngleBrackets(t *testing.T) {
 	if msg.Attachments[0].ContentID != "cc_hk_blank" || msg.Attachments[1].ContentID != "logo-CN_03" {
 		t.Fatalf("content IDs not parsed: %#v", msg.Attachments)
 	}
+	if !strings.HasPrefix(msg.Attachments[0].InlineData, "data:image/gif;base64,") {
+		t.Fatalf("inline data URL missing: %q", msg.Attachments[0].InlineData)
+	}
 }

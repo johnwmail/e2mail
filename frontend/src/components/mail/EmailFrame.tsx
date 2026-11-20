@@ -382,7 +382,8 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       const att =
         attachments.find((a) => a.contentId?.toLowerCase() === wanted) ??
         attachments.find((a) => a.filename?.toLowerCase() === wanted);
-      return att ? mailApi.getAttachmentUrl(uid, att.id, folder) : match;
+      if (!att) return match;
+      return att.inlineData || mailApi.getAttachmentUrl(uid, att.id, folder);
     });
 
     // 部分 HTML mail（例如 SC eStatement）用相對路徑引用 inline 圖片：
@@ -430,7 +431,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       // 只對安全 raster image 做 inline；SVG/HTML/PDF 一律移除（後端亦強制 attachment）。
       if (!att || !safeInlineImage.test(att.contentType)) return '';
 
-      const url = mailApi.getAttachmentUrl(uid, att.id, folder);
+      const url = att.inlineData || mailApi.getAttachmentUrl(uid, att.id, folder);
       return tag.replace(srcMatch[0], ` src="${url}"`);
     });
 

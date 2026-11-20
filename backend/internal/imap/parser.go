@@ -2,8 +2,10 @@ package imap
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"path"
 	"strconv"
 	"strings"
@@ -37,7 +39,23 @@ type AttachmentInfo struct {
 	Size        int64  `json:"size"`
 	ContentID   string `json:"contentId,omitempty"`
 	IsInline    bool   `json:"isInline"`
-	Data        []byte `json:"-"` // 下載時使用
+	// InlineData 係安全 raster image 的 data: URL，讓 iOS Safari 等瀏覽器
+	// 可以直接在 sandbox iframe 內顯示，唔需要再發 attachment request。
+	InlineData string `json:"inlineData,omitempty"`
+	Data       []byte `json:"-"` // 下載時使用
+}
+
+const maxInlineDataBytes = 512 * 1024
+
+var inlineDataMediaTypes = map[string]bool{
+	"image/png":                true,
+	"image/jpeg":               true,
+	"image/gif":                true,
+	"image/webp":               true,
+	"image/bmp":                true,
+	"image/avif":               true,
+	"image/x-icon":             true,
+	"image/vnd.microsoft.icon": true,
 }
 
 // ParsedMessage 完整郵件結構
@@ -145,7 +163,19 @@ func ParseRFC822Message(raw []byte, uid uint32, flags []string) (*ParsedMessage,
 	// produce duplicate IDs (inline "1" + attachment "1"). Normalise IDs to the
 	// final order so attachment URLs and cid: mappings are unambiguous.
 	for i := range msg.Attachments {
-		msg.Attachments[i].ID = strconv.Itoa(i + 1)
+		att := &msg.Attachments[i]
+		att.ID = strconv.Itoa(i + 1)
+		if !att.IsInline || len(att.Data) == 0 || len(att.Data) > maxInlineDataBytes {
+			continue
+		}
+		mediaType := strings.ToLower(strings.TrimSpace(att.ContentType))
+		if parsed, _, err := mime.ParseMediaType(mediaType); err == nil {
+			mediaType = strings.ToLower(parsed)
+		}
+		if !inlineDataMediaTypes[mediaType] {
+			continue
+		}
+		att.InlineData = "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(att.Data)
 	}
 
 	return msg, nil
