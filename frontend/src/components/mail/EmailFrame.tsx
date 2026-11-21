@@ -35,6 +35,16 @@ const hasRemoteResources = (html: string): boolean =>
   /<(?:img|image|video|audio|source|input|table|thead|tbody|tfoot|tr|td|th|body|svg)\b[^>]*(?:src|srcset|poster|background|href|xlink:href)\s*=\s*["']?\s*https?:/i.test(html) ||
   /style\s*=\s*["'][^"']*url\(\s*['"]?\s*https?:/i.test(html);
 
+// 只限安全 raster image；同後端 inline 白名單一致。
+const SAFE_INLINE_IMAGE = /^image\/(?:png|jpe?g|gif|webp|bmp|avif|x-icon|vnd\.microsoft\.icon)$/i;
+
+const escapeAttr = (value: string): string =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
 export const computeFitScale = (paneW: number, intrinsicW: number): number => {
   if (paneW <= 0 || intrinsicW <= 0) return 1;
   const s = paneW / intrinsicW;
@@ -289,6 +299,17 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
     }
   };
 
+  // Apple Mail（同部分手機客戶端）寄「只有相片」嘅郵件時，會用 multipart/mixed
+  // 包住一個空白 text/plain 同一個 Content-Disposition: inline 嘅圖片，但冇
+  // Content-ID、亦冇 HTML body。呢類圖片唔會喺 text body 出現，附件列又會過濾
+  // inline parts，結果成封郵件空白。冇 HTML body 時直接喺內文顯示呢啲圖片。
+  const orphanInlineImages = useMemo(() => {
+    if (htmlBody.trim()) return [];
+    return (attachments ?? []).filter(
+      (att) => att.isInline && SAFE_INLINE_IMAGE.test(att.contentType),
+    );
+  }, [htmlBody, attachments]);
+
   // 處理內嵌 CID 圖片與外部圖片攔截
   const processedHtml = useMemo(() => {
     // 若已解密，直接以解密後的純淨文字渲染，絕不顯示原始密文
@@ -361,18 +382,29 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
 
     let content = htmlBody;
 
-    // 若無 HTML 則將純文字轉為換行 HTML
-    if (!content && textBody) {
-      const escaped = textBody
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/\n/g, '<br/>');
-      return `<div style="font-family: sans-serif; white-space: pre-wrap; line-height: 1.6; color: #1e293b; padding: 16px; box-sizing: border-box; max-width: 100%; overflow-wrap: break-word; word-break: break-word;">${escaped}</div>`;
-    }
-
+    // 若無 HTML 則將純文字轉為換行 HTML；同時補上冇被任何地方引用嘅 inline 圖片
+    // （典型例子：iPhone 寄一張相，text/plain 空白、圖片冇 Content-ID）。
     if (!content) {
-      return `<div style="color: #64748b; font-style: italic;">${t('emailFrame.emptyBody')}</div>`;
+      const hasText = textBody.trim().length > 0;
+      const imagesHtml = orphanInlineImages
+        .map((att) => {
+          const src = att.inlineData || mailApi.getAttachmentUrl(uid, att.id, folder);
+          return `<img src="${escapeAttr(src)}" alt="${escapeAttr(att.filename || '')}" style="display:block;max-width:100%;height:auto;margin:12px 0;" />`;
+        })
+        .join('');
+
+      if (!hasText && !imagesHtml) {
+        return `<div style="color: #64748b; font-style: italic;">${t('emailFrame.emptyBody')}</div>`;
+      }
+
+      const escaped = hasText
+        ? textBody
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\n/g, '<br/>')
+        : '';
+      return `<div style="font-family: sans-serif; white-space: pre-wrap; line-height: 1.6; color: #1e293b; padding: 16px; box-sizing: border-box; max-width: 100%; overflow-wrap: break-word; word-break: break-word;">${escaped}${imagesHtml}</div>`;
     }
 
     // 替換 cid: 圖片為後端暫時下載 URL。
@@ -513,7 +545,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
     `;
 
     return wrapper;
-  }, [htmlBody, textBody, decryptedContent, attachments, uid, folder, allowRemoteImages]);
+  }, [htmlBody, textBody, decryptedContent, attachments, uid, folder, allowRemoteImages, orphanInlineImages, t]);
 
   // srcDoc 重組（換信 / 放行圖片 / 解密）→ 作廢舊量度，load 後重新計
   useEffect(() => {

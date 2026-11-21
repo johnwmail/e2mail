@@ -277,4 +277,49 @@ describe('EmailFrame', () => {
     expect(doc).not.toContain('relative/spacer');
     expect(doc).toContain('keep');
   });
+
+  it('renders orphan inline images when there is no HTML body (Apple Mail photo-only mail)', () => {
+    const attachments: AttachmentInfo[] = [
+      {
+        id: '1',
+        filename: 'photo.JPG',
+        contentType: 'image/jpeg',
+        size: 1000,
+        isInline: true,
+        inlineData: 'data:image/jpeg;base64,/9j/4AAQSkZJRg==',
+      },
+    ];
+    renderFrame({ htmlBody: '', textBody: '\r\n', attachments });
+
+    const doc = getFrame().srcdoc;
+    expect(doc).toContain('src="data:image/jpeg;base64,/9j/4AAQSkZJRg=="');
+    expect(doc).toContain('alt="photo.JPG"');
+  });
+
+  it('falls back to the attachment URL for large orphan inline images', () => {
+    const attachments: AttachmentInfo[] = [
+      { id: '2', filename: 'big.JPG', contentType: 'image/jpeg', size: 4096, isInline: true },
+    ];
+    renderFrame({ htmlBody: '', textBody: '', attachments });
+
+    const doc = getFrame().srcdoc;
+    expect(doc).toContain('id=2&amp;folder=INBOX');
+    expect(doc).toContain('alt="big.JPG"');
+  });
+
+  it('does not append orphan inline images when an HTML body exists', () => {
+    const attachments: AttachmentInfo[] = [
+      { id: '3', filename: 'unused.gif', contentType: 'image/gif', size: 1, isInline: true },
+    ];
+    renderFrame({ htmlBody: '<p>hi</p>', textBody: '', attachments });
+
+    const doc = getFrame().srcdoc;
+    expect(doc).toContain('hi');
+    expect(doc).not.toContain('id=3');
+  });
+
+  it('shows the empty-body notice only when there is neither text nor inline images', () => {
+    renderFrame({ htmlBody: '', textBody: '   \n' });
+    expect(getFrame().srcdoc).toContain('(This message has no body)');
+  });
 });
