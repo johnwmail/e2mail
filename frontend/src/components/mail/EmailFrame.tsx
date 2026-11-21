@@ -380,7 +380,7 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       `;
     }
 
-    let content = htmlBody;
+    let content = htmlBody.trim() ? htmlBody : '';
 
     // 若無 HTML 則將純文字轉為換行 HTML；同時補上冇被任何地方引用嘅 inline 圖片
     // （典型例子：iPhone 寄一張相，text/plain 空白、圖片冇 Content-ID）。

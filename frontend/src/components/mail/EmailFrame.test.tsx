@@ -318,6 +318,16 @@ describe('EmailFrame', () => {
     expect(doc).not.toContain('id=3');
   });
 
+  it('treats whitespace-only HTML as no HTML and still shows orphan inline images', () => {
+    const attachments: AttachmentInfo[] = [
+      { id: '4', filename: 'photo.JPG', contentType: 'image/jpeg', size: 10, isInline: true },
+    ];
+    renderFrame({ htmlBody: '\r\n  ', textBody: '', attachments });
+
+    const doc = getFrame().srcdoc;
+    expect(doc).toContain('id=4&amp;folder=INBOX');
+  });
+
   it('shows the empty-body notice only when there is neither text nor inline images', () => {
     renderFrame({ htmlBody: '', textBody: '   \n' });
     expect(getFrame().srcdoc).toContain('(This message has no body)');
