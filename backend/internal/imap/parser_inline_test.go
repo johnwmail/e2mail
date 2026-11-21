@@ -52,6 +52,60 @@ func TestParseRFC822AttachmentIDsAreUnique(t *testing.T) {
 	}
 }
 
+func TestParseRFC822AppleMailInlineImageWithoutContentID(t *testing.T) {
+	// iPhone Mail 寄「只有相片」嘅郵件：空白 text/plain + Content-Disposition: inline
+	// 圖片，冇 Content-ID、冇 HTML body。圖片必須保留，前端才可以在內文顯示。
+	raw := strings.Join([]string{
+		"From: sender@example.com",
+		"To: rcpt@example.com",
+		"Subject: photo",
+		"MIME-Version: 1.0",
+		`Content-Type: multipart/mixed; boundary="Apple-Mail-1"`,
+		"",
+		"--Apple-Mail-1",
+		"Content-Type: text/plain; charset=us-ascii",
+		"Content-Transfer-Encoding: 7bit",
+		"",
+		"",
+		"",
+		"--Apple-Mail-1",
+		"Content-Type: image/jpeg;",
+		"\tname=photo.JPG;",
+		"\tx-apple-part-url=48AC3048-44A7-454A-8A25-436535F53660",
+		"Content-Disposition: inline;",
+		"\tfilename=photo.JPG",
+		"Content-Transfer-Encoding: base64",
+		"",
+		"/9j/4AAQSkZJRg==",
+		"--Apple-Mail-1--",
+		"",
+	}, "\r\n")
+
+	msg, err := ParseRFC822Message([]byte(raw), 1, nil)
+	if err != nil {
+		t.Fatalf("ParseRFC822Message: %v", err)
+	}
+	if msg.HTMLBody != "" {
+		t.Errorf("htmlBody = %q, want empty", msg.HTMLBody)
+	}
+	if len(msg.Attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(msg.Attachments))
+	}
+	att := msg.Attachments[0]
+	if att.Filename != "photo.JPG" || att.ContentType != "image/jpeg" {
+		t.Errorf("filename/contentType = %q/%q", att.Filename, att.ContentType)
+	}
+	if att.ContentID != "" {
+		t.Errorf("contentId = %q, want empty (Apple Mail omits Content-ID)", att.ContentID)
+	}
+	if !att.IsInline || len(att.Data) == 0 {
+		t.Errorf("inline/data = %v/%d", att.IsInline, len(att.Data))
+	}
+	if !strings.HasPrefix(att.InlineData, "data:image/jpeg;base64,") {
+		t.Errorf("inlineData = %q, want jpeg data URL", att.InlineData)
+	}
+}
+
 func TestParseRFC822InlinePartsUseContentLocationAndDropEmptySpacers(t *testing.T) {
 	raw := strings.Join([]string{
 		"From: sender@example.com",
