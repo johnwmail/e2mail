@@ -5,7 +5,7 @@ go 1.26.9
 require (
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/descope/virtualwebauthn v1.0.5
-	github.com/emersion/go-imap/v2 v2.0.0-beta.8
+	github.com/emersion/go-imap/v2 v2.0.0-beta.9
 	github.com/emersion/go-message v0.18.2
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/go-chi/cors v1.2.2
