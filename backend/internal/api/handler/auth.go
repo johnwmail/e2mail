@@ -4,6 +4,7 @@ import (
 	"encoding/base32"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -168,6 +169,89 @@ func (h *AuthHandler) resetTOTPFailures(r *http.Request, email string) {
 	if email != "" {
 		h.pwLimiter.Reset(h.totpEmailKey(email))
 	}
+}
+
+// step-up（進階確認）限流：敏感操作要求重新輸入登入密碼，避免 session
+// 被騎劫後被任意改動保安設定。
+const (
+	stepUpMaxFailures   = 10
+	stepUpFailureWindow = 10 * time.Minute
+)
+
+func (h *AuthHandler) stepUpIPKey(r *http.Request) string {
+	return "stepup:ip:" + requestIP(r)
+}
+
+func (h *AuthHandler) stepUpEmailKey(email string) string {
+	return "stepup:email:" + normalizeEmail(email)
+}
+
+func (h *AuthHandler) stepUpBlocked(w http.ResponseWriter, r *http.Request, email string) bool {
+	if h.pwLimiter.Blocked(h.stepUpIPKey(r), stepUpMaxFailures, stepUpFailureWindow) ||
+		(email != "" && h.pwLimiter.Blocked(h.stepUpEmailKey(email), stepUpMaxFailures, stepUpFailureWindow)) {
+		response.Error(w, http.StatusTooManyRequests, "too many failed confirmation attempts, try again later")
+		return true
+	}
+	return false
+}
+
+func (h *AuthHandler) recordStepUpFailure(r *http.Request, email string) {
+	h.pwLimiter.RecordFailure(h.stepUpIPKey(r))
+	if email != "" {
+		h.pwLimiter.RecordFailure(h.stepUpEmailKey(email))
+	}
+}
+
+func (h *AuthHandler) resetStepUpFailures(r *http.Request, email string) {
+	h.pwLimiter.Reset(h.stepUpIPKey(r))
+	if email != "" {
+		h.pwLimiter.Reset(h.stepUpEmailKey(email))
+	}
+}
+
+// verifyMasterPassword 以 Argon2id 解開 wrapped DEK 驗證登入（master）密碼。
+// 與登入流程使用同一條路徑，因此密碼經 LDAP 更改並 re-wrap 後仍然有效。
+func (h *AuthHandler) verifyMasterPassword(email, password string) bool {
+	if password == "" {
+		return false
+	}
+	cred, err := h.storage.GetUserCredential(normalizeEmail(email))
+	if err != nil || cred == nil {
+		return false
+	}
+	_, err = crypto.Decrypt(crypto.DeriveMasterKey(password, cred.Salt), cred.WrappedDEK)
+	return err == nil
+}
+
+// checkStepUp 驗證已解析的登入密碼；失敗會計入限流並已寫入回應。
+func (h *AuthHandler) checkStepUp(w http.ResponseWriter, r *http.Request, email, password string) bool {
+	if h.stepUpBlocked(w, r, email) {
+		return false
+	}
+	if !h.verifyMasterPassword(email, password) {
+		h.recordStepUpFailure(r, email)
+		response.Unauthorized(w, "登入密碼不正確")
+		return false
+	}
+	h.resetStepUpFailures(r, email)
+	return true
+}
+
+// requireStepUpPassword 由 JSON body 讀取 {"password":"..."} 並驗證。
+// 空 body 或缺少 password 會回 400；密碼錯誤回 401；連續失敗回 429。
+func (h *AuthHandler) requireStepUpPassword(w http.ResponseWriter, r *http.Request, email string) bool {
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		respondBodyParseError(w, err, "invalid request body format")
+		return false
+	}
+	if body.Password == "" {
+		response.BadRequest(w, "password is required for this action")
+		return false
+	}
+	return h.checkStepUp(w, r, email, body.Password)
 }
 
 // LoginRequest 登入參數結構

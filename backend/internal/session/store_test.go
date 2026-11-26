@@ -106,6 +106,45 @@ func TestExpiredSession(t *testing.T) {
 	}
 }
 
+func TestAbsoluteSessionMaxAge(t *testing.T) {
+	ms, err := NewMemoryStoreWithMaxAge(time.Hour, 2*time.Hour, nil)
+	if err != nil {
+		t.Fatalf("NewMemoryStoreWithMaxAge: %v", err)
+	}
+	defer func() { _ = ms.Close() }()
+
+	sess, _ := ms.Create(&Session{Email: "a@b.c"}, []byte("pw"))
+
+	// idle 仍然新鮮，但創建時間已超過絕對壽命上限。
+	ms.mu.Lock()
+	sess.CreatedAt = time.Now().Add(-3 * time.Hour)
+	ms.mu.Unlock()
+
+	if _, err := ms.Get(sess.ID); err != ErrSessionExpired {
+		t.Fatalf("Get err = %v, want ErrSessionExpired", err)
+	}
+}
+
+func TestTouchRejectsSessionPastMaxAge(t *testing.T) {
+	ms, err := NewMemoryStoreWithMaxAge(time.Hour, 2*time.Hour, nil)
+	if err != nil {
+		t.Fatalf("NewMemoryStoreWithMaxAge: %v", err)
+	}
+	defer func() { _ = ms.Close() }()
+
+	sess, _ := ms.Create(&Session{Email: "a@b.c"}, []byte("pw"))
+	ms.mu.Lock()
+	sess.CreatedAt = time.Now().Add(-3 * time.Hour)
+	ms.mu.Unlock()
+
+	if err := ms.Touch(sess.ID); err != ErrSessionExpired {
+		t.Fatalf("Touch err = %v, want ErrSessionExpired", err)
+	}
+	if _, err := ms.Get(sess.ID); err != ErrSessionNotFound {
+		t.Fatalf("Get after expired Touch err = %v, want ErrSessionNotFound", err)
+	}
+}
+
 func TestDelete(t *testing.T) {
 	ms := newTestStore(t)
 	sess, _ := ms.Create(&Session{Email: "a@b.c"}, []byte("pw"))

@@ -18,6 +18,9 @@ const (
 	e2eRPOrigin = "https://example.com"
 	e2eRPName   = "e2Mail"
 	e2eEmail    = "passkey@example.com"
+	e2ePassword = "e2e-master-password"
+	// e2eStepUpBody 用於要求重新輸入登入密碼嘅端點（passkey 註冊／刪除）。
+	e2eStepUpBody = `{"password":"` + e2ePassword + `"}`
 )
 
 func e2eRP() virtualwebauthn.RelyingParty {
@@ -61,12 +64,13 @@ func decodeBegin(t *testing.T, w *httptest.ResponseRecorder) (string, string) {
 func TestWebAuthnE2ERegisterThenLogin(t *testing.T) {
 	h := newTestAuthHandlerWithWebAuthn(t)
 	ctx := sessionContext(e2eEmail)
+	seedMasterCredential(t, h, e2eEmail, e2ePassword)
 	rp := e2eRP()
 	authenticator := virtualwebauthn.NewAuthenticator()
 	cred := virtualwebauthn.NewCredential(virtualwebauthn.KeyTypeEC2)
 
 	// ---- 1. 註冊 ----
-	beginRec := doRaw(t, h.WebAuthnRegisterBegin, ctx, "/", "")
+	beginRec := doRaw(t, h.WebAuthnRegisterBegin, ctx, "/", e2eStepUpBody)
 	ceremonyID, optionsJSON := decodeBegin(t, beginRec)
 
 	attestationOpts, err := virtualwebauthn.ParseAttestationOptions(optionsJSON)
@@ -102,7 +106,7 @@ func TestWebAuthnE2ERegisterThenLogin(t *testing.T) {
 	pendingID := h.pendingLogin.Create(&auth.PendingLogin{
 		Email:      e2eEmail,
 		Username:   e2eEmail,
-		Password:   "master-password",
+		Password:   e2ePassword,
 		IMAPHost:   "127.0.0.1",
 		IMAPPort:   1,
 		IMAPUseTLS: true,
@@ -154,12 +158,13 @@ func TestWebAuthnE2ERegisterThenLogin(t *testing.T) {
 func TestWebAuthnE2EWrongChallenge(t *testing.T) {
 	h := newTestAuthHandlerWithWebAuthn(t)
 	ctx := sessionContext(e2eEmail)
+	seedMasterCredential(t, h, e2eEmail, e2ePassword)
 	rp := e2eRP()
 	authenticator := virtualwebauthn.NewAuthenticator()
 	cred := virtualwebauthn.NewCredential(virtualwebauthn.KeyTypeEC2)
 
 	// 註冊一個 credential
-	ceremonyID, optionsJSON := decodeBegin(t, doRaw(t, h.WebAuthnRegisterBegin, ctx, "/", ""))
+	ceremonyID, optionsJSON := decodeBegin(t, doRaw(t, h.WebAuthnRegisterBegin, ctx, "/", e2eStepUpBody))
 	attestationOpts, err := virtualwebauthn.ParseAttestationOptions(optionsJSON)
 	if err != nil {
 		t.Fatalf("ParseAttestationOptions: %v", err)

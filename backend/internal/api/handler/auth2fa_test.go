@@ -11,11 +11,38 @@ import (
 
 	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
 	"github.com/johnwmail/e2mail/backend/internal/auth"
+	"github.com/johnwmail/e2mail/backend/internal/crypto"
 	"github.com/johnwmail/e2mail/backend/internal/imap"
 	"github.com/johnwmail/e2mail/backend/internal/session"
 	"github.com/johnwmail/e2mail/backend/internal/storage"
 	"github.com/pquerna/otp/totp"
 )
+
+const testMasterPassword = "test-master-password"
+
+// seedMasterCredential 建立與正式登入流程相同嘅 wrapped DEK，用於 step-up 驗證。
+func seedMasterCredential(t *testing.T, h *AuthHandler, email, password string) {
+	t.Helper()
+	salt, err := crypto.GenerateSalt()
+	if err != nil {
+		t.Fatalf("GenerateSalt: %v", err)
+	}
+	dek, err := crypto.GenerateDEK()
+	if err != nil {
+		t.Fatalf("GenerateDEK: %v", err)
+	}
+	wrapped, err := crypto.Encrypt(crypto.DeriveMasterKey(password, salt), dek)
+	if err != nil {
+		t.Fatalf("Encrypt DEK: %v", err)
+	}
+	if err := h.storage.CreateUserCredential(&storage.UserCredential{
+		UserEmail:  email,
+		Salt:       salt,
+		WrappedDEK: wrapped,
+	}); err != nil {
+		t.Fatalf("CreateUserCredential: %v", err)
+	}
+}
 
 func newTestAuthHandler(t *testing.T) *AuthHandler {
 	t.Helper()
@@ -93,6 +120,7 @@ func twoFAEnableData(t *testing.T, data json.RawMessage) (bool, []string) {
 // enable2FA 完整走 setup -> enable 流程，回傳 secret
 func enable2FA(t *testing.T, h *AuthHandler, ctx context.Context) string {
 	t.Helper()
+	seedMasterCredential(t, h, "test@example.com", testMasterPassword)
 	w := call(t, h.TwoFASetup, ctx, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("TwoFASetup status = %d, body %s", w.Code, w.Body.String())
@@ -104,7 +132,7 @@ func enable2FA(t *testing.T, h *AuthHandler, ctx context.Context) string {
 	if err != nil {
 		t.Fatalf("GenerateCode: %v", err)
 	}
-	w = call(t, h.TwoFAEnable, ctx, TwoFAEnableRequest{Secret: setup.Secret, Code: code})
+	w = call(t, h.TwoFAEnable, ctx, TwoFAEnableRequest{Secret: setup.Secret, Code: code, Password: testMasterPassword})
 	if w.Code != http.StatusOK {
 		t.Fatalf("TwoFAEnable status = %d, body %s", w.Code, w.Body.String())
 	}
@@ -146,10 +174,27 @@ func TestTwoFASetupUnauthorized(t *testing.T) {
 func TestTwoFAEnableWrongCode(t *testing.T) {
 	h := newTestAuthHandler(t)
 	ctx := sessionContext("test@example.com")
+	seedMasterCredential(t, h, "test@example.com", testMasterPassword)
 
-	w := call(t, h.TwoFAEnable, ctx, TwoFAEnableRequest{Secret: "SOME-SECRET", Code: "000000"})
+	w := call(t, h.TwoFAEnable, ctx, TwoFAEnableRequest{Secret: "SOME-SECRET", Code: "000000", Password: testMasterPassword})
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", w.Code)
+	}
+}
+
+func TestTwoFAEnableRequiresPassword(t *testing.T) {
+	h := newTestAuthHandler(t)
+	ctx := sessionContext("test@example.com")
+	seedMasterCredential(t, h, "test@example.com", testMasterPassword)
+
+	w := call(t, h.TwoFAEnable, ctx, TwoFAEnableRequest{Secret: "SOME-SECRET", Code: "000000"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("missing password status = %d, want 400", w.Code)
+	}
+
+	w = call(t, h.TwoFAEnable, ctx, TwoFAEnableRequest{Secret: "SOME-SECRET", Code: "000000", Password: "wrong-password"})
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password status = %d, want 401", w.Code)
 	}
 }
 
@@ -185,7 +230,7 @@ func TestTwoFAFullFlow(t *testing.T) {
 
 	// 啟用後：enable 回傳 10 個備份碼、status enabled、再 setup 會被拒
 	code, _ := totp.GenerateCode(secret, time.Now())
-	w = call(t, h.TwoFAEnable, ctx, TwoFAEnableRequest{Secret: secret, Code: code})
+	w = call(t, h.TwoFAEnable, ctx, TwoFAEnableRequest{Secret: secret, Code: code, Password: testMasterPassword})
 	if w.Code != http.StatusOK {
 		t.Fatalf("re-enable status = %d, body %s", w.Code, w.Body.String())
 	}
@@ -238,6 +283,25 @@ func TestTwoFADisableNotEnabled(t *testing.T) {
 	w := call(t, h.TwoFADisable, ctx, TwoFAEnableRequest{Code: "123456"})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestTwoFADisableRateLimited(t *testing.T) {
+	h := newTestAuthHandler(t)
+	email := "test@example.com"
+	ctx := sessionContext(email)
+	secret := enable2FA(t, h, ctx)
+
+	for i := 0; i < totpMaxFailures; i++ {
+		w := call(t, h.TwoFADisable, ctx, TwoFAEnableRequest{Secret: secret, Code: "000000"})
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401", i+1, w.Code)
+		}
+	}
+
+	w := call(t, h.TwoFADisable, ctx, TwoFAEnableRequest{Secret: secret, Code: "000000"})
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("status after %d failures = %d, want 429", totpMaxFailures, w.Code)
 	}
 }
 

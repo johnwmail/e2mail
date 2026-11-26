@@ -206,8 +206,14 @@ describe('SecurityTab passkeys section', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add a passkey' }));
 
+    // 需要先輸入登入密碼（step-up）
+    fireEvent.change(await screen.findByLabelText('Login password'), {
+      target: { value: 'secret-pw' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
     await waitFor(() => {
-      expect(mocks.waRegisterBegin).toHaveBeenCalled();
+      expect(mocks.waRegisterBegin).toHaveBeenCalledWith('secret-pw');
       expect(mocks.startRegistration).toHaveBeenCalled();
       expect(mocks.waRegisterFinish).toHaveBeenCalledWith('cer-1', { id: 'newcred' }, undefined);
     });
@@ -247,14 +253,43 @@ describe('SecurityTab passkeys section', () => {
       await screen.findByText(/Remove the passkey “iPhone”\?/)
     ).toBeInTheDocument();
 
-    // 對話框嘅確認掣（DOM 最後一個 "Remove"）才真正刪除
+    // 輸入登入密碼，再撳對話框嘅確認掣（DOM 最後一個 "Remove"）
+    fireEvent.change(screen.getByLabelText('Login password'), {
+      target: { value: 'secret-pw' },
+    });
     const removeButtons = screen.getAllByRole('button', { name: 'Remove' });
     fireEvent.click(removeButtons[removeButtons.length - 1]);
 
     await waitFor(() => {
-      expect(mocks.waRemove).toHaveBeenCalledWith('c1');
+      expect(mocks.waRemove).toHaveBeenCalledWith('c1', 'secret-pw');
     });
     expect(await screen.findByText('Passkey removed.')).toBeInTheDocument();
+
+    delete (window as any).PublicKeyCredential;
+  });
+
+  it('keeps the dialog open when the step-up password is wrong', async () => {
+    (window as any).PublicKeyCredential = {};
+    mocks.getStatus.mockResolvedValue({ enabled: false, webauthnEnabled: true, passkeyCount: 1 });
+    mocks.waList.mockResolvedValue({
+      credentials: [
+        { id: 'c1', name: 'iPhone', createdAt: '2026-01-01T00:00:00Z', lastUsedAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mocks.waRemove.mockRejectedValue({ status: 401, message: 'unauthorized' });
+
+    render(<SecurityTab />);
+    await screen.findByText('iPhone');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    fireEvent.change(await screen.findByLabelText('Login password'), {
+      target: { value: 'wrong' },
+    });
+    const removeButtons = screen.getAllByRole('button', { name: 'Remove' });
+    fireEvent.click(removeButtons[removeButtons.length - 1]);
+
+    expect(await screen.findByText('Incorrect login password. Try again.')).toBeInTheDocument();
+    expect(screen.queryByText('Passkey removed.')).not.toBeInTheDocument();
 
     delete (window as any).PublicKeyCredential;
   });

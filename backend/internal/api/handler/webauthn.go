@@ -145,6 +145,10 @@ func (h *AuthHandler) WebAuthnRegisterBegin(w http.ResponseWriter, r *http.Reque
 		response.Forbidden(w, "passkey support is not enabled on this server")
 		return
 	}
+	// 新增 passkey 等同新增永久登入憑證：要求重新輸入登入密碼。
+	if !h.requireStepUpPassword(w, r, sess.Email) {
+		return
+	}
 
 	user, err := h.loadWebAuthnUser(normalizeEmail(sess.Email))
 	if err != nil {
@@ -277,6 +281,10 @@ func (h *AuthHandler) WebAuthnDelete(w http.ResponseWriter, r *http.Request) {
 	credID := chi.URLParam(r, "id")
 	if credID == "" {
 		response.BadRequest(w, "credential id is required")
+		return
+	}
+	// 刪除 passkey 會降低帳號保安：要求重新輸入登入密碼。
+	if !h.requireStepUpPassword(w, r, sess.Email) {
 		return
 	}
 	n, err := h.storage.DeleteWebAuthnCredential(normalizeEmail(sess.Email), credID)

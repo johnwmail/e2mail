@@ -27,6 +27,7 @@ services:
       - PORT=${PORT:-8080}
       - DATA_DIR=${DATA_DIR:-/data}
       - SESSION_TTL_HOURS=${SESSION_TTL_HOURS:-24}
+      - SESSION_MAX_AGE_HOURS=${SESSION_MAX_AGE_HOURS:-168}
       - SESSION_SECRET=${SESSION_SECRET:-}
       - COOKIE_SECURE=${COOKIE_SECURE:-true}
       # Host allow-list：只回應呢啲 domain（逗號分隔）；留空 = 不限制

@@ -24,7 +24,7 @@ import { authApi } from '../../api/auth';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { TwoFASetupResponse, WebAuthnCredential } from '../../types/api';
 import { useI18n } from '../../i18n';
-import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { StepUpDialog } from '../ui/StepUpDialog';
 
 interface SecurityTabProps {
   sessionEmail?: string;
@@ -237,7 +237,9 @@ const PasskeysSection: React.FC = () => {
   const [newName, setNewName] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [stepUp, setStepUp] = useState<{ action: 'add' | 'delete'; id?: string } | null>(null);
+  const [stepUpPassword, setStepUpPassword] = useState('');
+  const [stepUpError, setStepUpError] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -261,17 +263,37 @@ const PasskeysSection: React.FC = () => {
 
   if (!supported || !enabled) return null;
 
-  const handleAdd = async () => {
+  const openStepUp = (action: 'add' | 'delete', id?: string) => {
+    setStepUpPassword('');
+    setStepUpError('');
+    setStepUp({ action, id });
+  };
+
+  const closeStepUp = () => {
+    setStepUp(null);
+    setStepUpPassword('');
+    setStepUpError('');
+  };
+
+  const handleAdd = async (password: string) => {
     setBusy(true);
     setMsg(null);
+    setStepUpError('');
     try {
-      const begin = await webauthnApi.registerBegin();
+      // 先以登入密碼做 step-up；密碼正確才會出現系統 passkey 提示。
+      const begin = await webauthnApi.registerBegin(password);
+      closeStepUp();
       const credential = await startRegistration({ optionsJSON: begin.publicKey });
       await webauthnApi.registerFinish(begin.challenge, credential, newName.trim() || undefined);
       setNewName('');
       setMsg({ type: 'success', text: t('security.passkeyAdded') });
       await load();
     } catch (err: any) {
+      if (err?.status === 401 || err?.status === 429) {
+        setStepUpError(err?.status === 401 ? t('security.stepUpInvalid') : err?.message || t('security.stepUpInvalid'));
+        return;
+      }
+      closeStepUp();
       const cancelled = err?.name === 'NotAllowedError';
       setMsg({
         type: 'error',
@@ -300,16 +322,22 @@ const PasskeysSection: React.FC = () => {
     }
   };
 
-  // 真正執行刪除（經 ConfirmDialog 確認後才呼叫）
-  const doRemove = async (id: string) => {
+  // 真正執行刪除（經 step-up 密碼確認後才呼叫）
+  const doRemove = async (id: string, password: string) => {
     setBusy(true);
     setMsg(null);
+    setStepUpError('');
     try {
-      await webauthnApi.remove(id);
-      setDeleteId(null);
+      await webauthnApi.remove(id, password);
+      closeStepUp();
       setMsg({ type: 'success', text: t('security.passkeyDeleted') });
       await load();
     } catch (err: any) {
+      if (err?.status === 401 || err?.status === 429) {
+        setStepUpError(err?.status === 401 ? t('security.stepUpInvalid') : err?.message || t('security.stepUpInvalid'));
+        return;
+      }
+      closeStepUp();
       setMsg({ type: 'error', text: err?.message || t('security.passkeyDeleteFailed') });
     } finally {
       setBusy(false);
@@ -428,7 +456,7 @@ const PasskeysSection: React.FC = () => {
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => setDeleteId(c.id)}
+                          onClick={() => openStepUp('delete', c.id)}
                           className="flex items-center gap-1 px-2.5 py-1.5 min-h-9 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg text-[11px] font-semibold transition border border-red-200 dark:border-red-900/60 disabled:opacity-50"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -452,7 +480,7 @@ const PasskeysSection: React.FC = () => {
             />
             <button
               type="button"
-              onClick={handleAdd}
+              onClick={() => openStepUp('add')}
               disabled={busy}
               className="flex items-center justify-center gap-1.5 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50 shrink-0"
             >
@@ -463,19 +491,31 @@ const PasskeysSection: React.FC = () => {
         </>
       )}
 
-      <ConfirmDialog
-        isOpen={deleteId !== null}
-        title={t('security.passkeyDelete')}
-        message={t('security.passkeyDeleteConfirm', {
-          name: creds.find((c) => c.id === deleteId)?.name || t('security.passkeysTitle'),
-        })}
-        confirmText={t('security.passkeyDelete')}
-        danger
+      <StepUpDialog
+        isOpen={stepUp !== null}
+        title={stepUp?.action === 'delete' ? t('security.passkeyDelete') : t('security.addPasskey')}
+        message={
+          stepUp?.action === 'delete'
+            ? t('security.passkeyDeleteConfirm', {
+                name: creds.find((c) => c.id === stepUp.id)?.name || t('security.passkeysTitle'),
+              })
+            : t('security.passkeyAddConfirm')
+        }
+        confirmText={stepUp?.action === 'delete' ? t('security.passkeyDelete') : t('common.confirm')}
+        danger={stepUp?.action === 'delete'}
         loading={busy}
+        error={stepUpError}
+        password={stepUpPassword}
+        onPasswordChange={setStepUpPassword}
         onConfirm={() => {
-          if (deleteId) doRemove(deleteId);
+          if (!stepUp || !stepUpPassword) return;
+          if (stepUp.action === 'add') {
+            handleAdd(stepUpPassword);
+          } else if (stepUp.id) {
+            doRemove(stepUp.id, stepUpPassword);
+          }
         }}
-        onCancel={() => setDeleteId(null)}
+        onCancel={closeStepUp}
       />
     </div>
   );
@@ -490,6 +530,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
   // 啟用流程狀態
   const [setup, setSetup] = useState<TwoFASetupResponse | null>(null);
   const [verifyCode, setVerifyCode] = useState('');
+  const [enablePassword, setEnablePassword] = useState('');
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
   const [showSecret, setShowSecret] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -544,9 +585,11 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
     setLoading(true);
     setMsg(null);
     try {
-      const res = await twoFApi.enable(setup.secret, verifyCode.trim());
+      const res = await twoFApi.enable(setup.secret, verifyCode.trim(), enablePassword);
       setBackupCodes(res.backupCodes);
       setStatus(true);
+      setVerifyCode('');
+      setEnablePassword('');
       setMsg({ type: 'success', text: t('security.enabled') });
     } catch (err: any) {
       setMsg({ type: 'error', text: err.message || t('security.codeError') });
@@ -601,6 +644,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
   const cancelSetup = () => {
     setSetup(null);
     setVerifyCode('');
+    setEnablePassword('');
     setBackupCodes(null);
     setMsg(null);
   };
@@ -729,7 +773,18 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                   value={verifyCode}
                   onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="••••••"
+                  aria-label={t('security.enterCodeToEnable')}
                   className="flex-1 px-3 py-2 text-sm text-center tracking-[0.4em] font-mono bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={enablePassword}
+                  onChange={(e) => setEnablePassword(e.target.value)}
+                  placeholder={t('security.stepUpPassword')}
+                  aria-label={t('security.stepUpPassword')}
+                  className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
                   type="submit"
@@ -740,6 +795,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ sessionEmail }) => {
                   {t('security.enable')}
                 </button>
               </div>
+              <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">{t('security.stepUpHint')}</p>
             </form>
           </div>
         ) : (
