@@ -187,7 +187,12 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
       // 先喺 100% 欄寬渲染；若 .email-content (720 閱讀寬上限) 裝唔住內容（例如 eMPF
       // 呢類 794px 固定欄 + min-width 設計），解除上限 preserve 原設計，等 baseW 量到真正闊度
       const ec = doc.querySelector<HTMLElement>('.email-content');
-      if (ec) ec.style.maxWidth = ec.scrollWidth > ec.clientWidth + 8 ? 'none' : '';
+      // 單向切換（''→'none'，不會倒轉）：判斷條件本身受 max-width 影響，
+      // 解除上限後內容就「裝得落」，若再倒轉回 720，下一輪又超出 → 無限來回切換
+      // （寬 pane 下每 ~40ms 一次，內容橫向跳動 = 閃爍）。iframe 每封郵件重建，狀態自然重置。
+      if (ec && ec.style.maxWidth !== 'none' && ec.scrollWidth > ec.clientWidth + 8) {
+        ec.style.maxWidth = 'none';
+      }
       // pass 1：以欄寬渲染，量度內容溢出寬度（table/img 嘅自然溢出，唔好 clamp，
       // 否則固定欄位會被壓扁成窄欄，measure 唔到設計寬度）
       fr.style.width = '100%';
@@ -560,6 +565,10 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
   const isWideEmail = intrinsicW > 0 && paneW > 0 && intrinsicW > paneW + WIDTH_EPS;
   const fitScale = isWideEmail ? computeFitScale(paneW, intrinsicW) : 1;
   const frameH = Math.max(contentH, 320);
+  // wrapper 高度已跟內容算好，唔需要垂直捲動；而 overflow-x:auto 會令 overflow-y
+  // 一併變 auto，縮放後 1px 級捨入誤差就會彈出一對捲軸（桌面約 15px），
+  // 食咗闊度再令縮放比例改變。只有縮到下限仍然超闊先容許橫向捲動。
+  const needsHScroll = isWideEmail && intrinsicW * fitScale > paneW + 1;
 
   return (
     <div className="flex flex-col min-h-full w-full max-w-4xl mx-auto bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
@@ -626,10 +635,11 @@ export const EmailFrame: React.FC<EmailFrameProps> = ({
         ref={wrapRef}
         className="w-full"
         style={{
-          height: Math.ceil(frameH * fitScale),
+          height: Math.ceil(frameH * fitScale) + (needsHScroll ? 16 : 0),
           // 正常 fit 後內容剛好等於欄寬（冇 scrollbars）；
           // 得尺超過縮放下限嘅極闊郵件先會橫向可拖
-          overflowX: 'auto',
+          overflowX: needsHScroll ? 'auto' : 'hidden',
+          overflowY: 'hidden',
           WebkitOverflowScrolling: 'touch',
         }}
       >
