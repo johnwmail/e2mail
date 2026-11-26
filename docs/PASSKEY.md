@@ -279,6 +279,12 @@ Login (**public**, next to `router.go:46`):
   fallback.
 - CSRF posture is unchanged: `HttpOnly` session cookie + `SameSite=Lax`
   (`auth.go:76`), and WebAuthn binds the ceremony to the origin.
+- Passkey **management** endpoints (`register/begin`, `DELETE /2fa/webauthn/{id}`)
+  require a step-up confirmation: the body must carry
+  `{ "password": "<login password>" }`. The backend unwraps the DEK with
+  Argon2id (same path as login) and rate-limits failures via `pwLimiter`
+  (`stepup:ip:` / `stepup:email:`). This stops a hijacked session from quietly
+  adding a persistent passkey or removing the user's existing ones.
 
 ## Frontend design
 

@@ -20,6 +20,10 @@ var (
 	ErrSessionExpired  = errors.New("session expired")
 )
 
+// DefaultMaxAge 是會話的絕對壽命上限：即使持續活躍，超過此時間亦必須重新登入。
+// 防止被盜 token 長期續命；可用 NewMemoryStoreWithMaxAge 覆寫。
+const DefaultMaxAge = 7 * 24 * time.Hour
+
 // Session 儲存使用者於記憶體中的會話。密碼一律加密存 DB（見 storage.Account），
 // Session 只保留解鎖後嘅 DEK，用嚟解密每個帳號嘅 IMAP/SMTP 密碼。
 type Session struct {
@@ -47,12 +51,29 @@ type MemoryStore struct {
 	mu         sync.RWMutex
 	sessions   map[string]*Session
 	ttl        time.Duration
+	maxAge     time.Duration
 	cipherGCM  cipher.AEAD
 	stopTicker chan struct{}
 }
 
-// NewMemoryStore 初始化記憶體 Session Store，若 masterKey 為空則自動隨機產生 32 bytes Key
+// NewMemoryStore 初始化記憶體 Session Store，若 masterKey 為空則自動隨機產生 32 bytes Key。
+// 會話絕對壽命使用 DefaultMaxAge。
 func NewMemoryStore(ttl time.Duration, masterKey []byte) (*MemoryStore, error) {
+	return NewMemoryStoreWithMaxAge(ttl, DefaultMaxAge, masterKey)
+}
+
+// NewMemoryStoreWithMaxAge 與 NewMemoryStore 相同，但可自訂絕對壽命上限。
+// maxAge <= 0 時使用 DefaultMaxAge；maxAge 小於 idle TTL 時以 idle TTL 為準。
+func NewMemoryStoreWithMaxAge(ttl, maxAge time.Duration, masterKey []byte) (*MemoryStore, error) {
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	if maxAge <= 0 {
+		maxAge = DefaultMaxAge
+	}
+	if maxAge < ttl {
+		maxAge = ttl
+	}
 	if len(masterKey) == 0 {
 		masterKey = make([]byte, 32)
 		if _, err := io.ReadFull(rand.Reader, masterKey); err != nil {
@@ -75,12 +96,18 @@ func NewMemoryStore(ttl time.Duration, masterKey []byte) (*MemoryStore, error) {
 	ms := &MemoryStore{
 		sessions:   make(map[string]*Session),
 		ttl:        ttl,
+		maxAge:     maxAge,
 		cipherGCM:  gcm,
 		stopTicker: make(chan struct{}),
 	}
 
 	go ms.startCleaner(ttl / 2)
 	return ms, nil
+}
+
+// expired 判斷會話是否已超過 idle TTL 或絕對壽命上限。
+func (ms *MemoryStore) expired(sess *Session, now time.Time) bool {
+	return now.Sub(sess.LastActiveAt) > ms.ttl || now.Sub(sess.CreatedAt) > ms.maxAge
 }
 
 // encrypt 使用 AES-256-GCM 加密敏感資料（用 server key）
@@ -138,15 +165,17 @@ func (ms *MemoryStore) Create(sess *Session, dek []byte) (*Session, error) {
 
 // Get 取得 Session 並驗證是否過期
 func (ms *MemoryStore) Get(id string) (*Session, error) {
+	now := time.Now()
 	ms.mu.RLock()
 	sess, exists := ms.sessions[id]
+	expired := exists && ms.expired(sess, now)
 	ms.mu.RUnlock()
 
 	if !exists {
 		return nil, ErrSessionNotFound
 	}
 
-	if time.Since(sess.LastActiveAt) > ms.ttl {
+	if expired {
 		_ = ms.Delete(id)
 		return nil, ErrSessionExpired
 	}
@@ -168,7 +197,12 @@ func (ms *MemoryStore) Touch(id string) error {
 	if !exists {
 		return ErrSessionNotFound
 	}
-	sess.LastActiveAt = time.Now()
+	now := time.Now()
+	if ms.expired(sess, now) {
+		delete(ms.sessions, id)
+		return ErrSessionExpired
+	}
+	sess.LastActiveAt = now
 	return nil
 }
 
@@ -194,7 +228,7 @@ func (ms *MemoryStore) startCleaner(interval time.Duration) {
 			ms.mu.Lock()
 			now := time.Now()
 			for id, sess := range ms.sessions {
-				if now.Sub(sess.LastActiveAt) > ms.ttl {
+				if ms.expired(sess, now) {
 					delete(ms.sessions, id)
 				}
 			}

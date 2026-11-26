@@ -147,6 +147,7 @@ table from the removed `DEFAULT_*` names.
 | `PORT`                    | `8080`  | Backend HTTP listen port                                |
 | `DATA_DIR`                | `/data` | SQLite + keyring directory (must be on a persistent volume) |
 | `SESSION_TTL_HOURS`       | `24`    | Idle session expiry (hours, cookie `Expires`/`MaxAge` 同步) |
+| `SESSION_MAX_AGE_HOURS`   | `168`   | Absolute session lifetime (hours); re-login required even if active |
 | `SESSION_SECRET`          | (random)| 32-byte AES-GCM key for encrypting the per-session DEK at rest (raw 32 chars / base64 44 chars / hex 64 chars) |
 | `COOKIE_SECURE`           | `true`  | Set `Secure` flag on `e2Mail_session` cookie (set `false` for plain HTTP dev) |
 | `HTTP_ALLOWED_HOSTS`           | —       | Comma-separated hostnames the server answers to (e.g. `mail.example.com`); other `Host` values get `421`. Empty = no restriction. The reverse proxy must preserve the original `Host` |

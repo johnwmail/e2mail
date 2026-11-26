@@ -45,7 +45,8 @@ func TestWebAuthnRegisterBeginDisabled(t *testing.T) {
 
 func TestWebAuthnRegisterBegin(t *testing.T) {
 	h := newTestAuthHandlerWithWebAuthn(t)
-	w := call(t, h.WebAuthnRegisterBegin, sessionContext("a@b.c"), nil)
+	seedMasterCredential(t, h, "a@b.c", testMasterPassword)
+	w := call(t, h.WebAuthnRegisterBegin, sessionContext("a@b.c"), map[string]string{"password": testMasterPassword})
 	success, data := decodeStandard(t, w)
 	if !success {
 		t.Fatalf("begin registration failed: %s", w.Body.String())
@@ -62,6 +63,25 @@ func TestWebAuthnRegisterBegin(t *testing.T) {
 	}
 	if !bytes.Contains(resp.PublicKey, []byte(`"challenge"`)) {
 		t.Fatalf("publicKey missing challenge: %s", resp.PublicKey)
+	}
+}
+
+func TestWebAuthnRegisterBeginRequiresPassword(t *testing.T) {
+	h := newTestAuthHandlerWithWebAuthn(t)
+	seedMasterCredential(t, h, "a@b.c", testMasterPassword)
+	ctx := sessionContext("a@b.c")
+
+	if w := call(t, h.WebAuthnRegisterBegin, ctx, nil); w.Code != http.StatusBadRequest {
+		t.Fatalf("missing password status = %d, want 400", w.Code)
+	}
+	if w := call(t, h.WebAuthnRegisterBegin, ctx, map[string]string{"password": "wrong"}); w.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password status = %d, want 401", w.Code)
+	}
+
+	// 未建立 credential（無 wrapped DEK）嘅用戶唔可以新增 passkey
+	h2 := newTestAuthHandlerWithWebAuthn(t)
+	if w := call(t, h2.WebAuthnRegisterBegin, sessionContext("x@b.c"), map[string]string{"password": testMasterPassword}); w.Code != http.StatusUnauthorized {
+		t.Fatalf("unknown credential status = %d, want 401", w.Code)
 	}
 }
 
@@ -102,6 +122,7 @@ func TestWebAuthnList(t *testing.T) {
 
 func TestWebAuthnRenameAndDelete(t *testing.T) {
 	h := newTestAuthHandlerWithWebAuthn(t)
+	seedMasterCredential(t, h, "a@b.c", testMasterPassword)
 	if err := h.storage.CreateWebAuthnCredential(&storage.WebAuthnCredential{
 		OwnerEmail:     "a@b.c",
 		CredentialID:   "AQID",
@@ -142,8 +163,17 @@ func TestWebAuthnRenameAndDelete(t *testing.T) {
 		t.Fatalf("rename unknown status = %d, want 404", rec.Code)
 	}
 
-	// delete
-	if rec := do(http.MethodDelete, "/2fa/webauthn/AQID", nil); rec.Code != http.StatusOK {
+	// delete 需要 step-up 密碼
+	if rec := do(http.MethodDelete, "/2fa/webauthn/AQID", nil); rec.Code != http.StatusBadRequest {
+		t.Fatalf("delete without password status = %d, want 400", rec.Code)
+	}
+	if rec := do(http.MethodDelete, "/2fa/webauthn/AQID", map[string]string{"password": "wrong"}); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("delete with wrong password status = %d, want 401", rec.Code)
+	}
+	if got, _ := h.storage.GetWebAuthnCredential("a@b.c", "AQID"); got == nil {
+		t.Fatal("credential removed despite failed step-up")
+	}
+	if rec := do(http.MethodDelete, "/2fa/webauthn/AQID", map[string]string{"password": testMasterPassword}); rec.Code != http.StatusOK {
 		t.Fatalf("delete status = %d (%s)", rec.Code, rec.Body.String())
 	}
 	if got, _ := h.storage.GetWebAuthnCredential("a@b.c", "AQID"); got != nil {

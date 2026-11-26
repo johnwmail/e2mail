@@ -21,10 +21,10 @@ export const twoFApi = {
     });
   },
 
-  enable: async (secret: string, code: string): Promise<TwoFAEnableResponse> => {
+  enable: async (secret: string, code: string, password: string): Promise<TwoFAEnableResponse> => {
     return request<TwoFAEnableResponse>('/2fa/enable', {
       method: 'POST',
-      body: JSON.stringify({ secret, code }),
+      body: JSON.stringify({ secret, code, password }),
     });
   },
 
@@ -50,9 +50,12 @@ export const webauthnApi = {
     return request<WebAuthnCredentialListResponse>('/2fa/webauthn');
   },
 
-  /** 開始註冊：回傳 creation options 同 ceremony challenge id */
-  registerBegin: async (): Promise<WebAuthnBeginResponse> => {
-    return request<WebAuthnBeginResponse>('/2fa/webauthn/register/begin', { method: 'POST' });
+  /** 開始註冊：先以登入密碼做 step-up，回傳 creation options 同 ceremony challenge id */
+  registerBegin: async (password: string): Promise<WebAuthnBeginResponse> => {
+    return request<WebAuthnBeginResponse>('/2fa/webauthn/register/begin', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
   },
 
   /** 完成註冊：body 為 RegistrationResponseJSON（raw） */
@@ -76,8 +79,12 @@ export const webauthnApi = {
     });
   },
 
-  remove: async (id: string): Promise<void> => {
-    return request<void>(`/2fa/webauthn/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  /** 移除 passkey（需要登入密碼確認） */
+  remove: async (id: string, password: string): Promise<void> => {
+    return request<void>(`/2fa/webauthn/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ password }),
+    });
   },
 
   /** 登入第二階段：以 pending login challenge 換取 assertion options */

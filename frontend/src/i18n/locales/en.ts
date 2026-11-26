@@ -409,6 +409,11 @@ export const en = {
     passkeyDelete: 'Remove',
     passkeyDeleteConfirm:
       'Remove the passkey “{name}”? You will no longer be able to sign in with it on that device.',
+    passkeyAddConfirm:
+      'A passkey lets this device sign in as a second factor. Confirm with your login password.',
+    stepUpPassword: 'Login password',
+    stepUpHint: 'Re-entering your login password prevents a hijacked session from changing security settings.',
+    stepUpInvalid: 'Incorrect login password. Try again.',
     passkeyUnsupported: 'This browser does not support passkeys.',
     passkeyServerDisabled: 'Passkey support is not enabled on this server.',
     passkeyNotAllowed: 'The passkey prompt was cancelled or not allowed.',

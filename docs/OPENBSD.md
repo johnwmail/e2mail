@@ -142,6 +142,7 @@ rc_start() {
 		PORT=8080 \
 		DATA_DIR=/var/e2mail \
 		SESSION_TTL_HOURS=24 \
+		SESSION_MAX_AGE_HOURS=168 \
 		SESSION_SECRET=REPLACE_ME \
 		COOKIE_SECURE=true \
 		HTTP_ALLOWED_HOSTS=mail.example.com \
@@ -163,6 +164,9 @@ rc_cmd $1
   by relayd. The `http protocol` below leaves the incoming `Host` header intact,
   so relayd forwards it to e2Mail by default; do not add a rule that rewrites or
   removes `Host`.
+- `SESSION_TTL_HOURS` is the idle timeout; `SESSION_MAX_AGE_HOURS` (default
+  `168` = 7 days) is the absolute lifetime — even an active session must sign in
+  again after it expires.
 - Add `WEBAUTHN_*`, `LDAP_*`, … as extra `NAME=value \` lines.
 - This file holds `SESSION_SECRET`, so keep it `root:wheel` `chmod 600`.
 

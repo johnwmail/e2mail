@@ -38,6 +38,7 @@ export const OnboardingWizard: React.FC<{
   const [otpauthUrl, setOtpauthUrl] = useState('');
   const [issuer, setIssuer] = useState('');
   const [code, setCode] = useState('');
+  const [masterPassword, setMasterPassword] = useState('');
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [qrDataUrl, setQrDataUrl] = useState('');
 
@@ -99,8 +100,9 @@ export const OnboardingWizard: React.FC<{
     setLoading(true);
     setMsg(null);
     try {
-      const res = await twoFApi.enable(secret, code);
+      const res = await twoFApi.enable(secret, code, masterPassword);
       setBackupCodes(res.backupCodes);
+      setMasterPassword('');
       setStep(requirePGP ? 'pgp' : 'done');
       setMsg(null);
     } catch (e: any) {
@@ -230,6 +232,19 @@ export const OnboardingWizard: React.FC<{
                   placeholder="••••••"
                   className="w-full px-3.5 py-3 text-sm text-center tracking-[0.5em] font-mono bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-sky-400"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('security.stepUpPassword')}</label>
+                <input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={masterPassword}
+                  onChange={(e) => setMasterPassword(e.target.value)}
+                  className="w-full px-3.5 py-3 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-sky-400"
+                />
+                <p className="mt-1.5 text-[11px] text-slate-500 leading-relaxed">{t('security.stepUpHint')}</p>
               </div>
 
               {msg && (

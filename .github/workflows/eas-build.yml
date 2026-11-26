@@ -32,15 +32,15 @@ jobs:
     name: EAS ${{ github.event.inputs.profile }} ${{ github.event.inputs.platform }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Install workspaces
         run: npm ci
-      - uses: expo/expo-github-action@v9
+      - uses: expo/expo-github-action@5273c2136bd09c2a341fe3340d3e767ce5a13015 # v9
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}

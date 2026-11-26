@@ -41,6 +41,8 @@ type TwoFASetupResponse struct {
 type TwoFAEnableRequest struct {
 	Secret string `json:"secret"`
 	Code   string `json:"code"`
+	// Password 是登入（master）密碼，用於啟用 2FA 前的 step-up 確認。
+	Password string `json:"password,omitempty"`
 }
 
 // TwoFARegenerateRequest 重新生成備份碼請求
@@ -146,8 +148,13 @@ func (h *AuthHandler) TwoFAEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Secret == "" || req.Code == "" {
-		response.BadRequest(w, "secret and code are required")
+	if req.Secret == "" || req.Code == "" || req.Password == "" {
+		response.BadRequest(w, "secret, code, and password are required")
+		return
+	}
+
+	// 啟用 2FA 會改變日後登入方式：要求重新輸入登入密碼。
+	if !h.checkStepUp(w, r, sess.Email, req.Password) {
 		return
 	}
 
@@ -222,10 +229,16 @@ func (h *AuthHandler) TwoFADisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 停用 2FA 前需要有效驗證碼；限制失敗次數，避免 6 位碼被慢慢撞破。
+	if h.totpBlocked(w, r, email) {
+		return
+	}
 	if !auth.ValidateCode(decryptTwoFASecret(r, twoFA), req.Code) {
+		h.recordTOTPFailure(r, email)
 		response.Unauthorized(w, "驗證碼錯誤，請重試")
 		return
 	}
+	h.resetTOTPFailures(r, email)
 
 	if err := h.storage.DeleteTwoFA(email); err != nil {
 		log.Printf("[2FA ERROR] failed to disable 2FA for %s: %v", sess.Email, err)
@@ -262,10 +275,16 @@ func (h *AuthHandler) TwoFARegenerateBackupCodes(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// 重新生成備份碼同樣限流（每次重新生成需要目前 TOTP 碼）。
+	if h.totpBlocked(w, r, email) {
+		return
+	}
 	if !auth.ValidateCode(decryptTwoFASecret(r, twoFA), req.Code) {
+		h.recordTOTPFailure(r, email)
 		response.Unauthorized(w, "驗證碼錯誤，請重試")
 		return
 	}
+	h.resetTOTPFailures(r, email)
 
 	plainCodes, hashedCodes := auth.GenerateBackupCodes()
 	twoFA.BackupHashes = hashedCodes

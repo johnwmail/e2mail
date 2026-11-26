@@ -82,6 +82,15 @@ func main() {
 			log.Printf("⚠️  Invalid SESSION_TTL_HOURS=%q, using default 24h", v)
 		}
 	}
+	// 絕對壽命：即使持續活躍，超過此時間亦要重新登入（預設 7 日）。
+	sessionMaxAge := 7 * 24 * time.Hour
+	if v := strings.TrimSpace(os.Getenv("SESSION_MAX_AGE_HOURS")); v != "" {
+		if hours, err := strconv.Atoi(v); err == nil && hours > 0 {
+			sessionMaxAge = time.Duration(hours) * time.Hour
+		} else {
+			log.Printf("⚠️  Invalid SESSION_MAX_AGE_HOURS=%q, using default 168h", v)
+		}
+	}
 	// Session 記憶體加密 key：若 SESSION_SECRET 有設則用佢（多實例部署固定 key），
 	// 否則永遠隨機生成（每-boot），確保 RAM 內敏感資料唔會被跨 restart 解密。
 	var keyBytes []byte
@@ -95,9 +104,9 @@ func main() {
 	}
 
 	printDefinedEnv()
-	log.Printf("⏰ Session TTL: %s", sessionTTL)
+	log.Printf("⏰ Session TTL: %s (absolute max age: %s)", sessionTTL, sessionMaxAge)
 
-	sessionStore, err := session.NewMemoryStore(sessionTTL, keyBytes)
+	sessionStore, err := session.NewMemoryStoreWithMaxAge(sessionTTL, sessionMaxAge, keyBytes)
 	if err != nil {
 		log.Fatalf("Failed to initialize session store: %v", err)
 	}
