@@ -21,7 +21,10 @@ RUN npm run build
 # ============================================================
 # Stage 2: 編譯 backend（將 frontend dist embed 入 binary）
 # ============================================================
-FROM golang:1.27-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS backend-builder
+# Keep this aligned with the `go` directive in backend/go.mod: the release
+# workflow builds binaries with exactly that toolchain (`go-version-file`), so a
+# newer image here would ship container binaries built by a different Go.
+FROM golang:1.26-alpine@sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab AS backend-builder
 
 ARG VERSION=vdev
 ARG BUILD_TIME=timeless

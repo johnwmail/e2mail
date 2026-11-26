@@ -43,6 +43,13 @@ updates:
     open-pull-requests-limit: 5
     cooldown:
       default-days: 5
+    ignore:
+      # The Go toolchain is pinned by `backend/go.mod` (release.yml builds with
+      # `go-version-file`). Bumping the image ahead of it would compile the
+      # container with a different Go than the release binaries. Remove this
+      # line together with a `go` directive bump.
+      - dependency-name: "golang"
+        versions: [">= 1.27"]
 
   # Enable version updates for GitHub Actions workflows
   - package-ecosystem: "github-actions"
