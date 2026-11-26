@@ -32,6 +32,9 @@ type ServerConfig struct {
 	// AllowedHosts 只回應呢啲 Host（忽略大小寫同 port）；空 = 不限制。
 	// 由 HTTP_ALLOWED_HOSTS 環境變數載入（逗號分隔）。
 	AllowedHosts []string
+	// TrustedProxyCIDRs 可信反向代理 IP／CIDR（逗號分隔，由 TRUSTED_PROXY_CIDRS 載入）。
+	// 只有 socket peer 屬於呢啲網段（或 loopback）時，才採信 X-Forwarded-For。
+	TrustedProxyCIDRs []string
 	// LoginAllowedDomains 只允許呢啲 email domain 登入（逗號分隔；空 = 不限制）。
 	// 主要配合固定 server 使用，避免用戶用其他 domain 的 email 登入同一部 IMAP。
 	LoginAllowedDomains []string
@@ -149,6 +152,9 @@ func Load() *ServerConfig {
 	}
 	if v := os.Getenv("HTTP_ALLOWED_HOSTS"); v != "" {
 		cfg.AllowedHosts = splitCSV(v)
+	}
+	if v := os.Getenv("TRUSTED_PROXY_CIDRS"); v != "" {
+		cfg.TrustedProxyCIDRs = splitCSV(v)
 	}
 	if v := envString("MAIL_ALLOWED_DOMAINS"); v != "" {
 		for _, domain := range splitCSV(v) {

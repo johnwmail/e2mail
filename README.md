@@ -26,7 +26,7 @@ and the API from a single Go binary in one container.
   per-user JSON keyring files are auto-migrated on first boot.
 - **Container env defaults** — IMAP/SMTP host & port can be pre-configured by
   the admin so users don't have to fill the advanced settings.
-- **Secure by default** — `allowInsecureTls` is off unless explicitly enabled.
+- **Secure by default** — `allowInsecureTls` is off unless explicitly enabled by the server admin (`MAIL_ALLOW_INSECURE_TLS`); clients cannot enable it.
 
 ## Web UI
 

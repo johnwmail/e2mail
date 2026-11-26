@@ -27,6 +27,15 @@ type AccountsHandler struct {
 }
 
 // NewAccountsHandler 初始化 AccountsHandler
+// tlsPolicy 回傳伺服器允許嘅「自簽／未驗證 TLS」策略（IMAP/SMTP 一組，Sieve 一組）。
+// 帳號表單由客戶端傳入嘅旗標一律忽略，只跟隨伺服器設定。
+func (h *AccountsHandler) tlsPolicy() (imapSMTP bool, sieve bool) {
+	if h.cfg == nil {
+		return false, false
+	}
+	return h.cfg.DefaultAllowInsecureTLS, h.cfg.DefaultSieveAllowInsecureTLS
+}
+
 func NewAccountsHandler(store session.Store, storageStore storage.Store, poolMgr *imapinternal.PoolManager, idleMgr *imapinternal.IdleManager, cfg *config.ServerConfig) *AccountsHandler {
 	return &AccountsHandler{
 		store:   store,
@@ -287,6 +296,7 @@ func (h *AccountsHandler) CreateAccount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	allowInsecure, allowSieveInsecure := h.tlsPolicy()
 	acc := &storage.Account{
 		UserEmail:             authCtx.Session.Email,
 		Label:                 req.Label,
@@ -294,15 +304,15 @@ func (h *AccountsHandler) CreateAccount(w http.ResponseWriter, r *http.Request) 
 		IMAPHost:              req.IMAPHost,
 		IMAPPort:              req.IMAPPort,
 		IMAPUseTLS:            req.IMAPUseTLS,
-		IMAPAllowInsecureTLS:  req.IMAPAllowInsecureTLS,
+		IMAPAllowInsecureTLS:  allowInsecure,
 		SMTPHost:              req.SMTPHost,
 		SMTPPort:              req.SMTPPort,
 		SMTPUseTLS:            req.SMTPUseTLS,
-		SMTPAllowInsecureTLS:  req.SMTPAllowInsecureTLS,
+		SMTPAllowInsecureTLS:  allowInsecure,
 		SieveHost:             req.SieveHost,
 		SievePort:             req.SievePort,
 		SieveUseTLS:           req.SieveUseTLS,
-		SieveAllowInsecureTLS: req.SieveAllowInsecureTLS,
+		SieveAllowInsecureTLS: allowSieveInsecure,
 		Username:              req.Username,
 		EncIMAPPassword:       imapEnc,
 		EncSMTPPassword:       smtpEnc,
@@ -384,15 +394,16 @@ func (h *AccountsHandler) UpdateAccount(w http.ResponseWriter, r *http.Request) 
 		existing.Username = req.Username
 	}
 	existing.IMAPUseTLS = req.IMAPUseTLS
-	existing.IMAPAllowInsecureTLS = req.IMAPAllowInsecureTLS
+	allowInsecure, allowSieveInsecure := h.tlsPolicy()
+	existing.IMAPAllowInsecureTLS = allowInsecure
 	existing.SMTPUseTLS = req.SMTPUseTLS
-	existing.SMTPAllowInsecureTLS = req.SMTPAllowInsecureTLS
+	existing.SMTPAllowInsecureTLS = allowInsecure
 	existing.SieveHost = req.SieveHost
 	if req.SievePort >= 0 {
 		existing.SievePort = req.SievePort
 	}
 	existing.SieveUseTLS = req.SieveUseTLS
-	existing.SieveAllowInsecureTLS = req.SieveAllowInsecureTLS
+	existing.SieveAllowInsecureTLS = allowSieveInsecure
 
 	// 若提供密碼則更新加密
 	if req.Password != "" {
@@ -489,12 +500,15 @@ func (h *AccountsHandler) TestAccount(w http.ResponseWriter, r *http.Request) {
 	imapOK := "failed"
 	smtpOK := "failed"
 
+	// TLS 憑證驗證策略只跟隨伺服器設定，忽略客戶端傳入值
+	allowInsecure, _ := h.tlsPolicy()
+
 	// 測試 IMAP
 	imapCfg := imapinternal.ConnectionConfig{
 		Host:             req.IMAPHost,
 		Port:             req.IMAPPort,
 		UseTLS:           req.IMAPUseTLS,
-		AllowInsecureTLS: req.IMAPAllowInsecureTLS,
+		AllowInsecureTLS: allowInsecure,
 		Username:         req.Username,
 		Password:         req.Password,
 	}
@@ -507,7 +521,7 @@ func (h *AccountsHandler) TestAccount(w http.ResponseWriter, r *http.Request) {
 		Host:             req.SMTPHost,
 		Port:             req.SMTPPort,
 		UseTLS:           req.SMTPUseTLS,
-		AllowInsecureTLS: req.SMTPAllowInsecureTLS,
+		AllowInsecureTLS: allowInsecure,
 		Username:         req.Username,
 		Password:         req.Password,
 	}

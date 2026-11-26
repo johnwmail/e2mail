@@ -22,7 +22,7 @@ func CORS() func(http.Handler) http.Handler {
 			return strings.EqualFold(u.Host, r.Host)
 		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Session-ID", "Last-Event-ID"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Session-ID", "Last-Event-ID"},
 		ExposedHeaders:   []string{"Link", "Content-Disposition"},
 		AllowCredentials: true,
 		MaxAge:           300, // 5 分鐘 preflight 快取
@@ -36,6 +36,12 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+		// HSTS：瀏覽器只會喺 HTTPS 回應中採信，喺純 HTTP 會被忽略，故可以無條件設定。
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+		// API 回應含郵件、通訊錄、PGP keyring 等敏感資料，禁止瀏覽器或中間快取保存。
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

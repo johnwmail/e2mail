@@ -16,6 +16,7 @@ import (
 
 	"github.com/johnwmail/e2mail/backend/internal/api"
 	"github.com/johnwmail/e2mail/backend/internal/api/handler"
+	"github.com/johnwmail/e2mail/backend/internal/api/middleware"
 	"github.com/johnwmail/e2mail/backend/internal/auth"
 	"github.com/johnwmail/e2mail/backend/internal/config"
 	"github.com/johnwmail/e2mail/backend/internal/imap"
@@ -34,15 +35,22 @@ var (
 	CommitHash = "sha-unknown"
 )
 
-// sensitiveEnvVars 唔會 print 出嚟嘅敏感/機密環境變數
-var sensitiveEnvVars = map[string]bool{
-	"SESSION_SECRET":  true,
-	"SECRET_KEY":      true,
-	"DOCKER_PASSWORD": true,
-	"LDAP_ROOT_PW":    true,
+// sensitiveEnvSubstrings 只要 key 含有其中任何字眼（大小寫不敏感），值一律遮蔽。
+// 採用模式比對而非固定名單，避免日後新增嘅 secret 不慎明文入 log。
+var sensitiveEnvSubstrings = []string{"PASS", "SECRET", "TOKEN", "KEY", "PW", "CREDENTIAL", "PRIVATE"}
+
+// isSensitiveEnvKey 判斷環境變數 key 係咪可能含機密值
+func isSensitiveEnvKey(key string) bool {
+	upper := strings.ToUpper(key)
+	for _, s := range sensitiveEnvSubstrings {
+		if strings.Contains(upper, s) {
+			return true
+		}
+	}
+	return false
 }
 
-// printDefinedEnv 啟動時打印所有已定義嘅環境變數（過濾敏感 key）
+// printDefinedEnv 啟動時打印所有已定義嘅環境變數；敏感 key 只顯示遮蔽值
 func printDefinedEnv() {
 	log.Println("📋 Defined environment variables:")
 	for _, kv := range os.Environ() {
@@ -51,13 +59,13 @@ func printDefinedEnv() {
 			continue
 		}
 		key := kv[:idx]
-		if sensitiveEnvVars[strings.ToUpper(key)] {
-			continue
-		}
 		val := kv[idx+1:]
-		if val == "" {
+		switch {
+		case isSensitiveEnvKey(key) && val != "":
+			log.Printf("   %s=<redacted>", key)
+		case val == "":
 			log.Printf("   %s=<empty>", key)
-		} else {
+		default:
 			log.Printf("   %s=%q", key, val)
 		}
 	}
@@ -113,6 +121,16 @@ func main() {
 
 	serverConfig := config.Load()
 
+	// 可信反向代理：只有來自 loopback 或 TRUSTED_PROXY_CIDRS 嘅 peer 先會採信 X-Forwarded-For。
+	trustedNets, invalidProxies := middleware.ParseTrustedProxies(serverConfig.TrustedProxyCIDRs)
+	for _, bad := range invalidProxies {
+		log.Printf("⚠️  Invalid TRUSTED_PROXY_CIDRS entry %q ignored", bad)
+	}
+	middleware.SetTrustedProxies(trustedNets)
+	if len(trustedNets) > 0 {
+		log.Printf("🛡️  Trusted reverse proxies for X-Forwarded-For: %d extra range(s) (loopback always trusted)", len(trustedNets))
+	}
+
 	// Outbound SSRF guard：用戶自行輸入的 IMAP/SMTP/Sieve host 一律唔准連
 	// private / loopback / link-local；但管理員設定的 mail host 例外信任。
 	trustedMailHosts := []string{
@@ -135,6 +153,12 @@ func main() {
 		log.Fatalf("Failed to initialize storage: %v", err)
 	}
 	defer func() { _ = store.Close() }()
+
+	// 自簽／未驗證 TLS 旗標只由伺服器設定決定：啟動時將既有帳號同步成策略，
+	// 避免舊資料（客戶端曾經自行開啟）繞過管理員設定。
+	if err := store.EnforceInsecureTLSPolicy(serverConfig.DefaultAllowInsecureTLS, serverConfig.DefaultSieveAllowInsecureTLS); err != nil {
+		log.Fatalf("Failed to enforce insecure TLS policy: %v", err)
+	}
 
 	if migrated, err := store.MigrateLegacyKeyrings(dataDir); err != nil {
 		log.Printf("⚠️  Legacy keyring migration error: %v", err)

@@ -85,7 +85,7 @@ MAIL_SMTP_HOST=smtp.example.com
 | `MAIL_IMAP_PORT` | `993` | IMAP port |
 | `MAIL_SMTP_HOST` | — | SMTP host (overrides `MAIL_SERVER`) |
 | `MAIL_SMTP_PORT` | `587` | SMTP port |
-| `MAIL_ALLOW_INSECURE_TLS` | `false` | Allow self-signed / unverified IMAP/SMTP certificates |
+| `MAIL_ALLOW_INSECURE_TLS` | `false` | Allow self-signed / unverified IMAP/SMTP certificates. **Server-controlled only**: client login/account forms cannot change it; on startup all existing accounts are synced to this value |
 | `MAIL_ALLOWED_DOMAINS` | auto | Comma-separated email domains allowed to sign in. Auto = `MAIL_SERVER` when locked; empty otherwise |
 | `MAIL_SIEVE_HOST` | — | Optional ManageSieve host |
 | `MAIL_SIEVE_PORT` | `4190` | ManageSieve port |
@@ -94,6 +94,45 @@ MAIL_SMTP_HOST=smtp.example.com
 
 `HTTP_ALLOWED_HOSTS` is unrelated to mail: it is the **HTTP Host allow-list** used
 by the web server/reverse proxy.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TRUSTED_PROXY_CIDRS` | empty | Extra reverse-proxy IPs/CIDRs whose `X-Forwarded-For` is trusted (comma-separated). `127.0.0.1`/`::1` are always trusted. Needed when the proxy is not on loopback, e.g. a Docker bridge gateway like `172.17.0.1`. |
+
+### Reverse proxy (nginx) and client IP
+
+Login/2FA rate limits and lockouts are keyed by the **real client IP**. The backend
+only believes `X-Forwarded-For` when the TCP peer is trusted (loopback or
+`TRUSTED_PROXY_CIDRS`). Recommended nginx block:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;      # or the container host IP
+    proxy_set_header Host $host;
+    # Overwrite, do not append: clients must not be able to inject entries
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_buffering off;                   # SSE /api/events
+    proxy_read_timeout 3600s;
+}
+```
+
+If nginx reaches the container through the Docker bridge, the backend sees the
+bridge gateway (commonly `172.17.0.1`) as the peer. Either run the container with
+`network_mode: host`, or set `TRUSTED_PROXY_CIDRS=172.17.0.1` (use the single
+gateway IP, not a whole private range, so other containers cannot spoof it).
+Check the `remote=` / peer IP in the logs to confirm which applies.
+
+### Login lockouts
+
+| Scope | Limit | Window | Effect |
+|---|---|---|---|
+| Client IP | 20 failures | 15 min | Blocks that IP for all accounts |
+| Email + IP | 10 failures | 15 min | Blocks that email from that IP only |
+| Email (global) | 30 failures | 1 hour | Blocks that email from any IP (against distributed guessing) |
+
+Locks expire automatically as old failures leave the window. There is no manual
+unlock; a successful login clears the counters, and a restart clears memory.
 
 ## Locked vs prefill
 

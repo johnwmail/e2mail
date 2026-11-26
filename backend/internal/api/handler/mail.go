@@ -268,8 +268,9 @@ func (h *MailHandler) GetMessageDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 自動標記為已讀
-	if msg.Unread {
+	// 自動標記為已讀（GET 有副作用，只允許同源／導航來源觸發；跨站頂層導航唔會改狀態，
+	// 防止第三方網站誘導用戶瀏覽連結時靜默改動郵件旗標）
+	if msg.Unread && isSameOriginFetch(r) {
 		if err := client.SetFlags(r.Context(), folder, []uint32{uint32(uid64)}, []string{`\Seen`}, "add"); err != nil {
 			log.Printf("[MAIL] auto-mark seen FAILED for uid=%d folder=%s: %v", uid64, folder, err)
 		} else {
@@ -279,6 +280,17 @@ func (h *MailHandler) GetMessageDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Success(w, msg)
+}
+
+// isSameOriginFetch 判斷請求係咪來自同源（或瀏覽器未提供 Fetch Metadata）。
+// Sec-Fetch-Site 為 cross-site／same-site 時回傳 false。
+func isSameOriginFetch(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "", "same-origin", "none":
+		return true
+	default:
+		return false
+	}
 }
 
 // GetRawMessage 取得指定郵件嘅原始 RFC822 來源（View Source 用）

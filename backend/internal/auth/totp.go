@@ -3,10 +3,12 @@ package auth
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base32"
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
@@ -50,11 +52,33 @@ func GenerateKey(accountName, secret string) (*otp.Key, error) {
 
 // ValidateCode 驗證 TOTP code（允許 ±1 時間窗以容忍時鐘漂移）
 func ValidateCode(secret, code string) bool {
+	_, ok := ValidateCodeStep(secret, code, time.Now())
+	return ok
+}
+
+const totpPeriod = 30
+
+// ValidateCodeStep 驗證 TOTP code（±1 時間窗），並回傳命中嘅 time step（unix/30）。
+// 呼叫者應以 step 做重放防護：同一 step 嘅 code 只可成功一次。
+func ValidateCodeStep(secret, code string, now time.Time) (int64, bool) {
 	if secret == "" || code == "" {
-		return false
+		return 0, false
 	}
 	code = strings.TrimSpace(code)
-	return totp.Validate(code, secret)
+	opts := totp.ValidateOpts{Period: totpPeriod, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1}
+	matched := int64(-1)
+	// 逐個窗口比對，唔提早返回，避免按位置洩露時間偏移資訊
+	for _, offset := range []int64{0, -1, 1} {
+		t := now.Add(time.Duration(offset*totpPeriod) * time.Second)
+		expected, err := totp.GenerateCodeCustom(secret, t, opts)
+		if err != nil {
+			continue
+		}
+		if subtle.ConstantTimeCompare([]byte(expected), []byte(code)) == 1 && matched < 0 {
+			matched = t.Unix() / totpPeriod
+		}
+	}
+	return matched, matched >= 0
 }
 
 // GenerateBackupCodes 產生一組一次性備份碼，並回傳明文與其 SHA-256 hash
@@ -71,12 +95,14 @@ func GenerateBackupCodes() (plain []string, hashed []string) {
 func ValidateBackupCode(code string, hashes []string) int {
 	code = strings.ToUpper(strings.TrimSpace(code))
 	target := HashCode(code)
+	found := -1
 	for i, h := range hashes {
-		if h == target {
-			return i
+		// 常數時間比較且不提早返回
+		if subtle.ConstantTimeCompare([]byte(h), []byte(target)) == 1 && found < 0 {
+			found = i
 		}
 	}
-	return -1
+	return found
 }
 
 // HashCode 計算備份碼的 SHA-256 十六進位 hash

@@ -143,10 +143,6 @@ const AccountsForm: React.FC<{
           <input type="checkbox" checked={form.imapUseTls} onChange={(e) => set('imapUseTls', e.target.checked)} className="w-4 h-4 rounded" />
           {t('accounts.useTls')}
         </label>
-        <label className="flex items-center gap-2 mt-1.5 text-xs">
-          <input type="checkbox" checked={!!form.imapAllowInsecureTls} onChange={(e) => set('imapAllowInsecureTls', e.target.checked)} className="w-4 h-4 rounded" />
-          {t('accounts.allowInsecure')}
-        </label>
       </div>
 
       <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
@@ -164,10 +160,6 @@ const AccountsForm: React.FC<{
         <label className="flex items-center gap-2 mt-2 text-xs">
           <input type="checkbox" checked={form.smtpUseTls} onChange={(e) => set('smtpUseTls', e.target.checked)} className="w-4 h-4 rounded" />
           {t('accounts.useTlsSmtp')}
-        </label>
-        <label className="flex items-center gap-2 mt-1.5 text-xs">
-          <input type="checkbox" checked={!!form.smtpAllowInsecureTls} onChange={(e) => set('smtpAllowInsecureTls', e.target.checked)} className="w-4 h-4 rounded" />
-          {t('accounts.allowInsecure')}
         </label>
       </div>
 
@@ -197,10 +189,6 @@ const AccountsForm: React.FC<{
         <label className="flex items-center gap-2 mt-2 text-xs">
           <input type="checkbox" checked={!!form.sieveUseTls} onChange={(e) => set('sieveUseTls', e.target.checked as any)} className="w-4 h-4 rounded" />
           {t('accounts.useTlsSieve')}
-        </label>
-        <label className="flex items-center gap-2 mt-1.5 text-xs">
-          <input type="checkbox" checked={!!form.sieveAllowInsecureTls} onChange={(e) => set('sieveAllowInsecureTls', e.target.checked as any)} className="w-4 h-4 rounded" />
-          {t('accounts.allowInsecureSieve')}
         </label>
         <div className="text-[11px] text-slate-500 mt-2">{t('accounts.sieveHint')}</div>
       </details>
