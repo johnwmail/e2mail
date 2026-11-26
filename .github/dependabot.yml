@@ -50,6 +50,10 @@ updates:
       # line together with a `go` directive bump.
       - dependency-name: "golang"
         versions: [">= 1.27"]
+      # The frontend is built on Node 24 (LTS). Odd/pending majors (25, 26, …)
+      # are not LTS, so they must be adopted deliberately rather than by Dependabot.
+      - dependency-name: "node"
+        versions: [">= 25"]
 
   # Enable version updates for GitHub Actions workflows
   - package-ecosystem: "github-actions"
