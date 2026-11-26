@@ -147,6 +147,9 @@ type Store interface {
 	// Two-factor authentication
 	GetTwoFA(ownerEmail string) (*TwoFA, error)
 	SaveTwoFA(t *TwoFA) error
+	ConsumeTOTPStep(ownerEmail string, step int64) (bool, error)
+	ConsumeBackupCode(ownerEmail, hash string) (bool, error)
+	EnforceInsecureTLSPolicy(imapSMTPAllow, sieveAllow bool) error
 	DeleteTwoFA(ownerEmail string) error
 
 	// Passkey / WebAuthn credentials (second factor; public key only, not DEK-wrapped)
@@ -203,7 +206,8 @@ CREATE TABLE IF NOT EXISTS two_fa (
 	owner_id           TEXT NOT NULL PRIMARY KEY,
 	secret             TEXT NOT NULL,
 	backup_code_hashes TEXT NOT NULL DEFAULT '[]',
-	enabled_at         INTEGER NOT NULL
+	enabled_at         INTEGER NOT NULL,
+	last_totp_step     INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS personal_keyrings (
@@ -339,6 +343,10 @@ func NewSQLiteStore(dataDir string) (*SQLiteStore, error) {
 	if _, err := db.Exec(schema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to apply schema: %w", err)
+	}
+	if err := ensureTwoFATOTPStepColumn(db); err != nil {
+		_ = db.Close()
+		return nil, err
 	}
 	if _, err := db.Exec(`PRAGMA user_version = 2`); err != nil {
 		log.Printf("[STORAGE] WARN: set user_version failed: %v", err)
@@ -979,6 +987,98 @@ func (s *SQLiteStore) SaveTwoFA(t *TwoFA) error {
 	return nil
 }
 
+// ensureTwoFATOTPStepColumn 為舊資料庫補上 two_fa.last_totp_step（冪等；新建表已包含）。
+// 用於 TOTP 重放防護：記錄最後一次成功驗證嘅 time step。
+func ensureTwoFATOTPStepColumn(db *sql.DB) error {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('two_fa') WHERE name = 'last_totp_step'`).Scan(&n); err != nil {
+		return fmt.Errorf("failed to inspect two_fa schema: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE two_fa ADD COLUMN last_totp_step INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return fmt.Errorf("failed to add two_fa.last_totp_step: %w", err)
+	}
+	return nil
+}
+
+// ConsumeTOTPStep 以條件更新原子地記錄一次成功嘅 TOTP time step。
+// 只有 step 大於已記錄嘅最後 step 時才會成功（回傳 true）；同一組碼重放會回傳 false。
+func (s *SQLiteStore) ConsumeTOTPStep(ownerEmail string, step int64) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(
+		`UPDATE two_fa SET last_totp_step = ? WHERE owner_id = ? AND last_totp_step < ?`,
+		step, crypto.OwnerID(ownerEmail), step,
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to consume totp step: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to read totp step result: %w", err)
+	}
+	return n == 1, nil
+}
+
+// ConsumeBackupCode 在單一交易內讀取、移除並寫回備份碼 hash，確保同一備份碼只可被消耗一次。
+// 回傳 false 表示該 hash 已唔存在（已被使用或無效）。
+func (s *SQLiteStore) ConsumeBackupCode(ownerEmail, hash string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, fmt.Errorf("failed to begin backup code tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var backupJSON string
+	err = tx.QueryRow(
+		`SELECT backup_code_hashes FROM two_fa WHERE owner_id = ?`,
+		crypto.OwnerID(ownerEmail),
+	).Scan(&backupJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to read backup codes: %w", err)
+	}
+
+	var hashes []string
+	if err := json.Unmarshal([]byte(backupJSON), &hashes); err != nil {
+		return false, fmt.Errorf("failed to parse backup codes: %w", err)
+	}
+	remaining := make([]string, 0, len(hashes))
+	removed := false
+	for _, h := range hashes {
+		if !removed && h == hash {
+			removed = true
+			continue
+		}
+		remaining = append(remaining, h)
+	}
+	if !removed {
+		return false, nil
+	}
+
+	out, err := json.Marshal(remaining)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal backup codes: %w", err)
+	}
+	if _, err := tx.Exec(
+		`UPDATE two_fa SET backup_code_hashes = ? WHERE owner_id = ?`,
+		string(out), crypto.OwnerID(ownerEmail),
+	); err != nil {
+		return false, fmt.Errorf("failed to update backup codes: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("failed to commit backup code tx: %w", err)
+	}
+	return true, nil
+}
+
 // DeleteTwoFA 刪除使用者之兩步驟驗證設定
 func (s *SQLiteStore) DeleteTwoFA(ownerEmail string) error {
 	s.mu.Lock()
@@ -1431,6 +1531,20 @@ func (s *SQLiteStore) SetDefaultAccount(userEmail, accountID string) error {
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return errors.New("account not found")
+	}
+	return nil
+}
+
+// EnforceInsecureTLSPolicy 將所有帳號嘅 IMAP/SMTP/Sieve「允許自簽／未驗證 TLS」旗標
+// 同步為伺服器策略（MAIL_ALLOW_INSECURE_TLS / MAIL_SIEVE_ALLOW_INSECURE_TLS）。
+// 旗標只由伺服器設定決定；啟動時呼叫，確保舊資料唔可以繞過策略。
+func (s *SQLiteStore) EnforceInsecureTLSPolicy(imapSMTPAllow, sieveAllow bool) error {
+	_, err := s.db.Exec(
+		`UPDATE accounts SET imap_allow_insecure_tls = ?, smtp_allow_insecure_tls = ?, sieve_allow_insecure_tls = ?`,
+		boolInt(imapSMTPAllow), boolInt(imapSMTPAllow), boolInt(sieveAllow),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to enforce insecure TLS policy: %w", err)
 	}
 	return nil
 }

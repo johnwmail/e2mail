@@ -519,20 +519,6 @@ export const LoginForm: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="pt-1">
-                  <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={allowInsecureTls}
-                      onChange={(e) => setAllowInsecureTls(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded border-slate-300 text-sky-500 focus:ring-sky-400"
-                    />
-                    <span className="flex items-center gap-1">
-                      <ShieldAlert className="w-3 h-3 text-amber-500 shrink-0" />
-                      {t('login.allowInsecure')}
-                    </span>
-                  </label>
-                </div>
               </div>
             )}
           </div>

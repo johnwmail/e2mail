@@ -25,8 +25,39 @@ const (
 type AuthContext struct {
 	Session *session.Session
 	DEK     []byte
-	// Passwords: accountID -> plaintext password（IMAP 與 SMTP 共用同一密碼）
+	// Passwords: accountID -> plaintext password 的請求內快取（IMAP 與 SMTP 共用同一密碼）。
+	// 由 PasswordFor 按需填充；唔應假設已包含所有帳號。
 	Passwords map[string]string
+}
+
+// PasswordFor 取得指定帳號嘅明文密碼。首次存取時以 DEK 解密並快取於 Passwords。
+// 解密失敗或帳號不存在時回傳 ("", false)。
+func (c *AuthContext) PasswordFor(accountID string) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+	if p, ok := c.Passwords[accountID]; ok {
+		return p, true
+	}
+	if c.Session == nil || len(c.DEK) == 0 {
+		return "", false
+	}
+	for _, acc := range c.Session.Accounts {
+		if acc.ID != accountID {
+			continue
+		}
+		pass, err := crypto.Decrypt(c.DEK, acc.EncIMAPPassword)
+		if err != nil {
+			// 單一帳號密碼解唔到唔阻礙其他帳號，該帳號會變唔可用
+			return "", false
+		}
+		if c.Passwords == nil {
+			c.Passwords = make(map[string]string, len(c.Session.Accounts))
+		}
+		c.Passwords[accountID] = string(pass)
+		return c.Passwords[accountID], true
+	}
+	return "", false
 }
 
 // Auth 驗證會話中間件
@@ -51,30 +82,12 @@ func Auth(store session.Store) func(http.Handler) http.Handler {
 				return
 			}
 
-			passwords := make(map[string]string, len(sess.Accounts))
-			for _, acc := range sess.Accounts {
-				pass, err := crypto.Decrypt(dek, acc.EncIMAPPassword)
-				if err != nil {
-					// 單一帳號密碼解唔到唔阻礙登入，但該帳號會變唔可用
-					continue
-				}
-				passwords[acc.ID] = string(pass)
-			}
-
 			_ = store.Touch(sess.ID)
 
-			authCtx := &AuthContext{Session: sess, DEK: dek, Passwords: passwords}
+			// 密碼唔再每個請求都全部解密：只喺真正需要 IMAP/SMTP 時按帳號解密（見 PasswordFor）。
+			authCtx := &AuthContext{Session: sess, DEK: dek}
 			ctx := context.WithValue(r.Context(), SessionContextKey, sess)
 			ctx = context.WithValue(ctx, AuthContextKey, authCtx)
-			// 向後相容：預設帳號密碼放返 PasswordContextKey
-			var defaultPass string
-			for _, acc := range sess.Accounts {
-				if acc.IsDefault {
-					defaultPass = passwords[acc.ID]
-					break
-				}
-			}
-			ctx = context.WithValue(ctx, PasswordContextKey, defaultPass)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -99,11 +112,11 @@ func GetPasswordFromContext(ctx context.Context) (string, bool) {
 		if authCtx.Session != nil {
 			for _, acc := range authCtx.Session.Accounts {
 				if acc.IsDefault {
-					return authCtx.Passwords[acc.ID], true
+					return authCtx.PasswordFor(acc.ID)
 				}
 			}
-			if len(authCtx.Passwords) > 0 {
-				for _, p := range authCtx.Passwords {
+			for _, acc := range authCtx.Session.Accounts {
+				if p, ok := authCtx.PasswordFor(acc.ID); ok {
 					return p, true
 				}
 			}
@@ -148,7 +161,8 @@ func GetCurrentAccountPassword(authCtx *AuthContext, acc *storage.Account) strin
 	if authCtx == nil || acc == nil {
 		return ""
 	}
-	return authCtx.Passwords[acc.ID]
+	pass, _ := authCtx.PasswordFor(acc.ID)
+	return pass
 }
 
 // extractToken 由 Authorization、X-Session-ID 或 HttpOnly cookie 提取會話

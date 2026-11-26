@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -98,12 +97,9 @@ func (h *AuthHandler) setSessionCookie(w http.ResponseWriter, r *http.Request, s
 	})
 }
 
+// requestIP 回傳可信任嘅客戶端 IP（唔直接讀 RemoteAddr，見 middleware.ClientIP）。
 func requestIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return strings.TrimSpace(r.RemoteAddr)
-	}
-	return host
+	return middleware.ClientIP(r)
 }
 
 func (h *AuthHandler) loginIPKey(r *http.Request) string {
@@ -122,9 +118,16 @@ func (h *AuthHandler) totpEmailKey(email string) string {
 	return "totp:email:" + normalizeEmail(email)
 }
 
+// loginEmailIPKey 以 email + IP 組合計數：攻擊者只可以鎖住自己 IP 嘅組合，
+// 唔會影響受害者由其他 IP 正常登入。
+func (h *AuthHandler) loginEmailIPKey(r *http.Request, email string) string {
+	return "login:emailip:" + normalizeEmail(email) + "|" + requestIP(r)
+}
+
 func (h *AuthHandler) loginBlocked(w http.ResponseWriter, r *http.Request, email string) bool {
 	if h.pwLimiter.Blocked(h.loginIPKey(r), loginMaxIP, loginFailureWindow) ||
-		h.pwLimiter.Blocked(h.loginEmailKey(email), loginMaxEmail, loginFailureWindow) {
+		h.pwLimiter.Blocked(h.loginEmailIPKey(r, email), loginMaxEmailIP, loginFailureWindow) ||
+		h.pwLimiter.Blocked(h.loginEmailKey(email), loginMaxEmail, loginEmailWindow) {
 		response.Error(w, http.StatusTooManyRequests, "too many failed login attempts, try again later")
 		return true
 	}
@@ -146,6 +149,7 @@ func (h *AuthHandler) totpBlocked(w http.ResponseWriter, r *http.Request, email 
 func (h *AuthHandler) recordLoginFailure(r *http.Request, email string) {
 	h.pwLimiter.RecordFailure(h.loginIPKey(r))
 	if email != "" {
+		h.pwLimiter.RecordFailure(h.loginEmailIPKey(r, email))
 		h.pwLimiter.RecordFailure(h.loginEmailKey(email))
 	}
 }
@@ -153,6 +157,7 @@ func (h *AuthHandler) recordLoginFailure(r *http.Request, email string) {
 func (h *AuthHandler) resetLoginFailures(r *http.Request, email string) {
 	h.pwLimiter.Reset(h.loginIPKey(r))
 	if email != "" {
+		h.pwLimiter.Reset(h.loginEmailIPKey(r, email))
 		h.pwLimiter.Reset(h.loginEmailKey(email))
 	}
 }
@@ -300,6 +305,14 @@ func (h *AuthHandler) applyFixedServers(req *LoginRequest) {
 	req.SMTPAllowInsecureTLS = h.cfg.DefaultAllowInsecureTLS
 }
 
+// applyTLSPolicy 無論是否固定伺服器，都以伺服器設定（MAIL_ALLOW_INSECURE_TLS）覆寫
+// 客戶端傳入嘅「允許自簽／未驗證 TLS」旗標。否則用戶可自行關閉憑證驗證，令密碼經 MITM 外洩。
+func (h *AuthHandler) applyTLSPolicy(req *LoginRequest) {
+	allow := h.cfg != nil && h.cfg.DefaultAllowInsecureTLS
+	req.IMAPAllowInsecureTLS = allow
+	req.SMTPAllowInsecureTLS = allow
+}
+
 // Login 處理使用者登入並驗證 IMAP 連線
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
@@ -309,6 +322,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.applyFixedServers(&req)
+	h.applyTLSPolicy(&req)
 
 	if req.Email == "" || req.Password == "" || req.IMAPHost == "" || req.SMTPHost == "" {
 		response.BadRequest(w, "email, password, imapHost, and smtpHost are required")
@@ -612,23 +626,33 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 		// decrypt 失敗則保留原值（backward compat：舊明文 secret）
 	}
 
-	// 驗證 TOTP code
-	if auth.ValidateCode(secret, code) {
-		h.completeLogin(w, r, pl, req.Challenge)
-		return
+	// 驗證 TOTP code，並以 time step 做重放防護（同一組碼只可成功一次）
+	if step, ok := auth.ValidateCodeStep(secret, code, time.Now()); ok {
+		accepted, err := h.storage.ConsumeTOTPStep(normalizeEmail(pl.Email), step)
+		if err != nil {
+			log.Printf("[AUTH ERROR] failed to record totp step for %s: %v", pl.Email, err)
+			response.InternalServerError(w, "failed to verify 2FA code")
+			return
+		}
+		if accepted {
+			h.completeLogin(w, r, pl, req.Challenge)
+			return
+		}
+		// 同一 step 已用過（重放）：視為失敗，繼續落到失敗分支
 	}
 
-	// 驗證備份碼（一次性使用）
+	// 驗證備份碼（一次性使用，原子消耗；寫回失敗必須拒絕登入，唔可以 fail-open）
 	if idx := auth.ValidateBackupCode(code, twoFA.BackupHashes); idx >= 0 {
-		twoFA.BackupHashes = append(twoFA.BackupHashes[:idx], twoFA.BackupHashes[idx+1:]...)
-		if len(twoFA.BackupHashes) == 0 {
-			twoFA.BackupHashes = []string{}
-		}
-		if err := h.storage.SaveTwoFA(twoFA); err != nil {
+		consumed, err := h.storage.ConsumeBackupCode(normalizeEmail(pl.Email), twoFA.BackupHashes[idx])
+		if err != nil {
 			log.Printf("[AUTH ERROR] failed to consume backup code for %s: %v", pl.Email, err)
+			response.InternalServerError(w, "failed to verify 2FA code")
+			return
 		}
-		h.completeLogin(w, r, pl, req.Challenge)
-		return
+		if consumed {
+			h.completeLogin(w, r, pl, req.Challenge)
+			return
+		}
 	}
 
 	h.pendingLogin.MarkFailed(req.Challenge)
@@ -803,9 +827,11 @@ const (
 	minNewPasswordLen     = 8
 	pwChangeMaxFailures   = 10
 	pwChangeFailureWindow = 10 * time.Minute
-	loginMaxIP            = 20
-	loginMaxEmail         = 10
+	loginMaxIP            = 20 // 每 IP（15 分鐘）
+	loginMaxEmailIP       = 10 // 每 email + IP（15 分鐘）：攻擊者換 IP 唔可以鎖死受害者
+	loginMaxEmail         = 30 // 每 email（1 小時）全局上限：防分散式暴力破解
 	loginFailureWindow    = 15 * time.Minute
+	loginEmailWindow      = time.Hour
 	totpMaxFailures       = 8
 	totpFailureWindow     = 10 * time.Minute
 )

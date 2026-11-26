@@ -63,7 +63,7 @@ func (h *EventsHandler) SSE(w http.ResponseWriter, r *http.Request) {
 	for _, acc := range sess.Accounts {
 		password := ""
 		if authCtx != nil {
-			password = authCtx.Passwords[acc.ID]
+			password, _ = authCtx.PasswordFor(acc.ID)
 		}
 		config := imap.ConnectionConfig{
 			Host:             acc.IMAPHost,
